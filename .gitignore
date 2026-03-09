@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 *.pt
 *.pth
+*.tar
 .env
 .DS_Store
 dataset
+checkpoint 

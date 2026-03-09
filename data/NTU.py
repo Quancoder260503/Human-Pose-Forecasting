@@ -14,33 +14,33 @@ RGB frame exists but very heavy, around 133GB,
 hence only the joints and heat maps are 
 used for training and testing. 
 
+May add Gaussian Filter to the joint coordinates
 '''
 
 class NTU(Dataset):
     def __init__(self,
         map_h   = 46,
         map_w   = 46,
-        num_joints = 15,
-        sequence_train = 5,
+        num_joints = 25, # 25 joints for NTU
+        total_frame = 30, 
         gaussian_sigma = 21,
         data_dir = 'dataset/NanyangTechRGB/',
         train = True,
     ):
         super(NTU, self).__init__()
-       
-        self.resolution_h = 1920 
-        self.resolution_w = 1080
+        # Standard resolution for NTU 
+        self.input_h = 1920 
+        self.input_w = 1080
         self.map_h = map_h
         self.map_w = map_w
-        self.num_joints = num_joints
-        self.sequence_train = sequence_train
+        self.num_joints     = num_joints
+        self.total_frame    = total_frame
         self.gaussian_sigma = gaussian_sigma
         self.train = train
         if self.train is True :
             self.data_dir = data_dir + 'train/'
         else :
             self.data_dir = data_dir + 'test/'
-
         self.frames_data = os.listdir(self.data_dir)
 
     def __len__(self):
@@ -51,78 +51,54 @@ class NTU(Dataset):
         '''
         :param index: parameter index
         :return:
-           images     : Tensor of shape (sequence_train, 3, width, height)
-           label_map  : Tensor of shape (46, 46, class + 1, sequence_train)
-           center_map : Tensor of shape  (1, 368, 368)
+          observed_poses : tensor of shape (total_frame, num_joints * 2) 
         '''
         frames = self.frames_data[index]
-        data   = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
-
-        images, label, heat_maps, center_map = self.transformation_jhmdb(
-            data = data,
-            box_size = self.input_w,
-            num_joints = 15,
-        )
-        # (1, 368, 368) -> (1, 1, 368, 368)
-        center_map = center_map.unsqueeze_(0)
-        return images, label, heat_maps, center_map
-
-    def transformation_jhmdb(self, data, box_size = 368, num_joints = 15):
+        storage   = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
+        observed_poses, target_poses = self.transformation_on_joint(
+            storage = storage, 
+            num_joints = self.num_joints
+        )  
+        return observed_poses, target_poses
+    
+    def transformation_on_joint(self, storage, num_joints = 25): 
         '''
-        :param data: data dictionary
-        :param box_size: the box size
-        :param num_joints: number of joints
-        :param train: training or testing data
-        :return: images : Tensor of shape (sequence_train, 3, width, height)
+        return :
+          observed_poses : (train_len, 25 * 2)
+          target_poses   : (test_len,  25 * 2)
         '''
-        n_frames    = data['nframes']
-        frames_path = data['framepath']
-        pose        = data['pos_img']
-        pose        = pose.transpose(2, 1, 0)
+        name        = storage['name']
+        human_id    = list(storage['data'].keys())[0] # So far only support spotting the first person in the video, idea may extened later 
+        data        = storage['data'][human_id]
+        label       = data['colors'] # projected 2D locations
+        # scale the image, may smooth it later 
+        label[:, :, 0] = label[:, :, 0] / self.input_w 
+        label[:, :, 1] = label[:, :, 1] / self.input_h 
+        print(label.shape)
+        n_frames    = label.shape[0]     
+        num_joints  = label.shape[1] 
+        dim         = label.shape[2]
 
-        x = pose[:, :, 0]
-        y = pose[:, :, 1]
+        assert num_joints == self.num_joints and dim == 2, "Does not match expected information"
+        
+        total_frame = self.total_frame
 
-        # sample a random starting frame index so that the number of frames trained is at least 5
-        start_index = np.random.randint(0, n_frames - 1 - self.sequence_train + 1)
-        images = torch.zeros(self.sequence_train, 3, self.input_h, self.input_w)
-        label  = np.zeros((2, num_joints, self.sequence_train)) # (x, y)
-        H, W = -1, -1
-        for i in range(self.sequence_train):
-            img_path = os.path.join(frames_path, '%05d' % (start_index + i + 1) + '.png')
-            img = cv2.imread(img_path)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            h, w = img.shape[:2]  # numpy arrays are (h, w, c)
-            if H > -1 and W > -1:
-                assert H == h and W == w, "Image size must matched previous frames"
-            else :
-                W, H = w, h
+        num_training_frame = total_frame // 2 + total_frame % 2 
+        num_testing_frame  = total_frame - num_training_frame
+        
+        start_index = np.random.randint(0, n_frames - 1 - total_frame + 1)
 
-            img = cv2.resize(img, (self.input_w, self.input_h), interpolation = cv2.INTER_LINEAR)
-            images[i, :, :, :] = self.transform(img)
-            # Read the label
-            ratio_x = self.input_w / W
-            ratio_y = self.input_h / H
-            label[0, :, i] = x[start_index + i] * ratio_x
-            label[1, :, i] = y[start_index + i] * ratio_y
+        observed_poses = torch.tensor(label[start_index : start_index + num_training_frame, :, :]) 
+        observed_poses = observed_poses.contiguous().view(num_training_frame, self.num_joints * 2) 
 
-        heat_maps  =  self.gen_heat_map(
-            label,
-            box_size = box_size,
-            stride = 8,
-            sigma = self.gaussian_sigma / 3,
-            img_old_dim = [H, W]
-        )
+        target_poses = torch.tensor(label[start_index + num_training_frame : start_index + total_frame, :, :]) 
+        target_poses = target_poses.contiguous().view(num_testing_frame, self.num_joints * 2) 
 
-        center_map =  self.get_center_map(
-            x = box_size / 2.0,
-            y = box_size / 2.0,
-            sigma = self.gaussian_sigma,
-            size_w = box_size,
-            size_h = box_size
-        )
-        center_map = torch.from_numpy(center_map)
-        return images, label, heat_maps, center_map
+        observed_poses[torch.isnan(observed_poses)] = 0
+        target_poses[torch.isnan(target_poses)]     = 0
+
+        return observed_poses, target_poses
+
 
     def get_center_map(self, x, y, sigma, size_w, size_h):
        '''
@@ -187,31 +163,6 @@ class NTU(Dataset):
         ])
         return transform
 
-# test_jhmdb_action = JHMDB(transform=JHMDB.get_default_transform(368, 368))
-# image, label, heat_map, center_map = test_jhmdb_action[10]
-#
-# num_joints = heat_map.shape[1]  # includes background channel
-# num_cols   = 6
-# num_rows   = (num_joints + 1 + num_cols - 1) // num_cols  # +1 for the image
-#
-# fig, axes = plt.subplots(num_rows, num_cols, figsize=(3 * num_cols, 3 * num_rows))
-# axes = axes.flatten()
-#
-# # Show image in first cell
-# axes[0].imshow(JHMDB.torch2numpy(image[0]))
-# axes[0].set_title("Image")
-# axes[0].axis("off")
-#
-# # Show all joint heatmaps
-# for j in range(num_joints):
-#     axes[j + 1].imshow(heat_map[0][j], cmap="inferno")
-#     title = f"Joint {j}" if j < num_joints - 1 else "Background"
-#     axes[j + 1].set_title(title)
-#     axes[j + 1].axis("off")
-#
-# # Hide any unused subplots
-# for k in range(num_joints + 1, len(axes)):
-#     axes[k].axis("off")
-#
-# plt.tight_layout()
-# plt.show()
+# if __name__ == '__main__': 
+#     ntu = NTU(train = False)
+#     print(len(ntu))

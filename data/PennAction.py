@@ -1,6 +1,5 @@
 import os
 from typing import Any
-
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,7 +20,7 @@ class PennAction(Dataset):
         sequence_train = 5,
         num_joints     = 13,
         gaussian_sigma = 21,
-        data_dir = 'dataset/Penn_Action/',
+        data_dir = 'dataset/PennAction/',
         train = True,
         transform = None,
     ):

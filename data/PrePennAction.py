@@ -2,10 +2,10 @@ import os
 import numpy as np
 import scipy.io
 
-frame_dir = 'dataset/Penn_Action/frames'
-label_dir = 'dataset/Penn_Action/labels'
-train_dir = 'dataset/Penn_Action/train'
-test_dir  = 'dataset/Penn_Action/test'
+frame_dir = 'dataset/PennAction/frames'
+label_dir = 'dataset/PennAction/labels'
+train_dir = 'dataset/PennAction/train'
+test_dir  = 'dataset/PennAction/test'
 
 numeric_infos = sorted(os.listdir(label_dir))
 

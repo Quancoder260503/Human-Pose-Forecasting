@@ -224,10 +224,9 @@ def baseline_trainer():
               predictions_dict = calc_PCK(predicted_joints, target_joints_scaled, predictions_dict)
         # Average loss across the samples in one batch
         losses.append(pjmse_loss / num_samples)
-        if batch_idx % 5 == 0:
-          total_acc = predictions_dict['total']['correct'] / predictions_dict['total']['all']
-          loss      =  np.mean(losses)
-          print(f'Batch : {batch_idx} / {len(dataloader)} | PJMSE : {loss :.3f} | PCK Accuracy : { total_acc:.3f}')
+        total_acc = predictions_dict['total']['correct'] / predictions_dict['total']['all']
+        loss      =  np.mean(losses)
+        print(f'Batch : {batch_idx} / {len(dataloader)} | PJMSE : {loss :.3f} | PCK Accuracy : { total_acc:.3f}')
 
 if __name__ == '__main__':
     baseline_trainer()

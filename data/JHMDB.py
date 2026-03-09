@@ -4,7 +4,6 @@ import cv2
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from torch.ao.nn.quantized.functional import interpolate
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image

@@ -14,6 +14,7 @@ from ultralytics import YOLO
 from util.KeyPointUtil import convert_kps, get_pennaction_joint_names
 from util.Visualization import draw_skeleton
 from util.ImgUtil import torch2numpy
+import math 
 
 YOLO_IMAGE_H = 640
 YOLO_IMAGE_W = 640
@@ -30,7 +31,7 @@ def bilinear_sampler(img, flows, mode = 'bilinear', mask = False):
     B, _, H, W = img.shape
     dxgrid, dygrid = flows.split([1, 1], dim = -1)
     coords = coords_grid(B, H, W)
-    coords = coords.permute(0, 2, 3, 1)
+    coords = coords.permute(0, 2, 3, 1).to('cuda')
     ygrid, xgrid = coords.split([1, 1], dim = -1)
     xgrid = xgrid + dxgrid
     ygrid = ygrid + dygrid
@@ -117,7 +118,7 @@ def visualize_frame(
     """
     Visualize the vector field
     """
-    coords = coords_grid(1, YOLO_H, YOLO_W)[0].cpu().numpy()  # (2, H, W)
+    coords = coords_grid(1, YOLO_IMAGE_H, YOLO_IMAGE_W)[0].cpu().numpy()  # (2, H, W)
     opt_flow = list_of_flows[-1][0].detach().cpu().numpy()  # (2, H, W)
     X, Y, U, V = coords[0], coords[1], opt_flow[0], opt_flow[1]
     step = 40
@@ -152,81 +153,111 @@ def visualize_frame(
     plt.show()
 
 def baseline_trainer():
-    '''
-    A trainer for baseline approach, simply compute the Optical flow of pairs (F_{t} -> F{t - 1}), then
-    use which to interpolate F_{t + 1} from F{t}
-    '''
-    # Setting up pre-trained model
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # YOLO on GPU
     yolo_model = YOLO('yolo11n-pose.pt')
-    model = raft_large(weights = Raft_Large_Weights.DEFAULT, progress = False).to(device)
+
+    model = raft_large(weights=Raft_Large_Weights.DEFAULT, progress=False).to(device)
     model = model.eval()
 
-    penn_action = PennAction(sequence_train = 7, transform = PennAction.get_default_transform())
+    penn_action = PennAction(sequence_train=7, transform=PennAction.get_default_transform())
 
     dataloader = DataLoader(
-        dataset = penn_action,
-        batch_size = BATCH_SIZE,
-        shuffle = True,
-        num_workers = 1,
+        dataset=penn_action,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=0
     )
-    """
-    Testing for Upenn Action 
-    """
+
     predictions_dict = get_predictions_dict()
-
     losses = []
+    scaled_dist = math.sqrt(YOLO_IMAGE_H ** 2 + YOLO_IMAGE_W ** 2)
+    resize = transforms.Resize((YOLO_IMAGE_H, YOLO_IMAGE_W))
 
-    for batch_idx, (frames, labels, _, _) in enumerate(dataloader):
-        labels = labels.permute(0, 3, 2, 1)
-        pjmse_loss = 0.0
-        num_samples = 0
-        # Due to the requirement of YOLO that forces the image with the size (640, 640), have to scale the image up
-        resize = transforms.Resize((YOLO_IMAGE_H, YOLO_IMAGE_W))
-        for b in range(frames.shape[0]):
-           for t in range(1, labels.shape[1] - 1):
-              orig_h, orig_w = frames.shape[-2:]
-              previous_frame = resize(frames[b, (t - 1), :, :, :].unsqueeze(0)).to(device)
-              current_frame  = resize(frames[b, (t + 0), :, :, :].unsqueeze(0)).to(device)
-              target_joints  = labels[b, (t + 1), :, :].unsqueeze(0).to(device)
+    with torch.no_grad():
 
-              scale_x = 1. * YOLO_IMAGE_W / orig_w
-              scale_y = 1. * YOLO_IMAGE_H / orig_h
+        for batch_idx, (frames, labels, _, _) in enumerate(dataloader):
 
-              target_joints_scaled = target_joints.clone().float()
+            labels = labels.permute(0, 3, 2, 1)
 
-              target_joints_scaled[:, :, 0] *= scale_x  # x
-              target_joints_scaled[:, :, 1] *= scale_y  # y
+            predicted_frames = []
+            target_joints_all = []
 
-              list_of_flows = model(current_frame, previous_frame)
+            orig_h, orig_w = frames.shape[-2:]
+            scale_x = 1. * YOLO_IMAGE_W / orig_w
+            scale_y = 1. * YOLO_IMAGE_H / orig_h
 
-              predicted_frame = bilinear_sampler(current_frame, list_of_flows[-1])
+            for b in range(frames.shape[0]):
+                for t in range(1, labels.shape[1] - 1):
 
-              predicted_joints = yolo_model(predicted_frame, verbose=False)
-              predicted_joints = predicted_joints[0].keypoints.xy  # shape: (num_people, J, 2)
+                    previous_frame = resize(frames[b, t-1].unsqueeze(0)).to(device)
+                    current_frame  = resize(frames[b, t].unsqueeze(0)).to(device)
 
-              if predicted_joints.shape[0] == 0:
-                 continue
+                    target_joints  = labels[b, t+1].unsqueeze(0).float()
 
-              predicted_joints = predicted_joints[0].unsqueeze(0)  # always take first person → shape: (1, J, 2)
-              predicted_joints = torch.cat(
-              [predicted_joints, torch.ones(*predicted_joints.shape[:2], 1, device = predicted_joints.device)], dim = 2
-              )
-              predicted_joints = torch.tensor(convert_kps(predicted_joints, src = 'coco', dst = 'pennaction'))
+                    target_joints_scaled = target_joints.clone()
+                    target_joints_scaled[:, :, 0] *= scale_x
+                    target_joints_scaled[:, :, 1] *= scale_y
 
-              per_joint_error = torch.sqrt(((predicted_joints[:, :, : 2] - target_joints_scaled[:, :, : 2]) ** 2).sum(dim = -1))
-              visibility = target_joints[:, :, 2]
-              loss = (per_joint_error * visibility).sum() / visibility.sum()  # only average over visible joints
+                    list_of_flows = model(current_frame, previous_frame)
+                    predicted_frame = bilinear_sampler(current_frame, list_of_flows[-1])
 
-              pjmse_loss  += loss.item()
-              num_samples += 1
+                    predicted_frames.append(predicted_frame)
+                    target_joints_all.append(target_joints_scaled)
 
-              predictions_dict = calc_PCK(predicted_joints, target_joints_scaled, predictions_dict)
-        # Average loss across the samples in one batch
-        losses.append(pjmse_loss / num_samples)
-        total_acc = predictions_dict['total']['correct'] / predictions_dict['total']['all']
-        loss      =  np.mean(losses)
-        print(f'Batch : {batch_idx} / {len(dataloader)} | PJMSE : {loss :.3f} | PCK Accuracy : { total_acc:.3f}')
+            # Stack everything
+            predicted_frames = torch.cat(predicted_frames, dim=0)
+            target_joints_all = torch.cat(target_joints_all, dim=0).to(device)
+
+            # ---- YOLO BATCH INFERENCE ----
+            results = yolo_model(predicted_frame.cpu(), device = 'cpu', verbose=False)
+
+            pjmse_loss = 0.0
+            num_samples = 0
+
+            for i, result in enumerate(results):
+
+                if result.keypoints is None:
+                    continue
+
+                predicted_joints = result.keypoints.xy
+
+                if predicted_joints.shape[0] == 0:
+                    continue
+
+                predicted_joints = predicted_joints[0].unsqueeze(0)
+
+                predicted_joints = torch.cat(
+                    [predicted_joints,
+                     torch.ones(*predicted_joints.shape[:2], 1, device=predicted_joints.device)],
+                    dim=2
+                )
+
+                predicted_joints = torch.tensor(
+                    convert_kps(predicted_joints, src='coco', dst='pennaction')
+                ).to(device)
+
+                target_joints_scaled = target_joints_all[i].unsqueeze(0)
+
+                per_joint_error = torch.sqrt(((predicted_joints[:, :, :2] - target_joints_scaled[:, :, :2]) ** 2).sum(dim=-1)) / scaled_dist
+
+                visibility = target_joints_scaled[:, :, 2]
+
+                loss = (per_joint_error * visibility).sum() / visibility.sum()
+
+                pjmse_loss += loss.item() 
+                num_samples += 1
+
+                predictions_dict = calc_PCK(predicted_joints, target_joints_scaled, predictions_dict)
+
+            if num_samples > 0:
+                losses.append(pjmse_loss / num_samples)
+
+            total_acc = predictions_dict['total']['correct'] / predictions_dict['total']['all']
+            loss = np.mean(losses)
+            print(f'Batch : {batch_idx}/{len(dataloader)} | PJMSE : {loss:.3f} | PCK : {total_acc:.3f}')
 
 if __name__ == '__main__':
     baseline_trainer()

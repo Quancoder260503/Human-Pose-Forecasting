@@ -13,6 +13,7 @@ from PIL import Image
 
 class PennAction(Dataset):
     def __init__(self,
+        total_frame = 8, 
         input_w = 368,
         input_h = 368,
         map_h   = 46,
@@ -23,9 +24,12 @@ class PennAction(Dataset):
         data_dir = 'dataset/PennAction/',
         train = True,
         transform = None,
+        on_keypoints = False, 
+        max_frame    = 30, 
     ):
 
         super(PennAction, self).__init__()
+        self.total_frame = total_frame
         self.input_w = input_w
         self.input_h = input_h
         self.map_h = map_h
@@ -35,7 +39,8 @@ class PennAction(Dataset):
         self.sequence_train = sequence_train
         self.transform = transform
         self.train = train
-
+        self.on_keypoints = on_keypoints
+        self.max_frame    = max_frame
         if self.train is True :
             self.data_dir = data_dir + 'train/'
         else :
@@ -58,16 +63,77 @@ class PennAction(Dataset):
         frames = self.frames_data[index]
         data   = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
 
-        images, label, heat_maps, center_map = self.transformation_penn(
-            data = data,
-            box_size = self.input_w,
-            num_joints = 13,
-        )
-        # (1, 368, 368) -> (1, 1, 368, 368)
-        center_map = center_map.unsqueeze_(0)
-        return images, label, heat_maps, center_map
+        if not self.on_keypoints : 
+            images, label, heat_maps, center_map = self.transformation_image(
+                data = data,
+                box_size = self.input_w,
+                num_joints = self.num_joints, 
+            )
+            # (1, 368, 368) -> (1, 1, 368, 368)
+            center_map = center_map.unsqueeze_(0)
 
-    def transformation_penn(self, data, box_size = 368, num_joints = 13) :
+            return images, label, heat_maps, center_map
+        else : 
+            observed_poses, target_poses = self.transformation_on_joint(
+                data = data, 
+                num_joints = self.num_joints
+            )  
+            return observed_poses, target_poses
+    
+    def transformation_on_joint(self, data, num_joints = 13): 
+        '''
+        return :
+          observed_poses : (train_len, 26)
+          target_poses   : (test_len, 26)
+        '''
+        n_frames    = data['nframes']        # 151 for penn action
+        frames_path = data['framepath']
+        dim         = data['dimensions']     # [360, 480]
+        x = data['x']
+        y = data['y']
+        visibility = data['visibility']
+        
+        total_frame = self.total_frame
+
+        num_training_frame = total_frame // 2 + total_frame % 2 
+        
+        start_index = np.random.randint(0, n_frames - 1 - total_frame + 1)
+
+        label  = np.zeros((3, num_joints, total_frame)) # (x, y, visibility)
+        
+        for i in range(total_frame):
+            img_path = os.path.join(frames_path, '%06d' % (start_index + i + 1) + '.jpg')
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            h, w = img.shape[:2]
+            # scale the joints of multiple image to the same scale 
+            label[0, :, i] = x[start_index + i] / w
+            label[1, :, i] = y[start_index + i] / h
+            label[2, :, i] = visibility[start_index + i]
+
+        observed_poses = torch.tensor(label[:2, :, : num_training_frame]) 
+        observed_masks = torch.tensor(label[2,  :, : num_training_frame])
+        observed_poses = observed_poses.permute(2, 1, 0) 
+        observed_masks = observed_masks.permute(1, 0) 
+        observed_poses = observed_poses.contiguous().view(num_training_frame, self.num_joints * 2) 
+        observed_poses[torch.repeat_interleave(observed_masks, 2, dim = -1) == 0] = np.nan
+
+        target_poses = torch.tensor(label[:2, :, num_training_frame : ]) 
+        target_masks = torch.tensor(label[2,  :, num_training_frame : ])
+        target_poses = target_poses.permute(2, 1, 0) 
+        target_masks = target_masks.permute(1, 0) 
+        target_poses = target_poses.contiguous().view(num_training_frame, self.num_joints * 2) 
+        
+        target_poses[torch.repeat_interleave(observed_masks, 2, dim = -1) == 0] = np.nan
+
+        observed_poses[torch.isnan(observed_poses)] = 0
+        target_poses[torch.isnan(target_poses)]     = 0
+        # So far, we just focus on the joint 
+
+        return observed_poses, target_poses
+
+
+    def transformation_image(self, data, box_size = 368, num_joints = 13) :
         '''
         :param data: data dictionary
         :param box_size: the box size
@@ -97,7 +163,7 @@ class PennAction(Dataset):
             ratio_y = self.input_h / h
             img = cv2.resize(img, (self.input_w, self.input_h), interpolation = cv2.INTER_LINEAR)
             images[i, :, :, :] = self.transform(img)
-            # Read the label
+            # Read the label and scale it 
             label[0, :, i] = x[start_index + i] * ratio_x
             label[1, :, i] = y[start_index + i] * ratio_y
             label[2, :, i] = visibility[start_index + i]

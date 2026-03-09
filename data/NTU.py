@@ -9,9 +9,14 @@ from PIL import Image
 
 
 ''' 
-For Nanyang Tech, there is no RGB image frame, hence only the joints and heat maps are used for training and testing. 
+For Nanyang Tech dataset, 
+RGB frame exists but very heavy, around 133GB, 
+hence only the joints and heat maps are 
+used for training and testing. 
+
 '''
-class Nanyang(Dataset):
+
+class NTU(Dataset):
     def __init__(self,
         map_h   = 46,
         map_w   = 46,
@@ -20,18 +25,17 @@ class Nanyang(Dataset):
         gaussian_sigma = 21,
         data_dir = 'dataset/NanyangTechRGB/',
         train = True,
-        transform = None
     ):
-        super(Nanyang, self).__init__()
+        super(NTU, self).__init__()
        
+        self.resolution_h = 1920 
+        self.resolution_w = 1080
         self.map_h = map_h
         self.map_w = map_w
         self.num_joints = num_joints
         self.sequence_train = sequence_train
         self.gaussian_sigma = gaussian_sigma
-        self.transform = transform
         self.train = train
-
         if self.train is True :
             self.data_dir = data_dir + 'train/'
         else :

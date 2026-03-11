@@ -5,10 +5,16 @@ import torch.nn.functional as F
 '''
 Encoder-Decoder LSTM for generating sequence of poses, the training data will try to minimise 
 the result of the coordinates of the joints (Baseline Method)
+
+Test on the velocity based approach
+
+An idea that can be implement directly : 
+joint based self-attention for the encoder the RNN only captures temporal information, 
+it does not directly learn the interaction between the joints. 
 '''
 
 class JointLSTM(nn.Module):
-    def __init__(self, pose_dim = 26, embedding_dim = 64, hidden_dim = 128, num_layers = 2, dropout = 0.1, device = 'cuda'): 
+    def __init__(self, pose_dim = 26, embedding_dim = 1024, hidden_dim = 256, num_layers = 2, dropout = 0.2, device = 'cuda'): 
         super(JointLSTM, self).__init__()
         self.pose_dim      = pose_dim
         self.embedding_dim  = embedding_dim 
@@ -66,6 +72,24 @@ class JointLSTM(nn.Module):
         predicted_poses = torch.stack(predicted_poses, dim = 1) # (batch, Test_len, pose_dim) 
 
         return predicted_poses
+    
+def LSTM_loss_function(pred_joints, gt_joints, time_step):
+    """
+    :param pred_joints : (B, T, 26)
+    :param gt_joints   : (B, T, 26)   
+    :param time_step   : prediction time step 
+    :return:
+    """
+    # Huber Loss
+    criterion  = nn.SmoothL1Loss(reduction = 'mean')
+    total_loss = 0
+    for t in range(time_step):
+        pred = pred_joints[:, t, :]
+        gt   = gt_joints[:,   t, :]
+        curr_loss = criterion(pred, gt)
+        total_loss = total_loss + curr_loss
+    return total_loss / time_step
+
 
 # if __name__ == "__main__":
 #     dummy = torch.randn(4, 10, 26).to('cuda') 

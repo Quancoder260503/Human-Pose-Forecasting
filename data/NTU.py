@@ -68,14 +68,17 @@ class NTU(Dataset):
           target_poses   : (test_len,  25 * 2)
         '''
         name        = storage['name']
-        human_id    = list(storage['data'].keys())[0] # So far only support spotting the first person in the video, idea may extened later 
+        human_id_list = list(storage['data'].keys())
+        assert len(human_id_list), f"video {name} has no person in the video"
+        human_id_list.sort(key = lambda x : storage['data'][x]['colors'].shape[0], reverse = True) 
+        human_id    = human_id_list[0] # So far only support spotting the first person in the video, idea may extened later 
         data        = storage['data'][human_id]
         label       = data['colors'] # projected 2D locations
         # scale the image, may smooth it later 
         label[:, :, 0] = label[:, :, 0] / self.input_w 
         label[:, :, 1] = label[:, :, 1] / self.input_h 
-        print(label.shape)
         n_frames    = label.shape[0]     
+        assert n_frames >= self.total_frame, "num frames must be more than total frame"
         num_joints  = label.shape[1] 
         dim         = label.shape[2]
 
@@ -85,7 +88,6 @@ class NTU(Dataset):
 
         num_training_frame = total_frame // 2 + total_frame % 2 
         num_testing_frame  = total_frame - num_training_frame
-        
         start_index = np.random.randint(0, n_frames - 1 - total_frame + 1)
 
         observed_poses = torch.tensor(label[start_index : start_index + num_training_frame, :, :]) 
@@ -163,6 +165,6 @@ class NTU(Dataset):
         ])
         return transform
 
-# if __name__ == '__main__': 
-#     ntu = NTU(train = False)
-#     print(len(ntu))
+if __name__ == '__main__': 
+    ntu = NTU(train = False)[0]
+    print(len(ntu))

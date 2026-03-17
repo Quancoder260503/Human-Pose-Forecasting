@@ -151,7 +151,7 @@ class NTU(Dataset):
         visibility  = np.ones((label.shape[0], label.shape[1], 1))
         # Mark up the visibility 
         
-        start_index = np.random.randint(0, n_frames - 1 - total_frame + 1)
+        start_index    = np.random.randint(0, n_frames - 1 - total_frame + 1)
         label          = torch.tensor(label) 
         visibility     = torch.tensor(visibility)
         

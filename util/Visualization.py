@@ -7,7 +7,6 @@ from matplotlib import pyplot as plt
 from util.ImgUtil import torch2numpy, normalize_2d_kp
 import util.KeyPointUtil
 
-
 class WeakPerspectiveCamera(pyrender.Camera):
     def __init__(self,
                  scale,
@@ -94,28 +93,37 @@ def visualize_sequence(sequence):
     plt.close()
 
 
-def draw_skeleton(image, kp_2d, dataset='common', unnormalize = False, thickness= 1):
-    if unnormalize:
-        kp_2d[:, :2] = normalize_2d_kp(kp_2d[:, :2], 224, inv=True)
+import cv2
+import numpy as np
 
-    kp_2d[:, 2] = kp_2d[:, 2] > 0.3
+def draw_skeleton(image, kp_2d, prob = None, dataset = 'pennaction', thickness = 1, shadow = 0.3):
+    if prob is None : 
+        prob  = np.ones(kp_2d.shape[0])
     kp_2d = np.array(kp_2d, dtype=int)
+
+    image = image.copy()
+    image = (image * shadow).astype(np.uint8)
 
     rcolor = get_colors()['red'].tolist()
     pcolor = get_colors()['green'].tolist()
     lcolor = get_colors()['blue'].tolist()
 
     skeleton = eval(f'util.KeyPointUtil.get_{dataset}_skeleton')()
-    common_lr = [0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 0]
+    common_lr = [0,0,1,1,0,0,0,0,1,0,0,1,1,1,1]
     for idx, pt in enumerate(kp_2d):
-        if pt[2] > 0:
-            cv2.circle(image, (int(pt[0]), int(pt[1])), 2, pcolor, -1)
+        if prob[idx] > 0.6 and pt[0] > 0 and pt[1] > 0:
+            cv2.circle(image, (pt[0], pt[1]), 4, pcolor, -1)
 
     for i, (j1, j2) in enumerate(skeleton):
-        if kp_2d[j1, 2] > 0 and kp_2d[j2, 2] > 0:
-            color = rcolor if common_lr[i] == 0 else lcolor if dataset == 'common' else (lcolor if i % 2 == 0 else rcolor)
-            pt1, pt2 = tuple(kp_2d[j1, :2]), tuple(kp_2d[j2, :2])
-            cv2.line(image, pt1=pt1, pt2=pt2, color = color, thickness = thickness)
+        if prob[j1] > 0.6 and prob[j2] > 0.6 and kp_2d[j1, 0] > 0 and kp_2d[j1, 1] > 0 and kp_2d[j2, 0] > 0 and kp_2d[j2, 1] > 0:
+            color = rcolor if common_lr[i] == 0 else (
+                lcolor if dataset == 'common' else (lcolor if i % 2 == 0 else rcolor)
+            )
+
+            pt1 = tuple(kp_2d[j1, :2])
+            pt2 = tuple(kp_2d[j2, :2])
+
+            cv2.line(image, pt1, pt2, color, thickness= 3)
 
     return image
 

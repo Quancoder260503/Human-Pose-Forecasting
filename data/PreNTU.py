@@ -8,8 +8,10 @@ import numpy as np
 import pickle
 import logging
 import json
+import cv2
 
 NTU_SKELETON_PATH = 'dataset/nturgbd_skeletons_s018_to_s032'
+NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames/nturgbd_rgb_s001/nturgb+d_rgb'
 NTU_IMAGE_RESOLUTION_H = 1920
 NTU_IMAGE_RESOLUTION_W = 1080
 
@@ -113,6 +115,8 @@ def remove_video(datadir):
     print(len(bad_videos), len(data_storages)) 
 
 
+
+
 if __name__ == '__main__':
     # saved_dir = 'dataset/NanyangTechRGB'
     # os.makedirs(saved_dir, exist_ok=True)
@@ -127,7 +131,7 @@ if __name__ == '__main__':
 
     # train_index = set(random_index[:num_train])
     # test_index = set(random_index[num_train:])
-    # #46139
+
     # train_dir = os.path.join(saved_dir, 'train')
     # test_dir  = os.path.join(saved_dir, 'test')
 
@@ -147,5 +151,24 @@ if __name__ == '__main__':
     #         save_dir = os.path.join(test_dir, f"{start_index + video_index}.npy")
 
     #     np.save(save_dir, data_dict)
-    remove_video('dataset/NanyangTechRGB/test')
+    #remove_video('dataset/NanyangTechRGB/test')
 
+    # Sample script to show video 
+
+    video_file_path = NTU_VIDEO_PATH
+    cap = cv2.VideoCapture(os.path.join(video_file_path, 'S001C001P001R001A042_rgb.avi'))
+    num_frames = 0 
+    while True:
+      ret, frame = cap.read()
+      if not ret:
+        break  # End of video
+      num_frames += 1 
+    # Display the frame
+      cv2.imshow('A woman from NTU', frame)
+      
+      if cv2.waitKey(30) & 0xFF == 27:  # 27 = ESC key
+        break
+    print(num_frames)
+    # Release resources
+   # cap.release()
+   # cv2.destroyAllWindows()

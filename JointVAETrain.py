@@ -28,7 +28,7 @@ def train_per_epoch(model, train_loader, optimizer, criterion, epoch, device):
     losses = []
     total_predictions = get_penn_action_predictions_dict()
     print_step = len(train_loader) // 10
-    for batch_idx, (observed_poses, target_poses) in enumerate(train_loader):
+    for batch_idx, (observed_poses, target_poses, _, _) in enumerate(train_loader):
         observed_poses = observed_poses.to(device, dtype = torch.float32)
         target_poses   = target_poses.to(device, dtype = torch.float32)
 
@@ -73,7 +73,7 @@ def evaluate_per_epoch(model, val_loader, criterion, device):
     losses = []
     total_predictions = get_penn_action_predictions_dict()
     with torch.no_grad():
-     for _, (observed_poses, target_poses) in enumerate(val_loader):
+     for _, (observed_poses, target_poses, _, _) in enumerate(val_loader):
         observed_poses = observed_poses.to(device, dtype = torch.float32)
         target_poses   = target_poses.to(device, dtype = torch.float32)
         batch          = target_poses.shape[0]

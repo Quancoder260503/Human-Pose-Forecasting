@@ -1,13 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from util.KeyPointUtil import get_pennaction_joint_names
+from util.KeyPointUtil import get_pennaction_joint_names, get_pennaction_parents
 import torch 
+from model.LSTM import *
 
+def get_lstm_model(device, pose_dim = 13, parent_relative = False):
+    model = PosePredictionLSTM(pose_dim = pose_dim, parent_relative = parent_relative) 
+    model = model.to(device)
+    return model
 
-"""
-So far only for upenn, my change to adapt with other dataset after. 
-"""
-def get_penn_action_predictions_dict():
+def get_pennaction_predictions_dict():
     return {
         'total'       :  { 'all' : 0, 'correct' : 0 },
         'headtop'     :  { 'all' : 0, 'correct' : 0 },
@@ -26,7 +28,7 @@ def get_penn_action_predictions_dict():
     }
 
 
-def pck(pred, gt, threshold, predictions, joint_names):
+def pck(pred, gt, predictions, joint_names):
     """
      An estimation is considered correct if it lies within \alpha * max(h, w) from the true position, H_map, W_map is the height and width of the heat map 
      :param pred: tensor of shape (J, H_map, W_map) 
@@ -35,7 +37,7 @@ def pck(pred, gt, threshold, predictions, joint_names):
      :param predictions: previous average meters of joints 
      :return: predictions : next average meters of joints 
     """
-    alpha = 0.1
+    alpha = 0.05
     for i in range(pred.shape[0] - 1):  # all joints
         predictions['total']['all'] += 1
         predictions[joint_names[i]]['all'] += 1
@@ -54,36 +56,42 @@ def pck(pred, gt, threshold, predictions, joint_names):
 
             dist = np.sqrt((pred_x - gt_x) ** 2 + (pred_y - gt_y) ** 2)
 
-            if dist < alpha * threshold:  # threshold in pixels
+            if dist < alpha :  # threshold in pixels
                 predictions['total']['correct'] += 1
                 predictions[joint_names[i]]['correct'] += 1
 
     return predictions
 
 
-def pck_joints(pred, gt, threshold, predictions, joint_names): 
+def pck_joints(pred, gt, predictions, joint_names, eps=1e-3):
     """
-    Compute PCK (Percentage of Correct Keypoints) for each joint and overall.
-    
+    Compute PCK (Percentage of Correct Keypoints) for visible joints only.
     pred: tensor of shape (num_joints, 2) or (num_joints, 3)
     gt: tensor of same shape
-    threshold: reference distance (e.g., head size or torso length)
     predictions: dict containing counts for each joint and total
     joint_names: list of joint names
+    eps: threshold to consider a joint as visible (ignore near-zero coords)
     """
-    alpha = 0.1  # fraction of threshold
-    for i in range(pred.shape[0]): 
-        predictions['total']['all'] += 1 
-        predictions[joint_names[i]]['all'] += 1 
-    
-        dist = np.linalg.norm(pred[i].cpu().detach().numpy() * threshold - gt[i].cpu().detach().numpy() * threshold)
-        if dist < alpha * threshold: 
-            predictions['total']['correct'] += 1 
-            predictions[joint_names[i]]['correct'] += 1 
+    alpha = 0.05  # fraction of reference length
+
+    # visibility mask: gt has non-zero coordinates
+    visible = (gt[:, 0].abs() > eps) & (gt[:, 1].abs() > eps)
+
+    for i in range(pred.shape[0]):
+        if not visible[i]:
+            continue  # skip invisible joints
+
+        predictions['total']['all'] += 1
+        predictions[joint_names[i]]['all'] += 1
+
+        dist = np.linalg.norm(pred[i][:2].cpu().detach().numpy() - gt[i][:2].cpu().detach().numpy())
+        if dist < alpha:
+            predictions['total']['correct'] += 1
+            predictions[joint_names[i]]['correct'] += 1
+
     return predictions
 
-
-def compute_metric(pred_maps, gt_maps, threshold, time_step, joint_names):
+def compute_metric(pred_maps, gt_maps, time_step):
     '''
     :param pred_maps: tensor of shape (B, T, J, H_map, W_map)
     :param gt_maps: tensor of shape (B, T, J, H_map, W_map)
@@ -93,17 +101,18 @@ def compute_metric(pred_maps, gt_maps, threshold, time_step, joint_names):
     :return:
       predictions : results tracker
     '''
-    predictions = get_penn_action_predictions_dict()
+    predictions = get_pennaction_predictions_dict()
+    joint_names = get_pennaction_joint_names()
     for b in range(gt_maps.shape[0]):
         for t in range(time_step):
             gt = gt_maps[b, t, :, :, :]
             pred = np.array(pred_maps[b, t, :, :, :].cpu().data)
-            predictions = pck(pred, gt, threshold, predictions, joint_names)
+            predictions = pck(pred, gt, predictions, joint_names)
     return predictions
 
 
 
-def compute_joints_metric(pred, gt, threshold, time_step, joint_names): 
+def compute_joints_metric(pred, gt, time_step): 
     '''
     :param pred      : tensor of shape (B, T, J, 2)
     :param gt        : tensor of shape (B, T, J, 2)  
@@ -113,13 +122,39 @@ def compute_joints_metric(pred, gt, threshold, time_step, joint_names):
        predictions = result tracker 
     '''
 
-    predictions = get_penn_action_predictions_dict()
+    predictions = get_pennaction_predictions_dict()
+    joint_names = get_pennaction_joint_names()
     for b in range(gt.shape[0]): 
         for t in range(time_step):
             curr_pred = pred[b, t, :, :] # (J, 2)
             curr_gt   = gt[b, t, :, :]   # (J, 2)
-            predictions = pck_joints(curr_pred, curr_gt, threshold, predictions, joint_names)
+            predictions = pck_joints(curr_pred, curr_gt, predictions, joint_names)
     return predictions
+
+""" 
+Only for bone vectors 
+"""
+def reconstruct_pose(compressed_poses, scaled_factor, input_h = 480, input_w = 480, eps = 1e-2):
+        """
+        :param compressed_poses : a tensor of shape (B, T, 2 * J) where B = batch, T = time_step, J = num_joints
+        :param scaled_factor : a tensor of shapa (B, ) needed to reconstruct the pose 
+        :return : original poses (B, T, J, 2)
+        """ 
+        batch, time_step, _  = compressed_poses.shape 
+        compressed_poses = compressed_poses.contiguous().view(batch, time_step, -1, 2) # (B, T, J, 2)
+        original_poses = torch.zeros_like(compressed_poses)
+        pennaction_parents = get_pennaction_parents()
+        for b in range(batch): 
+            for t in range(time_step):
+                curr_vectors = compressed_poses[b, t, :, :] 
+                original_poses[b, t, 0, 0] = curr_vectors[0, 0] * input_w
+                original_poses[b, t, 0, 1] = curr_vectors[0, 1] * input_h
+                for joint, parent in enumerate(pennaction_parents[1:], start = 1):
+                        if abs(curr_vectors[parent, 0]) > eps and abs(curr_vectors[parent, 1]) > eps: 
+                            offset = curr_vectors[joint, :] * scaled_factor[b]
+                            original_poses[b, t, joint, :] = original_poses[b, t, parent, :] - offset 
+            
+        return original_poses / max(input_h, input_w)
 
 def get_acc(predictions):
     acc = {}

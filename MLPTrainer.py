@@ -1,20 +1,24 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
-import torch.nn as nn
+import torch.nn as nn 
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from JointLSTM import JointLSTM, LSTM_loss_function
-#from PennActionTrainingUtil import *
-#from data.PennAction import PennAction
-from NTUTrainingUtil import *
-from data.NTU import NTU
+from data.PennAction import PennAction
+from PennActionTrainingUtil import *
+from model.MLP import * 
 import os 
+import numpy as np
+import math 
 
-
-def get_model(device):
-    model = JointLSTM(pose_dim = 25 * 2) # Joints for NTU
+def get_model(device, pose_dim = 13 * 3, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024]):
+    model = PosePredictionMLP( 
+        pose_dim      = pose_dim,
+        train_len     = train_len, 
+        predict_len   = predict_len, 
+        hidden_layers = hidden_layers
+    )
     model = model.to(device)
     return model
+
 
 def train_per_epoch(model, train_loader, optimizer, criterion, epoch, device):
     """
@@ -28,8 +32,8 @@ def train_per_epoch(model, train_loader, optimizer, criterion, epoch, device):
 
     model.train()
     losses = []
-    total_predictions = get_ntu_predictions_dict()
-    print_step = 20
+    total_predictions = get_penn_action_predictions_dict()
+    print_step = 5
     for batch_idx, (observed_poses, target_poses) in enumerate(train_loader):
         observed_poses = observed_poses.to(device, dtype = torch.float32)
         target_poses   = target_poses.to(device, dtype = torch.float32)
@@ -37,7 +41,7 @@ def train_per_epoch(model, train_loader, optimizer, criterion, epoch, device):
         batch          = target_poses.shape[0]
         prediction_len = target_poses.shape[1]
 
-        predicted_poses= model(observed_poses, prediction_len)
+        predicted_poses = model(observed_poses)
         loss = criterion(predicted_poses, target_poses, prediction_len) 
 
         losses.append(loss.item())
@@ -45,9 +49,12 @@ def train_per_epoch(model, train_loader, optimizer, criterion, epoch, device):
         optimizer.step()
         optimizer.zero_grad()
 
+        predicted_poses = predicted_poses.contiguous().view(batch, prediction_len, -1, 3) 
+        target_poses    = target_poses.contiguous().view(batch, prediction_len, -1, 3)
+
         predictions = compute_joints_metric(
-            pred = predicted_poses.contiguous().view(batch, prediction_len, -1, 2),  
-            gt   = target_poses.contiguous().view(batch, prediction_len, -1, 2),  
+            pred = predicted_poses[:, :, :, :2],  
+            gt   = target_poses[:, :, :, :2],  
             time_step = prediction_len, 
         )
 
@@ -71,29 +78,31 @@ def evaluate_per_epoch(model, val_loader, criterion, device):
     """
     model.eval()
     losses = []
-    total_predictions = get_ntu_predictions_dict()
+    total_predictions = get_penn_action_predictions_dict()
     with torch.no_grad():
-     for _, (observed_poses, target_poses) in enumerate(val_loader):
-        observed_poses = observed_poses.to(device, dtype = torch.float32)
-        target_poses   = target_poses.to(device, dtype = torch.float32)
-        batch          = target_poses.shape[0]
-        prediction_len = target_poses.shape[1]
-        predicted_poses = model(observed_poses, prediction_len)
-        loss = criterion(predicted_poses, target_poses, prediction_len) 
-        losses.append(loss.item())
+        for _, (observed_poses, target_poses) in enumerate(val_loader):
+           observed_poses = observed_poses.to(device, dtype = torch.float32)
+           target_poses   = target_poses.to(device,   dtype = torch.float32)
+           batch          = target_poses.shape[0]
+           prediction_len = target_poses.shape[1]
+           predicted_poses = model(observed_poses)
+           loss = criterion(predicted_poses, target_poses, prediction_len) 
+           losses.append(loss.item())
 
-        predictions = compute_joints_metric(
-            pred = predicted_poses.contiguous().view(batch, prediction_len, -1, 2),  
-            gt   = target_poses.contiguous().view(batch, prediction_len, -1, 2),  
-            time_step = prediction_len, 
-        )
+           predicted_poses = predicted_poses.contiguous().view(batch, prediction_len, -1, 3) 
+           target_poses    = target_poses.contiguous().view(batch, prediction_len, -1, 3)
 
-        
-        for dict in predictions:
-            for key in predictions[dict]:
-                total_predictions[dict][key] += predictions[dict][key]
+           predictions = compute_joints_metric(
+              pred = predicted_poses[:, :, :, :2],  
+              gt   = target_poses[:, :, :, :2],  
+              time_step = prediction_len, 
+           )
+           for dict in predictions:
+               for key in predictions[dict]:
+                   total_predictions[dict][key] += predictions[dict][key]
 
     return np.mean(losses), total_predictions
+
 
 def train(time_step, 
           batch_size,
@@ -104,12 +113,12 @@ def train(time_step,
           num_epochs,
           title,
     ):
-  #  train_dataset = PennAction(total_frame = time_step, transform = PennAction.get_default_transform(), train = True, on_keypoints = True)
-    train_dataset = NTU(total_frame = time_step, train = True)
+    train_dataset = PennAction(total_frame = time_step, train = True, on_keypoints = True, on_debug_mode = False)
+#    train_dataset = NTU(total_frame = time_step, train = True)
     train_loader  = DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
 
-  #  val_dataset  = PennAction(total_frame = time_step, transform = PennAction.get_default_transform(), train = False, on_keypoints = True)
-    val_dataset  = NTU(total_frame = time_step, train = False)
+    val_dataset  = PennAction(total_frame = time_step, train = False, on_keypoints = True, on_debug_mode = False)
+  #  val_dataset  = NTU(total_frame = time_step, train = False)
     val_loader   = DataLoader(val_dataset, batch_size = batch_size, shuffle = True)
 
     print('-' * 40)
@@ -117,12 +126,11 @@ def train(time_step,
     print('Number of validation batches =', len(val_loader))
 
     print('-' * 40)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 
     print(device, 'is available')
 
-    checkpoint = 'checkpoint/joint_lstm_ntu.pth.tar'
+    checkpoint = 'checkpoint/baseline/joint_mlp_pennaction.pth.tar'
     
     start_epoch = 0 
     if os.path.exists(checkpoint): 
@@ -135,10 +143,11 @@ def train(time_step,
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=25, threshold = 1e-5)
    
     else : 
-        model = get_model(device) 
+        model = get_model(device, pose_dim = 13 * 3, train_len = time_step // 2, predict_len = time_step - time_step // 2) 
         optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate, betas = betas)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=25, threshold = 1e-5)
-    criterion = LSTM_loss_function
+    
+    criterion = mlp_loss_function
 
     best_accuracy = 0
     loss_list, metric_list = [], []
@@ -162,20 +171,20 @@ def train(time_step,
 
         if val_acc['total'] > best_accuracy : 
             best_accuracy = val_acc['total']
-            save_checkpoint(epoch, model, optimizer, model_name = 'joint_lstm_ntu' , prefix_dir_name = 'checkpoint/baseline_lstm/')
+            save_checkpoint(epoch, model, optimizer, model_name = 'joint_mlp_pennaction' , prefix_dir_name = 'checkpoint/baseline/')
 
-   # plot(np.array(loss_list), np.array(metric_list), title)
+    plot(np.array(loss_list), np.array(metric_list), title)
     return model, loss_list, metric_list
 
 if __name__ == '__main__':
     model, loss_list, metric_list = train(
-        time_step = 29, 
+        time_step = 14, 
         batch_size = 16,
         learning_rate = 1e-4,
         betas = (0.9, 0.999),
         scheduler_step = 40000,
         scheduler_gamma = 0.3333,
         num_epochs = 100,
-        title = 'Key Point LSTM Training',
+        title = 'Baseline MLP Training',
     )
 

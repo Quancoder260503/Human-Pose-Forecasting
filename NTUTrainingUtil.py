@@ -47,7 +47,7 @@ def pck(pred, gt, predictions):
      :param predictions: previous average meters of joints 
      :return: predictions : next average meters of joints 
     """
-    alpha = 0.01
+    alpha = 0.05
     joint_names = JOINT_NAMES
     for i in range(pred.shape[0] - 1):  # all joints
         predictions['total']['all'] += 1
@@ -83,7 +83,7 @@ def pck_joints(pred, gt, predictions):
     predictions: dict containing counts for each joint and total
     joint_names: list of joint names
     """
-    alpha = 0.01  # fraction of threshold
+    alpha = 0.05  # fraction of threshold
     joint_names = JOINT_NAMES
     for i in range(pred.shape[0]): 
         predictions['total']['all'] += 1 

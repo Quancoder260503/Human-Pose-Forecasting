@@ -419,3 +419,13 @@ JOINT_PARENT_INDS = [
 ]
 
 EVAL_PERFORMERS = {6, 14, 27, 28, 31, 32, 37, 40}
+
+
+def get_ntu_skeleton():
+    skeletons = []
+    for child_index, childname in enumerate(JOINT_NAMES): 
+       parent_index = JOINT_INDS[JOINT_PARENT_NAMES[childname]]
+       if parent_index == child_index : 
+           continue 
+       skeletons.append([parent_index, child_index])
+    return skeletons

@@ -9,14 +9,17 @@ So far just experiment mainly on joints
 An idea that can be implement directly : 
 joint based self-attention for the encoder the RNN only captures temporal information, 
 it does not directly learn the interaction between the joints. Try attention to captures 
-relevant information
+relevant information. 
 
+Find a way to encode joints or time embedding, or can combine both 
+
+KEYS : first train the model on a small set of data to see if it works
 '''
 class MultiHeadAttention(nn.Module): 
     '''
     Muli-Head Attention Layer 
     '''
-    def __init__(self, num_heads, dim_model, dim_queries, dim_values, dropout, in_decoder = False): 
+    def __init__(self, num_heads, dim_model, dim_queries, dim_values, dropout, self_attention, in_decoder = False): 
         """
         :param num_heads   : number of attention heads 
         :param dim_model   : model dimension
@@ -27,47 +30,41 @@ class MultiHeadAttention(nn.Module):
         """
 
         super(MultiHeadAttention, self).__init__() 
-        self.num_heads = num_heads 
-        self.dim_model = dim_model 
-        self.dim_queries = dim_queries 
-        self.dim_values  = dim_values 
-        self.dropout     = nn.Dropout(dropout)
-        self.in_decoder  = in_decoder
-        self.proj_q = nn.Linear(dim_model, num_heads * dim_queries) 
-        self.proj_k = nn.Linear(dim_model, num_heads * dim_values)
-        self.proj_v = nn.Linear(dim_model, num_heads * dim_values)
-        self.proj_o = nn.Linear(num_heads * dim_values, dim_model)
-        self.layer_norm = nn.Linear(dim_model)
-        self.softmax    = nn.Softmax(dim = -1) 
+        self.num_heads      = num_heads 
+        self.dim_model      = dim_model 
+        self.dim_queries    = dim_queries 
+        self.dim_values     = dim_values 
+        self.dropout        = nn.Dropout(dropout)
+        self.in_decoder     = in_decoder
+        self.self_attention = self_attention
+        self.proj_q         = nn.Linear(dim_model, num_heads * dim_queries) 
+        self.proj_k         = nn.Linear(dim_model, num_heads * dim_values)
+        self.proj_v         = nn.Linear(dim_model, num_heads * dim_values)
+        self.proj_o         = nn.Linear(num_heads * dim_values, dim_model)
+        self.layer_norm     = nn.Linear(dim_model)
+        self.softmax        = nn.Softmax(dim = -1) 
 
     def forward(self, q_poses, kv_poses): 
         """
-        For this task, dim_model is 2 * sequence_length 
-        :param q_poses : input query sequences, a tensor of shape (B, query_len, J, 2) 
-        :param kv_poses : input_kv   sequences, a tensor of shape (B, kv_len,    J, 2) 
-        
-        So far, support only self-attention, to ensure that query_len == kv_len, 
-        Update the design later to include sequence_len
-        For self attention, query_len == kv_len 
+        :param q_poses : input query sequences, a tensor of shape (B, J, dim_model) 
+        :param kv_poses : input_kv   sequences, a tensor of shape (B, J, dim_model) 
         """
         batch_size = q_poses.shape[0]
-        query_len  = q_poses.shape[1]
-        num_joints = q_poses.shape[2]
-        kv_len     = kv_poses.shape[1]
+        num_joints = q_poses.shape[1]
 
-        assert torch.equal(num_joints, kv_poses.shape[2]) 
-        self_attention = torch.equal(query_len, kv_len)
-        q_poses = q_poses.permute(0, 2, 1, 3).contiguous().view(batch_size, num_joints, -1) # (B, J, query_len * 2)
-        kv_poses = kv_poses.permute(0, 2, 1, 3).contiguous().view(batch_size, num_joints, -1) # (B, J, kv_len  * 2)
-        curr_q_poses = q_poses.clone() # (B, J, query_len * 2) 
+        assert torch.equal(num_joints, kv_poses.shape[1]) 
+        self_attention = not self.in_decoder
 
-        q_poses = self.layer_norm(q_poses) 
-        if self_attention : 
+        curr_q_poses = q_poses.clone() # (B, J, dim_model) 
+
+        q_poses = self.layer_norm(q_poses)  
+        
+        if self.self_attention:
             kv_poses = self.layer_norm(kv_poses) 
 
         query = self.proj_q(q_poses)  # (B, J, query_dim * num_heads) 
         key   = self.proj_k(kv_poses) # (B, J, query_dim * num_heads)
-        val   = self.proj_v(kv_poses) # (B, J, value_dim * num_head) 
+        val   = self.proj_v(kv_poses) # (B, J, value_dim * num_heads) 
 
         query = query.contiguous().view(batch_size, num_joints, self.num_heads, -1) # (B, J, num_heads, query_dim) 
         key   = key.contiguous().view(batch_size, num_joints, self.num_heads,   -1) # (B, J, num_heads, query_dim)
@@ -77,18 +74,18 @@ class MultiHeadAttention(nn.Module):
         key   = key.permute(0, 2, 1, 3).contiguous().view(batch_size * self.num_heads,   num_joints, -1) # (B * n_heads, J, query_dim) 
         val   = val.permute(0, 2, 1, 3).contiguous().view(batch_size * self.num_heads,   num_joints, -1) # (B * n_heads, J, value_dim)
 
-        attention_weights = torch.bmm(query, key.permute(0, 2, 1)) / math.sqrt(self.dim_queries) # (B * n_heads, J, n_joints) 
+        attention_weights = torch.bmm(query, key.permute(0, 2, 1)) / math.sqrt(self.dim_queries) # (B * n_heads, J, J) 
         
         ## TODO : implement the masked out for Decoder later ? 
+
         attention_weights = self.softmax(attention_weights)
         attention_weights = self.dropout(attention_weights) 
 
         attn_values = torch.bmm(attention_weights, val)  # (B * n_heads, J, value_dim)
         attn_values = attn_values.contiguous().view(batch_size, self.num_heads, num_joints, self.dim_values)
         attn_values = attn_values.permute(0, 2, 1, 3).contiguous().view(batch_size, num_joints, -1) # (B, J, n_heads * value_dim)
-        out_poses = self.proj_o(attn_values) # (B, J, query_len * 2) 
-        out_poses = self.dropout(out_poses) + curr_q_poses # (B, J, query_len * 2) 
-        out_poses = out_poses.contiguous().view(batch_size, num_joints, query_len, 2).permute(0, 2, 1, 3) 
+        out_poses = self.proj_o(attn_values) # (B, J, dim_model) 
+        out_poses = self.dropout(out_poses) + curr_q_poses # (B, J, dim_model) 
         return out_poses
 
 class JointWiseFFN(nn.Module): 
@@ -112,13 +109,8 @@ class JointWiseFFN(nn.Module):
 
     def forward(self, poses): 
         ''' 
-        :param poses : a tensor of shape (batch_size, observed_len, J, 2)
+        :param poses : a tensor of shape (batch_size, J, dim_model)
         '''
-        batch_size   = poses.shape[0] 
-        observed_len = poses.shape[1]
-        num_joints   = poses.shape[2]
-        poses = poses.permute(0, 2, 1, 3)
-        poses = poses.contigouos().view(batch_size, num_joints, -1) # (batch_size, J, observed_len * 2) 
         prev_poses = poses.clone() 
         poses      = self.layer_norm(poses) 
         
@@ -128,10 +120,8 @@ class JointWiseFFN(nn.Module):
         poses = self.apply(self.dropout)
 
         # Second Layer 
-        poses = self.fc_2(poses) # (batch_size, J, observed_len * 2) 
+        poses = self.fc_2(poses) # (batch_size, J, dim_model) 
         poses = self.dropout(poses) + prev_poses 
-
-        poses = poses.contiguous().view(batch_size, num_joints, observed_len, 2).permute(0, 2, 1, 3) # (batch_size, observed_len, J, 2) 
         return poses 
 
 class Encoder(nn.Module):
@@ -141,7 +131,7 @@ class Encoder(nn.Module):
     Second step, is to come up with Decoder part of Transformer 
     Third  step, extend this to latent space, get the noise sampled from the Encoder and use it to guide Diffusion Model
     """
-    def __init__(self, num_joints, pose_length, num_heads, query_dim, value_dim, fc_hidden_dim, num_layers, dropout): 
+    def __init__(self, num_joints, pose_length, num_heads, model_dim, query_dim, value_dim, fc_hidden_dim, num_layers, dropout): 
         """
         :param num_joints    : number of annotated joints 
         :param pose_length   : observed pose sequences length 
@@ -156,13 +146,14 @@ class Encoder(nn.Module):
         self.num_joints    = num_joints 
         self.pose_length   = pose_length 
         self.num_heads     = num_heads 
+        self.model_dim     = model_dim
         self.query_dim     = query_dim
         self.value_dim     = value_dim 
         self.fc_hidden_dim = fc_hidden_dim 
         self.num_layers    = num_layers 
         self.dropout       = dropout
-        self.layernorm     = nn.LayerNorm(self.pose_length * 2)
-
+        self.layernorm     = nn.LayerNorm(self.model_dim) 
+        self.embedding_fc  = nn.Linear(self.pose_length * 2, self.model_dim)
         # Embedding, a solution to adapt to archicture, is to project stuff to the embedded space
         # but for now, keep the old approach
         self.encoder_layers = nn.ModuleList([
@@ -175,7 +166,7 @@ class Encoder(nn.Module):
         """
         encoder_layer = nn.ModuleList([
             MultiHeadAttention(
-                dim_model   = self.pose_length * 2, # pose_length * [dim(x, y) = 2] 
+                dim_model   = self.model_dim, # pose_length * [dim(x, y) = 2] 
                 num_heads   = self.num_heads, 
                 dim_queries = self.query_dim, 
                 dim_values  = self.value_dim, 
@@ -183,7 +174,7 @@ class Encoder(nn.Module):
                 in_decoder  = False, 
             ), 
             JointWiseFFN(
-                d_model = self.pose_length * 2, 
+                d_model = self.model_dim, 
                 d_inner = self.fc_hidden_dim, 
                 dropout = self.dropout
             )
@@ -197,20 +188,104 @@ class Encoder(nn.Module):
         :param observed_poses : tensor of shape (B, train_len, J, 2)
         : return : 
             can adjust this 
-            tensor of shape (B, train_len, J, 2)
+            tensor of shape (B, J, model_dim) 
         """
+        batch = observed_poses.shape[0]
+        observed_poses = observed_poses.permute(0, 2, 1, 3).contiguous().view(batch, self.num_joints, -1) # (B, J, train_len * 2)
+        observed_poses = self.embedding_fc(observed_poses) # (B, J, dim_model)
         for encoder_layer in self.encoder_layers: 
             observed_poses = encoder_layer[0](observed_poses, observed_poses)
             observed_poses = encoder_layer[1](observed_poses)
-        batch_size = observed_poses.shape[0] 
-        observed_poses = observed_poses.permute(0, 2, 1, 3).contiguous().view(batch_size, self.num_joints, -1)
-        observed_poses = self.layernorm(observed_poses)
-        observed_poses = observed_poses.contiguous().view(batch_size, self.num_joints, -1, 2)
-        observed_poses = observed_poses.permute(0, 2, 1, 3) 
+        observed_poses = self.layernorm(observed_poses) # (B, J, dim_model)
         return observed_poses
-    
 
+class Decoder(nn.Module): 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+class JointAttentionLSTM(nn.Module):
+    def __init__(self, 
+                 num_joints     = 13, 
+                 pose_length    = 15,
+                 num_heads      = 8,  
+                 query_dim      = 64, 
+                 value_dim      = 64, 
+                 model_dim      = 512, 
+                 fc_hidden_dim  = 2048,
+                 num_attention_layers = 6,
+                 embedding_dim  = 1024,   
+                 hidden_dim     = 256, 
+                 num_layers     = 1, 
+                 dropout        = 0.2, 
+                 device         = 'cuda' 
+    ): 
+        super(JointAttentionLSTM, self).__init__()
+        self.pose_dim       = num_joints
+        self.pose_length    = pose_length 
+        self.num_heads      = num_heads 
+        self.query_dim      = query_dim 
+        self.value_dim      = value_dim
+        self.model_dim      = model_dim
+        self.hidden_dim     = hidden_dim 
+        self.num_layers     = num_layers
+        self.dropout        = dropout 
+        self.device         = device
+
+        self.joint_attention_encoder = Encoder(
+            num_joints    = num_joints, 
+            pose_length   = pose_length, 
+            num_heads     = num_heads, 
+            model_dim     = model_dim, 
+            query_dim     = query_dim,
+            value_dim     = value_dim, 
+            fc_hidden_dim = fc_hidden_dim, 
+            num_layers    = num_attention_layers, 
+            dropout       = dropout
+        ) # Use Transformer encoder as the main decoder
+
+        self.embed_proj    = nn.Linear(num_joints * model_dim, embedding_dim) 
+
+        self.decoder = nn.LSTM(
+            input_size  = embedding_dim, 
+            hidden_size = hidden_dim, 
+            dropout     = dropout, 
+            num_layers  = num_layers, 
+            batch_first = True 
+        )
+
+        self.output_fc = nn.Linear(hidden_dim, 2)
+    
+    def forward(self, observed_poses, prediction_len = 14):
+        """
+        :param observed_poses : tensor of shape (Batch, train_len, J, 2) 
+        :return : tensor of shape 
+        """
+        batch, _, _, _ = observed_poses.shape
+
+        embedded_poses = self.joint_attention_encoder(observed_poses, observed_poses) # (B, J, d_model)
+        embedded_poses = embedded_poses.contiguous().viet(batch, -1)                  # (B, J, d_model)
+        embedded_poses = self.embed_proj(embedded_poses)                              # (B, embedding_dim)
+        last_observed = observed_poses[:, -1, :].unsqueeze(1)                         # (Batch, 1, pose_dim)
         
+        predicted_poses = [] 
+
+        lstm_state = (
+            torch.zeros(self.num_layers, batch, self.hidden_dim, device = self.device, dtype = torch.float32), 
+            torch.zeros(self.num_layers, batch, self.hidden_dim, device = self.device, dtype = torch.float32)
+        )
+
+        for t in range(prediction_len): 
+             embedded_last = self.embedding_fc(last_observed) # (batch, 1, embedding_dim)
+             output, lstm_state = self.decoder(embedded_last, lstm_state) # output : (batch, 1, hidden_dim) 
+             curr_poses = output.squeeze(1)  # (batch, hidden_dim)
+             curr_poses = self.output_fc(curr_poses) # (batch, pose_dim)
+             predicted_poses.append(curr_poses)
+             last_observed = curr_poses.unsqueeze(1) # (batch, 1, pose_dim)
+        
+        predicted_poses = torch.stack(predicted_poses, dim = 1) # (batch, test_len, pose_dim) 
+
+        return predicted_poses
+    
     
 # def LSTM_loss_function(pred_joints, gt_joints, time_step):
 #     """

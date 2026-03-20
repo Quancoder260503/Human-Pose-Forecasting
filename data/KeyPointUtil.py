@@ -1,4 +1,5 @@
 import numpy as np
+import torch 
 
 def convert_kps(joints2d, src, dst):
     src_names = eval(f'get_{src}_joint_names')()
@@ -17,6 +18,16 @@ def get_perm_idxs(src, dst):
     dst_names = eval(f'get_{dst}_joint_names')()
     idxs = [src_names.index(h) for h in dst_names if h in src_names]
     return idxs
+
+def speed_to_pos(prediction_velocities, observed_poses, device = 'cuda'):
+    batch_size, pose_len, pose_dim = prediction_velocities.shape
+    predicted_poses = torch.zeros(batch_size, pose_len, pose_dim).to(device) 
+    current = observed_poses[:, -1, :].clone().detach()
+    for t in range(pose_len):
+        predicted_poses[:, t, :] = current + prediction_velocities[:, t, :]
+        current = predicted_poses[:, t, :].clone().detach()
+    return predicted_poses
+
 
 def get_pennaction_joint_names():
    return [

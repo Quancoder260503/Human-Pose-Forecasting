@@ -310,3 +310,4 @@ def torch2numpy(image):
     image = image.numpy() * 255.
     image = np.transpose(image, (1, 2, 0))
     return image.astype(np.uint8)
+

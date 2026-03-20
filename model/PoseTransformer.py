@@ -9,6 +9,7 @@ For now, just experiment mainly on joints
 :TODO : for velocity based approach, replace the LSTM in the decoupled pose paper by this Transformer Architecture, could have make 
 it learn the latent space mean and variance (an effective way to capture complex distribution of human motion ?). 
 :TODO : write up extra notes about the effect of positional embedding 
+:TODO : visualize attention 
 '''
 
 class MultiHeadAttention(nn.Module): 

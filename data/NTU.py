@@ -23,14 +23,16 @@ TODO :
 2. Implementing RootRelative, Bone Vector + Velocity
 '''
 
+NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames/nturgb+d_rgb'
+
 class NTU(Dataset):
     def __init__(self,
         num_training_frame = 7, 
         num_testing_frame  = 7, 
         ntu_input_w = 1920, 
         ntu_input_h = 1080, 
-        input_w = 480,
-        input_h = 480,
+        input_w = 640,
+        input_h = 640,
         map_h   = 46,
         map_w   = 46,
         num_joints     = 25,
@@ -43,7 +45,6 @@ class NTU(Dataset):
         velocity       = False, 
         coordinates    = False, 
         on_debug_mode  = False,
-        require_name   = False, 
     ):
         """
         :param num_training_frame : frames extracted for training
@@ -86,10 +87,10 @@ class NTU(Dataset):
         self.velocity      = velocity 
         self.coordinates   = coordinates
         self.on_debug_mode = on_debug_mode
-        self.require_name  = require_name
         self.ntu_parents   = JOINT_PARENT_NAMES
         self.joint_names   = JOINT_NAMES 
-        self.action_names  = ACTION_CLASSES
+        self.action_names  = ACTION_CLASSES 
+        self.require_image = require_image 
 
     def __len__(self):
         return len(self.frames_data)
@@ -112,11 +113,11 @@ class NTU(Dataset):
         assert sum(flags) == 1, "Exactly one of root_relative, coordinates, or velocity must be True"
         
         if self.coordinates : 
-            observed_poses, target_poses, name = self.transformation(data)
-            if self.require_name : 
-               return observed_poses, target_poses, name  
+            observed_poses, target_poses, observed_images, target_images, name = self.transformation(data)
+            if self.require_image: 
+               return observed_poses, target_poses, observed_images, target_images, name  
             else : 
-               return observed_poses, target_poses
+               return observed_poses, target_poses, name 
         elif self.bone_vector : 
             pass # to implement 
             
@@ -165,16 +166,29 @@ class NTU(Dataset):
 
         label  = torch.cat([label, visibility], dim = -1) # (x, y, visibility)
 
-        observed_poses = label[start_index : start_index + self.num_training_frame, :, :] 
-        observed_poses = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3) 
+        observed_poses  = label[start_index : start_index + self.num_training_frame, :, :] 
+        observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3) 
 
-        target_poses = label[start_index + self.num_training_frame : start_index + total_frame, :, :]
-        target_poses = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
+        target_poses  = label[start_index + self.num_training_frame : start_index + total_frame, :, :]
+        target_poses  = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
 
         #assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
         observed_poses[torch.isnan(observed_poses)] = 0.5 
         target_poses[torch.isnan(target_poses)]     = 0.5
-        return observed_poses, target_poses, name
+
+        if self.require_image : 
+            video_frames = self.capture_video_frame(NTU_VIDEO_PATH, video_name =  name) 
+            if video_frames is not None :
+                resized_frames = []  
+                for image in video_frames : 
+                    resized_frames.append(cv2.resize(image, (self.input_w, self.input_h)))
+                video_frames = np.array(resized_frames) 
+                observed_images = video_frames[start_index : start_index + self.num_training_frame, :, :, :] 
+                target_images   = video_frames[start_index + self.num_training_frame : start_index + total_frame, :, :, :] 
+                return observed_poses, target_poses, observed_images, target_images, name 
+        
+       
+        return observed_poses, target_poses, None, None, name
 
         # For now, skip these twos 
         # heat_maps  =  self.gen_heat_map(
@@ -269,6 +283,17 @@ class NTU(Dataset):
         activity_id    = int(pattern[17 :])
         return (setup_id, camera_id, subject_id, replication_id, activity_id)
     
+    @staticmethod
+    def capture_video_frame(video_file_path, video_name):
+      cap = cv2.VideoCapture(os.path.join(video_file_path, video_name.split('.')[0] + '_rgb.avi'))
+      frames = []
+      while True:
+        ret, frame = cap.read()
+        if not ret:
+           break  # End of video
+        frames.append(frame) 
+      return np.array(frames)
+    
 def get_colors():
     colors = {
         'pink' : np.array([197, 27, 125]),  # L lower leg
@@ -308,17 +333,17 @@ def draw_skeleton(image, kp_2d, thickness = 1, shadow = 0.3):
             cv2.line(image, pt1, pt2, color, thickness= 2)
     return image
 
-if __name__ == '__main__': 
-    ntu = NTU(train = True, coordinates = True) 
-    observed_poses, target_poses, name = ntu[0]
-    print(name) 
-    fig, axes = plt.subplots(1, 3, figsize = (24, 8))
-    for index in range(min(3, len(observed_poses))):
-        curr_frame_pose = observed_poses[index, :].contiguous().view(25, 3) 
-        curr_frame_pose[:, 0] = curr_frame_pose[:, 0] * 1080
-        curr_frame_pose[:, 1] = curr_frame_pose[:, 1] * 1080
-        background_img  = (np.ones((1080, 1080, 3)) * 255).astype(np.uint8) 
-        annotated_img   = draw_skeleton(background_img, curr_frame_pose.detach().cpu().numpy()) 
-        axes[index].imshow(annotated_img)    
-    plt.tight_layout()
-    plt.show()
+#if __name__ == '__main__': 
+    # ntu_set = NTU(train = False, coordinates = True)
+    # observed_poses, target_poses, observed_images, target_images, name = ntu[62]
+    # print(name) 
+    # fig, axes = plt.subplots(1, 3, figsize = (24, 24))
+    # for index in range(min(3, len(observed_poses))):
+    #     curr_frame_pose = observed_poses[index, :].contiguous().view(25, 3) 
+    #     curr_frame_pose[:, 0] = curr_frame_pose[:, 0] * ntu.input_w
+    #     curr_frame_pose[:, 1] = curr_frame_pose[:, 1] * ntu.input_h
+    #     background_img  = observed_images[index, :, :, :]
+    #     annotated_img   = draw_skeleton(background_img, curr_frame_pose.detach().cpu().numpy()) 
+    #     axes[index].imshow(annotated_img)    
+    # plt.tight_layout()
+    # plt.show()

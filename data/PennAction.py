@@ -27,12 +27,12 @@ class PennAction(Dataset):
         gaussian_sigma = 21,
         data_dir = 'dataset/PennAction/',
         train = True,
-        require_image  = False, 
-        require_action = False, 
-        bone_vector    = False, 
-        velocity       = False, 
-        coordinates    = False, 
-        on_debug_mode  = False,
+        require_image   = False, 
+        require_action  = False, 
+        parent_relative = False, 
+        velocity        = False, 
+        coordinates     = False, 
+        on_debug_mode   = False,
     ):
         """
         :param num_training_frame : frames extracted for training
@@ -44,7 +44,7 @@ class PennAction(Dataset):
         :param data_dir           : root to dataset 
         :param train              : is this training set ? 
         :param require_action     : including action label ? 
-        :param bone_vector        : input processed as normalized root bone_vector ?
+        :param parent_relative    : input processed as normalized root bone_vector ?
         :param velocity           : input processed as velocity (displacment) of key joints on different frames ?
         :param coordinates        : input processed as local coordinate of the image ? 
         :param on_debug_mode      : extract only one instance ? used only for debugging model   
@@ -68,11 +68,11 @@ class PennAction(Dataset):
         else :
             self.data_dir = data_dir + 'test/'
 
-        self.frames_data   = os.listdir(self.data_dir)
-        self.bone_vector   = bone_vector 
-        self.velocity      = velocity 
-        self.coordinates   = coordinates
-        self.on_debug_mode = on_debug_mode
+        self.frames_data        = os.listdir(self.data_dir)
+        self.parent_relative    = parent_relative
+        self.velocity           = velocity 
+        self.coordinates        = coordinates
+        self.on_debug_mode      = on_debug_mode
         self.pennaction_parents = get_pennaction_parents()
 
     def __len__(self):
@@ -101,16 +101,18 @@ class PennAction(Dataset):
                return observed_poses, target_poses, observed_images, target_images
             else : 
               return observed_poses, target_poses
-        elif self.bone_vector : 
+        elif self.parent_relative : 
             observed_bones, target_bones, observed_poses, target_poses, scaled_factor, observed_images, target_images = self.transformation(data) 
             if self.require_image : 
                 return observed_bones, target_bones, observed_poses, target_poses, scaled_factor, observed_images, target_images
             else : 
                 return observed_bones, target_bones, observed_poses, target_poses, scaled_factor
         else : 
-
-
-            pass 
+            observed_poses, target_poses, observed_velocity, target_velocity,  observed_images, target_images = self.transformation(data) 
+            if self.require_image : 
+                return observed_poses, target_poses, observed_velocity, target_velocity, observed_images, target_images
+            else : 
+                return observed_poses, target_poses, observed_velocity, target_velocity 
             
     def transformation(self, data, num_joints = 13): 
         '''
@@ -202,7 +204,7 @@ class PennAction(Dataset):
 
             return observed_poses, target_poses, observed_img, target_img 
 
-        elif self.bone_vector: 
+        elif self.parent_relative: 
            observed_poses = torch.tensor(label[:, :, : self.num_training_frame])
            observed_poses = observed_poses.permute(2, 1, 0) # (Time, J, 3) 
            observed_bones = torch.tensor(vector_label[:, :, : self.num_training_frame]) # (2, J, train_len)
@@ -218,9 +220,43 @@ class PennAction(Dataset):
 
            return observed_bones, targeted_bones, observed_poses, target_poses, scale_factor, observed_img, target_img
         
-        else : # Velocity implementation
-            pass 
+        else : # Velocity implementation 
 
+            # This is poor software practice, but given the scale of the experiment, this can be neglected 
+
+            # Observed pose transformation 
+
+            observed_poses = torch.tensor(label[:2, :, : self.num_training_frame]) 
+            observed_masks = torch.tensor(label[2,  :, : self.num_training_frame])
+            observed_poses = observed_poses.permute(2, 1, 0) 
+            observed_masks = observed_masks.permute(1, 0) 
+            observed_poses = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 2) 
+            observed_poses[torch.repeat_interleave(observed_masks, 2, dim = -1) == 0] = np.nan
+
+            observed_velocity = observed_poses[1 :, :] - observed_poses[:-1, :] 
+
+            # Target pose transformation 
+            target_poses = torch.tensor(label[:2, :, self.num_training_frame : ]) 
+            target_masks = torch.tensor(label[2,  :, self.num_training_frame : ])
+            target_poses = target_poses.permute(2, 1, 0) 
+            target_masks = target_masks.permute(1, 0) 
+            target_poses = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 2) 
+            target_poses[torch.repeat_interleave(target_masks, 2, dim = -1) == 0] = np.nan
+
+            target_velocity = torch.cat([target_poses[0, :] - observed_poses[-1, :],  target_poses[1:, :] -  target_poses[:-1, :]], dim = 0)
+
+            observed_poses[torch.isnan(observed_poses)] = 0.5
+            target_poses[torch.isnan(target_poses)]     = 0.5
+
+            observed_poses = torch.cat([observed_poses.contiguous().view(-1, num_joints, 2), observed_masks.unsqueeze(-1)], dim = -1) 
+            target_poses   = torch.cat([target_poses.contiguous().view(-1, num_joints, 2),   target_masks.unsqueeze(-1)],   dim = -1)
+            observed_poses = observed_poses.contiguous().view(-1, num_joints * 3) 
+            target_poses   = target_poses.contiguous().view(-1,   num_joints * 3)
+
+            observed_velocity[torch.isnan(observed_velocity)] = 0 
+            target_velocity[torch.isnan(target_velocity)]     = 0
+
+            return observed_poses, target_poses, observed_velocity, target_velocity, observed_img, target_img 
 
 
         # For now, skip these twos 

@@ -4,8 +4,8 @@ import torch
 import pyrender
 import numpy as np
 from matplotlib import pyplot as plt
-from util.ImgUtil import torch2numpy, normalize_2d_kp
-import util.KeyPointUtil
+from data.ImgUtil import torch2numpy, normalize_2d_kp
+import data.KeyPointUtil
 
 class WeakPerspectiveCamera(pyrender.Camera):
     def __init__(self,

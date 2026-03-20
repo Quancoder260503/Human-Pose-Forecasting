@@ -2,25 +2,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-'''
-Encoder-Decoder LSTM for generating sequence of poses, the training data will try to minimise 
-the result of the coordinates of the joints (Baseline Method)
-
-Test on the velocity based approach
-An idea that can be implement directly : 
-joint based self-attention for the encoder the RNN only captures temporal information, 
-it does not directly learn the interaction between the joints. 
-Note that in the case of pose_dim * 3, then the last dimension is used for confidence probability of joint apperance in a frame 
-'''
-
 class PosePredictionLSTM(nn.Module):
-    """
-    In the case of pose_dim * 2 -> parent relative location
-                   pose_dim * 3 -> normalized keypoints + visibility 
-    """
-    def __init__(self, pose_dim = 13, parent_relative = False, embedding_dim = 2048, hidden_dim = 256, num_layers = 2, dropout = 0.2, device = 'cuda'): 
+    def __init__(self, pose_dim = 13, coordinates = 3, embedding_dim = 2048, hidden_dim = 256, num_layers = 2, dropout = 0.2, device = 'cuda'): 
+        """
+        :param pose_dim : per joint information
+        :param embedding_dim : embedding dimension 
+        :param hidden_dim    : Recurrent Neural Network hidden dimension 
+        :param num_layers    : the number of layers for Recurrent Neural Network
+        :param dropout       : dropout probability ? 
+        :param device        : device of tensor 
+        """
         super(PosePredictionLSTM, self).__init__()
-        self.pose_dim       = pose_dim * (2 if parent_relative else 3)
+        self.pose_dim       = pose_dim * (3 if coordinates else 2)
         self.embedding_dim  = embedding_dim 
         self.hidden_dim     = hidden_dim 
         self.num_layers     = num_layers
@@ -52,7 +45,6 @@ class PosePredictionLSTM(nn.Module):
         :param observed_poses : tensor of shape (Batch, Train_Len, pose_dim) 
         :return : tensor of shape 
         """
-
         batch, _, _ = observed_poses.shape
 
         lstm_state = (
@@ -78,10 +70,10 @@ class PosePredictionLSTM(nn.Module):
         return predicted_poses
 
 
-def LSTM_loss_function(pred_joints, gt_joints, time_step):
+def lstm_loss_function(pred_joints, gt_joints, time_step):
     """
-    :param pred_joints : (B, T, 39)
-    :param gt_joints   : (B, T, 39)   
+    :param pred_joints : (B, T, pose_dim)
+    :param gt_joints   : (B, T, pose_dim)   
     :param time_step   : prediction time step 
     :return:
     """
@@ -95,11 +87,15 @@ def LSTM_loss_function(pred_joints, gt_joints, time_step):
         total_loss = total_loss + curr_loss
     return total_loss / time_step
 
-# if __name__ == "__main__":
-#     dummy = torch.randn(4, 10, 26).to('cuda') 
-#     model = PosePredictionLSTM().to('cuda')
-#     trainable_params = sum(p.numels() for p in model.parameters() if p.requires_grad)
-
-#     print(trainable_params)
-#     out = model(dummy, 15)
-#     print(out.shape)
+def get_lstm_model(pose_dim = 13, coordinates = True, embedding_dim = 2048, hidden_dim = 256, num_layers = 2, dropout = 0.2, device = 'cuda'):
+    model = PosePredictionLSTM(
+        pose_dim = pose_dim, 
+        coordinates = coordinates, 
+        embedding_dim = embedding_dim, 
+        hidden_dim = hidden_dim, 
+        num_layers = num_layers, 
+        dropout = dropout, 
+        device = device
+    ) 
+    model = model.to(device)
+    return model

@@ -1,13 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from util.KeyPointUtil import get_pennaction_joint_names, get_pennaction_parents
+from data.KeyPointUtil import get_pennaction_joint_names, get_pennaction_parents
 import torch 
 from model.LSTM import *
-
-def get_lstm_model(device, pose_dim = 13, parent_relative = False):
-    model = PosePredictionLSTM(pose_dim = pose_dim, parent_relative = parent_relative) 
-    model = model.to(device)
-    return model
 
 def get_pennaction_predictions_dict():
     return {

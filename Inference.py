@@ -3,14 +3,14 @@ Script that investigate the actual performance of models
 """
 import torch 
 import os 
-from PennActionTrainingUtil import get_lstm_model
+from TrainingUtil import get_lstm_model
 from data.PennAction import PennAction
 from data.NTU import *
 import cv2 
 import matplotlib.pyplot as plt 
 from data.KeyPointUtil import convert_kps, get_pennaction_joint_names
 from data.ImgUtil import torch2numpy
-from PennActionTrainingUtil import *
+from TrainingUtil import *
 from NTUTrainingUtil import *
 from model.LSTM import *
 import math 

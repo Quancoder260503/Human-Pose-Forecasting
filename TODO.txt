@@ -13,14 +13,16 @@ into the network to train (Done)
 
 # Becareful about adding noise. 
 
-# Pivoting a joint, then find the relation of other key points to the pivot 
+# Pivoting a joint, then find the relation of other key points to the pivot (Done but only for NTU) 
 
 # For missing data, put (0.5, 0.5) and embedde the visibility into the input (Done) 
 
 # Make the model larger and train for longer, train on a (single instance, single batches)
+
 # Keep track of literatures 
 
 # Use HRNet to get the joint heat maps to get the joint for non-annotated video 
 # 
 # Prepare : Model architecture + slides 
+
 # Setup a benchmark and comparison, ready for report, including image and poses 

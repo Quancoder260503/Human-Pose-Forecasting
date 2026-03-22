@@ -5,6 +5,8 @@ import torch.nn.functional as F
 """
 Model human motion using VAE, note that the input for this model would have to be in 
 the form of vectors
+
+:TODO, replace, q_theta
 """
 
 class Encoder(nn.Module): 

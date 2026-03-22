@@ -5,12 +5,13 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from model.Lstm   import *
 from model.Mlp    import *
-from model.RnnVae import *
-from PennActionTrainingUtil import *
+from model.MotionVae import *
+from TrainingUtil import *
 from data.PennAction import PennAction
-from data.KeyPointUtil import *
 import os 
 import argparse 
+
+PRINT_STEP = 10 
 
 
 def train_per_epoch(args, model, train_loader, optimizer, criterion, epoch, device):
@@ -22,7 +23,7 @@ def train_per_epoch(args, model, train_loader, optimizer, criterion, epoch, devi
     :param epoch: current epoch
     :param device: 'cuda' 
     """
-    local_model, global_model, criterion_local, criterion_global = None 
+    local_model, global_model, criterion_local, criterion_global = None, None, None, None
     if args.model.startswith('decouple'): 
         local_model, global_model = model 
         criterion_local, criterion_global = criterion
@@ -32,7 +33,7 @@ def train_per_epoch(args, model, train_loader, optimizer, criterion, epoch, devi
       model.train()
     losses = []
     total_predictions = get_pennaction_predictions_dict()
-    print_step = len(train_loader) // 100 
+    print_step = PRINT_STEP
     if args.parent_relative : 
         for batch_idx, (observed_bones, target_bones, observed_poses, target_poses, scale_factor) in enumerate(train_loader):
             observed_bones = observed_bones.to(device, dtype = torch.float32)
@@ -53,13 +54,26 @@ def train_per_epoch(args, model, train_loader, optimizer, criterion, epoch, devi
             loss.backward()
             optimizer.step()
 
-            predicted_poses  = reconstruct_pose(predicted_bones, scale_factor)
-            construct_target = reconstruct_pose(target_bones,   scale_factor)
+            predicted_poses      = reconstruct_pose(
+                compressed_poses = predicted_bones, 
+                scaled_factor    = scale_factor,  
+                dataset          = args.dataset, 
+                box_size         = args.boxsize, 
+            )
             
-            predictions = compute_joints_metric(
-                pred = predicted_poses[:, :, :, :2],  
-                gt   = construct_target[:, :, :, : 2],  
+            construct_target     = reconstruct_pose(
+                compressed_poses = target_bones,    
+                scaled_factor    = scale_factor, 
+                dataset          = args.dataset, 
+                box_size         = args.boxsize
+            )
+            
+            predictions   = compute_joints_metric(
+                pred      = predicted_poses[:, :, :,  :2],  
+                gt        = construct_target[:, :, :, :2],  
                 time_step = prediction_len, 
+                dataset   = args.dataset, 
+                alpha     = args.pck_alpha 
             )
 
             for dict in predictions:
@@ -92,9 +106,11 @@ def train_per_epoch(args, model, train_loader, optimizer, criterion, epoch, devi
             target_poses    = target_poses.contiguous().view(batch, prediction_len, -1, 3) 
 
             predictions = compute_joints_metric(
-                pred = predicted_poses[:, :, :, :2],  
-                gt   = target_poses[:, :, :, :2],  
+                pred      = predicted_poses, 
+                gt        = target_poses,  
                 time_step = prediction_len, 
+                dataset   = args.dataset, 
+                alpha     = args.pck_alpha, 
             )
 
             for dict in predictions:
@@ -168,9 +184,11 @@ def train_per_epoch(args, model, train_loader, optimizer, criterion, epoch, devi
                 predicted_poses = predicted_poses.contiguous().view(batch_size, prediction_len, -1, 2)
 
             predictions = compute_joints_metric(
-                pred = predicted_poses[:, :, :, :2],  
-                gt   = target_poses[:, :, :, :2],  
+                pred      = predicted_poses[:, :, :, :2],  
+                gt        = target_poses[:, :, :,    :2],  
                 time_step = prediction_len, 
+                dataset   = args.dataset, 
+                alpha     = args.pck_alpha, 
             )
 
             for dict in predictions:
@@ -194,7 +212,7 @@ def evaluate_per_epoch(args, model, val_loader, criterion, device):
     :param device: cuda 
     :return:
     """
-    local_model, global_model, criterion_local, criterion_global = None 
+    local_model, global_model, criterion_local, criterion_global = None, None, None, None
     if args.model.startswith('decouple'): 
         local_model, global_model = model 
         criterion_local, criterion_global = criterion
@@ -222,13 +240,25 @@ def evaluate_per_epoch(args, model, val_loader, criterion, device):
 
                 losses.append(loss.item())
 
-                predicted_poses  = reconstruct_pose(predicted_bones, scale_factor)
-                construct_target = reconstruct_pose(target_bones,   scale_factor)
+                predicted_poses      = reconstruct_pose(
+                    compressed_poses = predicted_bones, 
+                    scaled_factor    = scale_factor,  
+                    dataset          = args.dataset, 
+                    box_size         = args.boxsize, 
+                )
+                construct_target     = reconstruct_pose(
+                    compressed_poses = target_bones,    
+                    scaled_factor    = scale_factor, 
+                    dataset          = args.dataset, 
+                    box_size         = args.boxsize
+                )
 
                 predictions = compute_joints_metric(
-                    pred = predicted_poses[:, :, :, :2],  
-                    gt   = construct_target[:, :, :, :2],  
+                    pred      = predicted_poses[:, :, :,  :2],  
+                    gt        = construct_target[:, :, :, :2],  
                     time_step = prediction_len, 
+                    dataset   = args.dataset, 
+                    alpha     = args.pck_alpha, 
                 )
 
                 for dict in predictions:
@@ -250,9 +280,11 @@ def evaluate_per_epoch(args, model, val_loader, criterion, device):
                 target_poses    = target_poses.contiguous().view(batch, prediction_len, -1, 3)  
 
                 predictions = compute_joints_metric(
-                    pred = predicted_poses[:, :, :, :2],  
-                    gt   = target_poses[:, :, :, :2],  
-                    time_step = prediction_len, 
+                    pred      = predicted_poses,  
+                    gt        = target_poses,  
+                    time_step = prediction_len,
+                    dataset   = args.dataset, 
+                    alpha     = args.pck_alpha 
                 )
                 for dict in predictions:
                     for key in predictions[dict]:
@@ -260,7 +292,7 @@ def evaluate_per_epoch(args, model, val_loader, criterion, device):
 
     elif args.velocity : 
         with torch.no_grad():
-            for batch_idx, (observed_poses, target_poses, observed_velocities, target_velocities) in enumerate(val_loader):
+            for _, (observed_poses, target_poses, observed_velocities, target_velocities) in enumerate(val_loader):
             
                 observed_poses = observed_poses.to(device, dtype = torch.float32) # (B, T_train, J * 2)
                 target_poses   = target_poses.to(device,   dtype = torch.float32) # (B, T_test,   J * 2)
@@ -269,9 +301,6 @@ def evaluate_per_epoch(args, model, val_loader, criterion, device):
                 
                 batch_size, observed_len, _   = observed_velocities.shape
                 batch_size, prediction_len, _ = target_velocities.shape 
-                # Global, Local decomposition approach, from : 
-                # https://openaccess.thecvf.com/content/ICCV2021W/SoMoF/papers/Parsaeifard_Learning_Decoupled_Representations_for_Human_Pose_Forecasting_ICCVW_2021_paper.pdf
-           
                 if args.model.startswith('decouple'):   
                     observed_globals = 0.5 * (
                     observed_velocities.contiguous().view(batch_size, observed_len, -1, 2)[:, :, 7] + 
@@ -312,9 +341,11 @@ def evaluate_per_epoch(args, model, val_loader, criterion, device):
                     predicted_poses = predicted_poses.contiguous().view(batch_size, prediction_len, -1, 2)
 
                 predictions = compute_joints_metric(
-                    pred = predicted_poses[:, :, :, :2],  
-                    gt   = target_poses[:, :, :, : 2],  
+                    pred      = predicted_poses[:, :, :, :2],  
+                    gt        = target_poses[:, :, :, :2],  
                     time_step = prediction_len, 
+                    dataset   = args.dataset, 
+                    alpha     = args.pck_alpha
                 )
 
                 for dict in predictions:
@@ -341,8 +372,8 @@ def get_model(args):
         return model, criterion 
     elif args.model == 'lstm': 
         model = get_lstm_model(
-            pose_dim = args.num_joints, 
-            on_coordinates = args.coordinates, 
+            pose_dim       = args.num_joints, 
+            coordinates    = args.coordinates, 
             embedding_dim  = args.lstm_embedding_dim,
             hidden_dim     = args.lstm_hidden_dim, 
             num_layers     = args.lstm_num_layers, 
@@ -379,7 +410,7 @@ def get_model(args):
         criterion_vae = vae_loss_function
         lstm_model = get_lstm_model(
             pose_dim       = args.num_joints, 
-            on_coordinates = args.coordinates, 
+            coordinates    = args.coordinates, 
             embedding_dim  = args.decouple_lstm_embedding_dim,
             hidden_dim     = args.decouple_lstm_hidden_dim, 
             num_layers     = args.decouple_lstm_num_layers, 
@@ -402,6 +433,8 @@ def train(args):
         parent_relative    = args.parent_relative, 
         velocity           = args.velocity,  
         on_debug_mode      = args.mode == 'debug', 
+        input_h            = args.boxsize, 
+        input_w            = args.boxsize, 
     )
     train_loader  = DataLoader(train_dataset, batch_size = args.batch_size, shuffle = True) 
 
@@ -412,7 +445,9 @@ def train(args):
         coordinates        = args.coordinates, 
         parent_relative    = args.parent_relative, 
         velocity           = args.velocity,    
-        on_debug_mode      = args.mode == 'debug',    
+        on_debug_mode      = args.mode == 'debug',   
+        input_h            = args.boxsize, 
+        input_w            = args.boxsize,  
     )
     val_loader   = DataLoader(val_dataset, batch_size = args.batch_size, shuffle = True)
 
@@ -433,7 +468,7 @@ def train(args):
     else : 
         model_input_type = 'velocity'
 
-    checkpoint = f"checkpoint/{args.mode}/{model_input_type}_{args.model}_pennaction.pth.tar"
+    checkpoint = f"checkpoint/{args.mode}/{model_input_type}_{args.model}_pennaction_{args.num_training_frame}_{args.num_testing_frame}.pth.tar"
     start_epoch = 0 
     if os.path.exists(checkpoint): 
         model_dict = torch.load(checkpoint, weights_only = False) 
@@ -472,33 +507,54 @@ def train(args):
 
         if val_acc['total'] > best_accuracy : 
             best_accuracy = val_acc['total']
-            save_checkpoint(epoch, model, optimizer, model_name = f'{model_input_type}_{args.model}_pennaction' , prefix_dir_name = f'checkpoint/{args.mode}/')
+            save_checkpoint(
+                epoch, 
+                model, 
+                optimizer, 
+                model_name = f'{model_input_type}_{args.model}_pennaction_{args.num_training_frame}_{args.num_testing_frame}', 
+                prefix_dir_name = f'checkpoint/{args.mode}/'
+            )
 
-    plot(np.array(loss_list), np.array(metric_list), args.title)
+    plot(
+        loss_list   = np.array(loss_list), 
+        metric_list = np.array(metric_list), 
+        title       = args.title, 
+        dataset     = args.dataset
+    )
+
+    # Saved the training logs 
+    npy_data = dict()
+    npy_data['loss_list']   = np.array(loss_list) 
+    npy_data['metric_list'] = np.array(metric_list)
+    log_saved_dir           = f'log/{args.mode}/{model_input_type}_{args.model}_pennaction_{args.num_training_frame}_{args.num_testing_frame}.npy'
+    np.save(log_saved_dir, npy_data)
+
     return model, loss_list, metric_list
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_joints',          default = 13,     type = int,   required = False)
+    parser.add_argument('--dataset',            default = 'pennaction', type = str, required = False)
+    parser.add_argument('--num_joints',         default = 13,     type = int,   required = False)
     parser.add_argument('--num_training_frame', default = 7,      type = int,   required = False)
     parser.add_argument('--num_testing_frame',  default = 7,      type = int,   required = False) 
-    parser.add_argument('--learning_rate',      default = 8e-5,   type = float, required = False)
-    parser.add_argument('--num_epoch',          default = 100,    type = int,   required = False) 
+    parser.add_argument('--learning_rate',      default = 1e-4,   type = float, required = False)
+    parser.add_argument('--num_epochs',         default = 100,    type = int,   required = False) 
     parser.add_argument('--batch_size',         default = 16,     type = int,   required = False) 
     parser.add_argument('--pin_memory',         default = False,  type = bool,  required = False)
     parser.add_argument('--device',             default = 'cuda', type = str,   required = False) 
     parser.add_argument('--model' ,             default = 'lstm', type = str,   required = True) 
-    parser.add_argument('--coordinates',        default = True,   type = bool,  required = False)
+    parser.add_argument('--coordinates',        default = False,   type = bool,  required = False)
     parser.add_argument('--velocity',           default = False,  type = bool,  required = False)
     parser.add_argument('--parent_relative',    default = False,  type = bool,  required = False) 
-    parser.add_argument('--mode',               default = 'baseline',  type = str,  required = False)
+    parser.add_argument('--mode',               default = 'main',  type = str,  required = True)
     parser.add_argument('--scheduler_step',     default = 10000,  type = float, required = False) 
     parser.add_argument('--scheduler_gamma',    default = 0.3333, type = float, required = False)
     parser.add_argument('--betas',              default = (0.9, 0.999), type = tuple, required = False) 
-    parser.add_argument('--title',              type = str, required = True)
+    parser.add_argument('--title',              type    = str, required = True)
     parser.add_argument('--dropout',            default = 0.2,  type = float, required = False)
-
+    parser.add_argument('--pck_alpha',          default = 0.05, type = float, required = False)
+    parser.add_argument('--boxsize',            default = 480,  type = int,   required = False)
     # MLP 
     parser.add_argument('--mlp_hidden_layers',  default = [1024, 2048, 1024], type = list[int], required = False) 
     
@@ -522,7 +578,8 @@ if __name__ == '__main__':
     parser.add_argument('--decouple_lstm_hidden_dim',             default = 16,  type = int, required = False)
     parser.add_argument('--decouple_lstm_num_layers',             default = 1,   type = int, required = False)
 
-
+    # TRANSFORMER 
     args = parser.parse_args()
-    model, loss_list, metric_list = train(args)
+    model, loss_list, metric_list = train(args) 
+
 

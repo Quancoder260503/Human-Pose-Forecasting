@@ -1,16 +1,58 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np 
 import math 
+import matplotlib.pyplot as plt
 
 '''
 For now, just experiment mainly on joints 
-:TODO : research about methods to encoded the joint informations into the sequences, could have been via another FFN. 
 :TODO : for velocity based approach, replace the LSTM in the decoupled pose paper by this Transformer Architecture, could have make 
 it learn the latent space mean and variance (an effective way to capture complex distribution of human motion ?). 
-:TODO : write up extra notes about the effect of positional embedding 
 :TODO : visualize attention 
+:TODO : researching on how to add information to the joint 
+:TODO : reconstruct pose from PoseTransformer
 '''
+
+class PositionalEncoding1D(object):
+    """
+    Positional Encoding for 1D sequences 
+    """
+
+    def __init__(self, position_dim = 512, temperature = 10000, alpha = 1):
+        self.position_dim = position_dim 
+        self.temperature  = temperature 
+        self.alpha        = alpha 
+    
+    def get_angles(self, position, index): 
+        angle_rates = 1.0 / np.power(self.temperature, (2 * (index // 2)) / np.float32(self.position_dim))
+        return self.alpha * position * angle_rates
+    
+    def __call__(self, sequence_length):
+        angle_radians = self.get_angles(
+            np.arange(sequence_length)[:, np.newaxis], 
+            np.arange(self.position_dim)[np.newaxis, :]
+        ) # (sequence_length, position_dim)
+
+        angle_radians[:, 0::2] = np.sin(angle_radians[:, 0::2])
+        angle_radians[:, 1::2] = np.cos(angle_radians[:, 1::2])
+        
+        position_encoding = angle_radians[np.newaxis, ...] # (1, sequence_length, pos_dim) 
+        position_encoding = position_encoding.astype(np.float32)
+
+        return torch.from_numpy(position_encoding)
+    
+    @staticmethod
+    def visualize_1d_encoding(num_visualized):
+        position_encoder = PositionalEncoding1D()
+        pos_encoding = position_encoder(num_visualized).numpy()
+
+        plt.pcolormesh(pos_encoding[0], cmap = 'RdBu')
+        plt.xlabel('Depth')
+        plt.xlim((0, 512)) # Position dim 
+        plt.ylabel('Positiom in Sequence')
+        plt.colorbar() 
+        plt.show()
 
 class MultiHeadAttention(nn.Module): 
     '''
@@ -37,7 +79,7 @@ class MultiHeadAttention(nn.Module):
         self.proj_k         = nn.Linear(dim_model, num_heads * dim_values)
         self.proj_v         = nn.Linear(dim_model, num_heads * dim_values)
         self.proj_o         = nn.Linear(num_heads * dim_values, dim_model)
-        self.layer_norm     = nn.Linear(dim_model)
+        self.layernorm      = nn.LayerNorm(dim_model)
         self.softmax        = nn.Softmax(dim = -1) 
         self.device         = device 
 
@@ -51,16 +93,15 @@ class MultiHeadAttention(nn.Module):
         batch_size = q_poses.shape[0] 
         query_len  = q_poses.shape[1]
         keyval_len = kv_poses.shape[1]
-
+        
         self_attention = query_len == keyval_len
         
         curr_q_poses = q_poses.clone() # (B, J, dim_model) 
-
-        q_poses = self.layer_norm(q_poses)   
+        q_poses = self.layernorm(q_poses)   
         
         # if not self attention, then no need to normalize since the encoder has already done it 
         if self_attention:
-            kv_poses = self.layer_norm(kv_poses) 
+            kv_poses = self.layernorm(kv_poses) 
 
         query = self.proj_q(q_poses)  # (B, query_len, query_dim * num_heads) 
         key   = self.proj_k(kv_poses) # (B, query_len, query_dim * num_heads)
@@ -120,7 +161,7 @@ class PointWiseFFN(nn.Module):
         # First layer 
         poses = self.fc_1(poses) # (batch_size, query_len, d_inner) 
         poses = self.relu(poses)
-        poses = self.apply(self.dropout)
+        poses = self.dropout(poses) 
 
         # Second Layer 
         poses = self.fc_2(poses) # (batch_size, query_len, dim_model) 
@@ -156,6 +197,7 @@ class Encoder(nn.Module):
         self.fc_hidden_dim       = fc_hidden_dim 
         self.num_layers          = num_layers 
         self.dropout             = dropout
+        self.apply_dropout       = nn.Dropout(dropout)
         self.embedding_fc        = nn.Linear(pose_dim, model_dim)
         self.layernorm           = nn.LayerNorm(self.model_dim) 
         self.device              = device 
@@ -194,13 +236,10 @@ class Encoder(nn.Module):
             tensor of shape (B, train_len, model_dim) 
         """
         observed_poses = self.embedding_fc(observed_poses) # (B, train_len, model_dim) 
-        observed_poses = torch.tanh(observed_poses) # may change this later, can be the pitfall, for now squash the output to [-1, 1]
-        
-        # Scale to reduce the effect of positional encoding (they cannot be in the same scale as ffn output ) 
+        observed_poses = self.layernorm(observed_poses)
+        # Scale to reduce the effect of positional encoding 
         observed_poses = observed_poses * math.sqrt(self.model_dim) + self.positional_encoding 
-        
-        observed_poses = self.dropout(observed_poses)
-
+        observed_poses = self.apply_dropout(observed_poses)
         for encoder_layer in self.encoder_layers: 
             observed_poses = encoder_layer[0](observed_poses, observed_poses)
             observed_poses = encoder_layer[1](observed_poses)
@@ -232,6 +271,7 @@ class Decoder(nn.Module):
         self.num_layers          = num_layers 
         self.device              = device 
         self.dropout             = dropout
+        self.apply_dropout       = nn.Dropout(dropout)
         self.embedding_fc        = nn.Linear(pose_dim, model_dim)
         self.layernorm           = nn.LayerNorm(model_dim)
         self.decoder_layers      = nn.ModuleList([ 
@@ -272,23 +312,25 @@ class Decoder(nn.Module):
         ])
         return decoder_layer 
     
-    def forward(self, enc_out, decoding_poses): 
+    def forward(self, encoder_out, decoding_poses): 
         """
         For now, only support input tensor of shape (B, train_len, pose_dim = J * 3) (x, y, visibility)
-        :param enc_out        : what we get from the encoder, a tensor of shape ()
+        :param encoder_out    : what we get from the encoder, a tensor of shape ()
         :param decoding_poses : tensor of shape (B, train_len, pose_dim)
         : return:
             tensor of shape (B, train_len, model_dim) 
         """
         decoding_poses = self.embedding_fc(decoding_poses) # (B, decoding_len, model_dim) 
-        decoding_poses = torch.tanh(decoding_poses)
-        decoding_poses = decoding_poses * math.sqrt(self.model_dim) + self.positional_encoding 
-        decoding_poses = self.dropout(decoding_poses)
+        decoding_poses = self.layernorm(decoding_poses)
+        decoding_poses = decoding_poses * math.sqrt(self.model_dim) + self.positional_encoding # scale this up to reduce the effect of dim embedding 
+        decoding_poses = self.apply_dropout(decoding_poses)
+    
+        
         for decoder_layer in self.decoder_layers: 
             # cross-attention 
             decoding_poses = decoder_layer[0](
                 decoding_poses, 
-                enc_out, 
+                encoder_out, 
             )
             # self-attention 
             decoding_poses = decoder_layer[1]( 
@@ -304,18 +346,19 @@ class Decoder(nn.Module):
 
 class PoseTransformer(nn.Module):
     def __init__(self, 
-                 positional_encoding, 
-                 pose_dim             = 39,  
-                 encoding_length      = 14,
-                 decoding_length      = 14, 
-                 num_heads            = 8,  
-                 query_dim            = 64, 
-                 value_dim            = 64, 
-                 model_dim            = 512, 
-                 fc_hidden_dim        = 2048,
-                 num_layers           = 6,
-                 dropout              = 0.2, 
-                 device               = 'cuda' 
+                 pose_dim                        = 39,  
+                 encoding_length                 = 14,
+                 decoding_length                 = 14, 
+                 num_heads                       = 8,  
+                 query_dim                       = 64, 
+                 value_dim                       = 64, 
+                 model_dim                       = 512, 
+                 fc_hidden_dim                   = 2048,
+                 num_layers                      = 6,
+                 dropout                         = 0.2, 
+                 positional_encoding_temperature = 10000, 
+                 positional_encoding_alpha       = 1, 
+                 device                          = 'cuda', 
     ): 
         """
         :param pose_dim        : input tensor, can represent either (x, y, visibility) or relative root (all - root) or velocity between frames (dx, dy) 
@@ -331,7 +374,6 @@ class PoseTransformer(nn.Module):
         :param positional_encoding : distinguish noise 
         """
         super(PoseTransformer, self).__init__()
-        self.positional_encoding = positional_encoding
         self.pose_dim            = pose_dim
         self.encoding_length     = encoding_length 
         self.decoding_length     = decoding_length
@@ -344,9 +386,15 @@ class PoseTransformer(nn.Module):
         self.dropout             = dropout 
         self.device              = device
 
+        # Temperature and alpha for positional encoding 
+        self.temperature = positional_encoding_temperature 
+        self.alpha       = positional_encoding_alpha
+
+        self.init_positional_encoding()
+
         self.encoder            = Encoder(
             pose_dim            = self.pose_dim, 
-            positional_encoding = self.positional_encoding, 
+            positional_encoding = self.encoder_positional_encoding, 
             num_heads           = self.num_heads, 
             model_dim           = self.model_dim, 
             query_dim           = self.query_dim,
@@ -359,7 +407,7 @@ class PoseTransformer(nn.Module):
 
         self.decoder            = Decoder(
             pose_dim            = self.pose_dim, 
-            positional_encoding = self.positional_encoding, 
+            positional_encoding = self.decoder_positional_encoding, 
             num_heads           = self.num_heads, 
             model_dim           = self.model_dim, 
             query_dim           = self.query_dim, 
@@ -371,7 +419,32 @@ class PoseTransformer(nn.Module):
         )
 
         self.output_fc = nn.Linear(self.model_dim, self.pose_dim) # map to the output space 
-        self.init_weights()
+        self.init_weights() 
+
+    def init_positional_encoding(self):
+        encoder_positional = PositionalEncoding1D(
+            position_dim = self.model_dim, 
+            temperature  = self.temperature, 
+            alpha        = self.alpha, 
+        )
+
+        decoder_positional = PositionalEncoding1D( 
+            position_dim = self.model_dim, 
+            temperature  = self.temperature, 
+            alpha        = self.alpha, 
+        )
+
+        self.encoder_positional_encoding = encoder_positional(sequence_length = self.encoding_length).contiguous().view(
+            1, self.encoding_length, self.model_dim
+        )
+
+        self.decoder_positional_encoding = decoder_positional(sequence_length = self.decoding_length).contiguous().view(
+            1, self.decoding_length, self.model_dim
+        )
+
+        # Do not train the distinguish noise 
+        self.encoder_positional_encoding = nn.Parameter(self.encoder_positional_encoding, requires_grad = False) 
+        self.decoder_positional_encoding = nn.Parameter(self.decoder_positional_encoding, requires_grad = False)
 
     def init_weights(self): 
         """
@@ -387,15 +460,19 @@ class PoseTransformer(nn.Module):
         :param decoding_poses : tensor of shape (B, decoding_len, pose_dim)
         :return : tensor of shape (B, decoding_len, pose_dim) 
         """
+        encoder_out     = self.encoder(encoding_poses)
+        predicted_poses = self.decoder(encoder_out, decoding_poses)
+        out             = self.output_fc(predicted_poses)
+        return out
 
-        enc_out = self.encoder(encoding_poses)
-        predicted_poses = self.decoder(decoding_poses, enc_out)
-        return predicted_poses
+def pose_transformer_inference(model):
+    """
+    Reconstruct the poses with the given observed poses 
+    """
+    pass     
 
-    
-
-# if __name__ == "__main__":
-#     dummy = torch.randn(4, 10, 26).to('cuda') 
-#     model = JointLSTM().to('cuda')
-#     out = model(dummy, 15)
-#     print(out.shape)
+if __name__ == "__main__":
+    dummy = torch.randn(1, 14, 39).to('cuda') 
+    model = PoseTransformer().to('cuda')
+    out = model(dummy, dummy)
+    print(out.shape)

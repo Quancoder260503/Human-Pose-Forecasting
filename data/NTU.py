@@ -16,11 +16,10 @@ RGB frame exists but very heavy, around 133GB,
 hence only the joints and heat maps are 
 used for training and testing. 
 
-May add Gaussian Filter to the joint coordinates
-
 TODO : 
 1. Visualizing the joint using video 
-2. Implementing RootRelative, Bone Vector + Velocity
+2. Extracting joints and action class for classification task
+
 '''
 
 NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames/nturgb+d_rgb'
@@ -39,12 +38,12 @@ class NTU(Dataset):
         gaussian_sigma = 21,
         data_dir = 'dataset/NanyangTechRGB/',
         train = True,
-        require_image  = False,  # For now, does not support require image due to limited capability 
-        require_action = False, 
-        bone_vector    = False, 
-        velocity       = False, 
-        coordinates    = False, 
-        on_debug_mode  = False,
+        require_action  = False, 
+        root_relative   = False,
+        parent_relative = False,  
+        velocity        = False, 
+        coordinates     = False, 
+        on_debug_mode   = False,
     ):
         """
         :param num_training_frame : frames extracted for training
@@ -56,7 +55,8 @@ class NTU(Dataset):
         :param data_dir           : root to dataset 
         :param train              : is this training set ? 
         :param require_action     : including action label ? 
-        :param bone_vector        : input processed as normalized root bone_vector ?
+        :param root_relative      : input processed as normalized root relative (center hip)? 
+        :param parent_relative    : input processed as parent_relative 
         :param velocity           : input processed as velocity (displacment) of key joints on different frames ?
         :param coordinates        : input processed as local coordinate of the image ? 
         :param on_debug_mode      : extract only one instance ? used only for debugging model   
@@ -71,26 +71,26 @@ class NTU(Dataset):
         self.input_h = input_h
         self.map_h = map_h
         self.map_w = map_w
-        self.num_joints = num_joints
+        self.num_joints     = num_joints
         self.gaussian_sigma = gaussian_sigma
         self.transform      = self.get_default_transform() # Just in case I might use image for training 
         self.train          = train
-        self.require_image  = require_image    # for now, this is not supported
         self.require_action = require_action
         if self.train is True :
             self.data_dir = data_dir + 'train/'
         else :
             self.data_dir = data_dir + 'test/'
 
-        self.frames_data   = os.listdir(self.data_dir)
-        self.bone_vector   = bone_vector 
-        self.velocity      = velocity 
-        self.coordinates   = coordinates
-        self.on_debug_mode = on_debug_mode
-        self.ntu_parents   = JOINT_PARENT_NAMES
-        self.joint_names   = JOINT_NAMES 
-        self.action_names  = ACTION_CLASSES 
-        self.require_image = require_image 
+        self.frames_data     = os.listdir(self.data_dir)
+        self.root_relative   = root_relative 
+        self.parent_relative = parent_relative
+        self.velocity        = velocity 
+        self.coordinates     = coordinates
+        self.on_debug_mode   = on_debug_mode
+        self.ntu_parents     = get_ntu_parent()
+        self.joint_names     = get_ntu_joint_names()
+        self.joint_inds      = get_ntu_joint_ids()
+        self.action_names    = ACTION_CLASSES 
 
     def __len__(self):
         return len(self.frames_data)
@@ -109,20 +109,27 @@ class NTU(Dataset):
         frames = self.frames_data[index]
         data   = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
 
-        flags = [self.bone_vector, self.coordinates, self.velocity]
-        assert sum(flags) == 1, "Exactly one of root_relative, coordinates, or velocity must be True"
+        flags = [self.parent_relative, self.coordinates, self.velocity, self.root_relative]
+        assert sum(flags) == 1, "Exactly one of root_relative, coordinates, or velocity, root_relative must be True"
         
         if self.coordinates : 
-            observed_poses, target_poses, observed_images, target_images, name = self.transformation(data)
-            if self.require_image: 
-               return observed_poses, target_poses, observed_images, target_images, name  
-            else : 
-               return observed_poses, target_poses, name 
-        elif self.bone_vector : 
-            pass # to implement 
-            
+            observed_poses, target_poses, start_index , name = self.transformation(data)
+            return observed_poses, target_poses, start_index, name 
+        
+        elif self.velocity :
+            observed_poses, target_poses, observed_velocity, target_velocity, start_index, name = self.transformation(data) 
+            return observed_poses, target_poses, observed_velocity, target_velocity, start_index, name 
+        
+        elif self.root_relative: 
+            observed_root_vectors, targeted_root_vectors, observed_poses, target_poses, scale_factor, start_index, name = self.transformation(data) 
+            return observed_root_vectors, targeted_root_vectors, observed_poses, target_poses, scale_factor, start_index, name 
+         
+        elif self.parent_relative : 
+            observed_bones, targeted_bones, observed_poses, target_poses, scale_factor, start_index, name = self.transformation(data)
+            return observed_bones, targeted_bones, observed_poses, target_poses, scale_factor, start_index, name 
+        
         else : 
-            pass # to implement 
+            raise NotImplementedError("Must be one of the listed inputs")
             
     def transformation(self, storage, num_joints = 25): 
         '''
@@ -141,72 +148,190 @@ class NTU(Dataset):
         data        = storage['data'][human_id]
         label       = data['colors'] # projected 2D locations
        
-        # scale the image, may smooth it later 
-        label[:, :, 0] = label[:, :, 0] / self.ntu_input_w
-        label[:, :, 1] = label[:, :, 1] / self.ntu_input_h
         n_frames    = label.shape[0]     
         assert n_frames >= total_frame, "num frames must be more than total frame"
         num_joints  = label.shape[1] 
         dim         = label.shape[2]
         assert num_joints == self.num_joints and dim == 2, "Does not match expected information"
         visibility  = np.ones((label.shape[0], label.shape[1], 1))
-        # Mark up the visibility 
         
         start_index    = np.random.randint(0, n_frames - 1 - total_frame + 1)
-        label          = torch.tensor(label) 
-        visibility     = torch.tensor(visibility)
-        
-        
+       
         #assert torch.isnan(label).sum() == 0, "NaN values found in label!"
 
         for time_ind in range(label.shape[0]): 
             for joint_ind in range(label.shape[1]): 
-                if torch.isnan(label[time_ind, joint_ind, 0]) or torch.isnan(label[time_ind, joint_ind, 1] == 0) : 
+                if np.isnan(label[time_ind, joint_ind, 0]) or np.isnan(label[time_ind, joint_ind, 1]): 
                     visibility[time_ind, joint_ind] = 0
 
-        label  = torch.cat([label, visibility], dim = -1) # (x, y, visibility)
+        if self.coordinates : 
+            label[:, :, 0] = label[:, :, 0] / self.ntu_input_w
+            label[:, :, 1] = label[:, :, 1] / self.ntu_input_h
+            
+            label      = torch.tensor(label) 
+            visibility = torch.tensor(visibility)
+            
+            label  = torch.cat([label, visibility], dim = -1) # (x, y, visibility)
 
-        observed_poses  = label[start_index : start_index + self.num_training_frame, :, :] 
-        observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3) 
+            observed_poses  = label[start_index : start_index + self.num_training_frame, :, :]
+            observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3)
 
-        target_poses  = label[start_index + self.num_training_frame : start_index + total_frame, :, :]
-        target_poses  = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
+            target_poses  = label[start_index + self.num_training_frame : start_index + total_frame, :, :]
+            target_poses  = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
 
-        #assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
-        observed_poses[torch.isnan(observed_poses)] = 0.5 
-        target_poses[torch.isnan(target_poses)]     = 0.5
-
-        if self.require_image : 
-            video_frames = self.capture_video_frame(NTU_VIDEO_PATH, video_name =  name) 
-            if video_frames is not None :
-                resized_frames = []  
-                for image in video_frames : 
-                    resized_frames.append(cv2.resize(image, (self.input_w, self.input_h)))
-                video_frames = np.array(resized_frames) 
-                observed_images = video_frames[start_index : start_index + self.num_training_frame, :, :, :] 
-                target_images   = video_frames[start_index + self.num_training_frame : start_index + total_frame, :, :, :] 
-                return observed_poses, target_poses, observed_images, target_images, name 
+            assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
+            
+            observed_poses[torch.isnan(observed_poses)] = 0.5 
+            target_poses[torch.isnan(target_poses)]     = 0.5
+            
+            return observed_poses, target_poses, start_index, name
         
-       
-        return observed_poses, target_poses, None, None, name
+        elif self.velocity : 
+            label      = torch.tensor(label) 
+            visibility = torch.tensor(visibility) 
+            label      = torch.cat([label, visibility], dim = -1) # (x, y, visibility)
+            
+            observed_poses = label[start_index : start_index + self.num_training_frame, :, :2] # (train_len, J, 2)
+            observed_masks = label[start_index : start_index + self.num_training_frame, :,  2] # (train_len, J) 
+            observed_poses = observed_poses.contiguous().view(self.num_training_frame, -1)   # (train_len, J * 2)
+            observed_poses[torch.repeat_interleave(observed_masks.bool(), 2, dim = -1)] = torch.nan
+            
+            observed_velocity = observed_poses[1:, :] - observed_poses[:-1, :]
 
-        # For now, skip these twos 
-        # heat_maps  =  self.gen_heat_map(
-        #     total_frame = total_frame, 
-        #     label       = label, 
-        #     box_size    = min(self.input_w, self.input_h),
-        #     stride      = 8,
-        #     sigma       = self.gaussian_sigma / 3,
-        # )
 
-        # center_map =  self.get_center_map(
-        #     x      = self.input_w / 2.0,
-        #     y      = self.input_h / 2.0,
-        #     sigma  = self.gaussian_sigma,
-        #     size_w = self.input_w,
-        #     size_h = self.input_h
-        # )
-        #center_map = torch.from_numpy(center_map)
+            target_poses  = label[start_index + self.num_training_frame : start_index + total_frame, :, :2] # (test_len, J, 2) 
+            target_masks  = label[start_index + self.num_training_frame : start_index + total_frame, :,  2] # (test_len, J)
+            target_poses  = target_poses.contiguous().view(self.num_testing_frame, -1) # (test_len, J * 2)
+            target_poses[torch.repeat_interleave(target_masks.bool(), 2, dim = -1)] = torch.nan 
+            
+            target_velocity  = torch.cat([(target_poses[0, :] - observed_poses[-1, :]).unsqueeze(0), target_poses[1:, :] - target_poses[:-1, :]], dim = 0) 
+
+            observed_poses[torch.isnan(observed_poses)] = 0.5 
+            target_poses[torch.isnan(target_poses)]     = 0.5
+
+            observed_poses = torch.cat([observed_poses.contiguous().view(-1, num_joints, 2), observed_masks.unsqueeze(-1)], dim = -1) 
+            target_poses   = torch.cat([target_poses.contiguous().view(-1, num_joints, 2),   target_masks.unsqueeze(-1)],   dim = -1)
+            observed_poses = observed_poses.contiguous().view(-1, num_joints * 3) 
+            target_poses   = target_poses.contiguous().view(-1,   num_joints * 3)
+            
+            observed_velocity[torch.isnan(observed_velocity)] = 0 
+            target_velocity[torch.isnan(target_velocity)]     = 0
+
+            return observed_poses, target_poses, observed_velocity, target_velocity, start_index, name 
+        
+        elif self.parent_relative: 
+            head_position = self.joint_names['Head']
+
+            median_head_pos_x, median_head_pos_y = np.median(label[:, head_position, 0]), np.median(label[:, head_position, 1]) 
+            
+            assert (not np.isnan(median_head_pos_x)) and (not np.isnan(median_head_pos_y)), f"cannot extract head set {name} and {storage}" 
+            
+            min_x, max_x, min_y, max_y = self.input_w, 0, self.input_h, 0
+
+            for time_step in range(start_index, start_index + total_frame): 
+              for joint in range(self.num_joints): 
+                if visibility[time_step, joint] : 
+                    max_x = max(max_x, label[time_step, joint, 0])
+                    min_x = min(min_x, label[time_step, joint, 0])
+                    max_y = max(max_y, label[time_step, joint, 1])
+                    min_y = min(min_y, label[time_step, joint, 1])
+
+            assert max_x >= min_x and max_y >= min_y, "No human ever appears in the scenes"
+
+            scale_x = 1. * (max_x - min_x) / self.ntu_input_w * self.input_w 
+            scale_y = 1. * (max_y - min_y) / self.ntu_input_h * self.input_h 
+            scale_factor = np.array([scale_x, scale_y]) 
+
+            vector_label = np.zeros((total_frame, self.num_joints, 2))
+
+            for time_step in range(start_index, start_index + total_frame):
+                if visibility[time_step, head_position] == 0: 
+                   label[time_step, head_position, 0], label[time_step, head_position, 1] = median_head_pos_x, median_head_pos_y
+                
+                curr_index = time_step - start_index
+
+                x_norm = label[time_step, :, 0] / self.ntu_input_w
+                y_norm = label[time_step, :, 1] / self.ntu_input_h
+
+                vector_label[curr_index, head_position, 0], vector_label[curr_index, head_position, 1] = x_norm[head_position], y_norm[head_position] 
+
+                for child_index, childname in enumerate(self.joint_names): 
+                    parent_index = self.joint_inds[self.ntu_parents[childname]]
+                    if parent_index == child_index : 
+                        continue 
+                    if visibility[time_step, child_index] and visibility[time_step, parent_index]:
+                        vector_label[curr_index, child_index, 0] = (x_norm[parent_index] - x_norm[child_index]) * self.input_w / scale_factor[0]
+                        vector_label[curr_index, child_index, 1] = (y_norm[parent_index] - y_norm[child_index]) * self.input_h / scale_factor[1]
+
+
+            observed_poses = torch.tensor(label[start_index : start_index + self.num_training_frame, :, :]) 
+            observed_bones = torch.tensor(vector_label[: self.num_training_frame, :, :]) 
+            observed_bones = observed_bones.contiguous().view(self.num_training_frame, -1) 
+
+
+            target_poses   = torch.tensor(label[start_index + self.num_training_frame : start_index + total_frame, :, :])
+            targeted_bones = torch.tensor(vector_label[self.num_training_frame :, :, :]) 
+            targeted_bones = targeted_bones.contiguous().view(self.num_testing_frame, -1) 
+
+            return observed_bones, targeted_bones, observed_poses, target_poses, scale_factor, start_index, name 
+        
+        elif self.root_relative:
+            # Re-process later, we can further compute the statistics of all videos, instead of a single frame 
+            # For NTU, we can use spine hip as the root and find the relative position of other joints to the spine base 
+
+            root_position = 0
+
+            median_root_pos_x, median_root_pos_y = np.median(label[:, root_position, 0]), np.median(label[:, root_position, 1]) 
+            
+            assert (not np.isnan(median_root_pos_x)) and (not np.isnan(median_root_pos_y)), f"cannot extract root in set {name} and {storage}" 
+            
+            min_x, max_x, min_y, max_y = self.input_w, 0, self.input_h, 0
+
+            for time_step in range(start_index, start_index + total_frame): 
+              for joint in range(self.num_joints): 
+                if visibility[time_step, joint] : 
+                    max_x = max(max_x, label[time_step, joint, 0])
+                    min_x = min(min_x, label[time_step, joint, 0])
+                    max_y = max(max_y, label[time_step, joint, 1])
+                    min_y = min(min_y, label[time_step, joint, 1])
+
+            assert max_x >= min_x and max_y >= min_y, "No human ever appears in the scenes"
+
+            scale_x = 1. * (max_x - min_x) / self.ntu_input_w * self.input_w 
+            scale_y = 1. * (max_y - min_y) / self.ntu_input_h * self.input_h 
+            scale_factor = np.array([scale_x, scale_y]) 
+
+            vector_label = np.zeros((total_frame, self.num_joints, 2))
+
+            for time_step in range(start_index, start_index + total_frame):
+                if visibility[time_step, root_position] == 0: 
+                   label[time_step, root_position, 0], label[time_step, root_position, 1] = median_root_pos_x, median_root_pos_y
+                
+                curr_index = time_step - start_index
+
+                x_norm = label[time_step, :, 0] / self.ntu_input_w
+                y_norm = label[time_step, :, 1] / self.ntu_input_h
+
+                vector_label[curr_index, root_position, 0], vector_label[curr_index, root_position, 1] = x_norm[root_position], y_norm[root_position] 
+
+                for child_index, childname in enumerate(self.joint_names): 
+                    if child_index == root_position : 
+                        continue 
+                    vector_label[curr_index, child_index, 0] = (x_norm[child_index] - x_norm[root_position]) * self.input_w / scale_factor[0]
+                    vector_label[curr_index, child_index, 1] = (y_norm[child_index] - y_norm[root_position]) * self.input_h / scale_factor[1]
+
+
+            observed_poses        = torch.tensor(label[start_index : start_index + self.num_training_frame, :, :]) 
+            observed_root_vectors = torch.tensor(vector_label[: self.num_training_frame, :, :]) 
+            observed_root_vectors = observed_root_vectors.contiguous().view(self.num_training_frame, -1) 
+
+            target_poses   = torch.tensor(label[start_index + self.num_training_frame : start_index + total_frame, :, :])
+            targeted_root_vectors = torch.tensor(vector_label[self.num_training_frame :, :, :]) 
+            targeted_root_vectors = targeted_root_vectors.contiguous().view(self.num_testing_frame, -1) 
+
+            return observed_root_vectors, targeted_root_vectors, observed_poses, target_poses, scale_factor, start_index, name 
+        else : 
+            raise NotImplementedError("Method not supported for now")
 
     def get_center_map(self, x, y, sigma, size_w, size_h):
        '''
@@ -294,44 +419,19 @@ class NTU(Dataset):
         frames.append(frame) 
       return np.array(frames)
     
-def get_colors():
-    colors = {
-        'pink' : np.array([197, 27, 125]),  # L lower leg
-        'light_pink': np.array([233, 163, 201]),  # L upper leg
-        'light_green': np.array([161, 215, 106]),  # L lower arm
-        'green': np.array([77, 146, 33]),  # L upper arm
-        'red': np.array([215, 48, 39]),  # head
-        'light_red': np.array([252, 146, 114]),  # head
-        'light_orange': np.array([252, 141, 89]),  # chest
-        'purple': np.array([118, 42, 131]),  # R lower leg
-        'light_purple': np.array([175, 141, 195]),  # R upper
-        'light_blue': np.array([145, 191, 219]),  # R lower arm
-        'blue': np.array([69, 117, 180]),  # R upper arm
-        'gray': np.array([130, 130, 130]),  #
-        'white': np.array([255, 255, 255]),  #
-    }
-    return colors
-
-def draw_skeleton(image, kp_2d, thickness = 1, shadow = 0.3):
-    kp_2d = np.array(kp_2d, dtype=int)
-    image = image.copy()
-   # image = (image * shadow).astype(np.uint8)
-    rcolor = get_colors()['red'].tolist()
-    pcolor = get_colors()['green'].tolist()
-    lcolor = get_colors()['blue'].tolist()
-
-    skeleton = get_ntu_skeleton()
-    for idx, pt in enumerate(kp_2d):
-        if pt[0] > 0 and pt[1] > 0: 
-            cv2.circle(image, (pt[0], pt[1]), 4, pcolor, -1)
-
-    for i, (j1, j2) in enumerate(skeleton):
-        if kp_2d[j1, 0] > 0 and kp_2d[j1, 1] > 0 and kp_2d[j2, 0] > 0 and kp_2d[j2, 1] > 0:
-            color = rcolor 
-            pt1 = tuple(kp_2d[j1, :2])
-            pt2 = tuple(kp_2d[j2, :2])
-            cv2.line(image, pt1, pt2, color, thickness= 2)
-    return image
+    @staticmethod 
+    def get_video_frames(name, start_index, num_training_frame, num_testing_frame, input_w, input_h):
+        video_frames = NTU.capture_video_frame(NTU_VIDEO_PATH, video_name = name) 
+        total_frames = num_training_frame + num_testing_frame
+        if video_frames is not None :
+            resized_frames = []  
+            for image in video_frames : 
+                resized_frames.append(cv2.resize(image, (input_w, input_h)))
+                video_frames = np.array(resized_frames) 
+                observed_images = video_frames[start_index : start_index + num_training_frame, :, :, :] 
+                target_images   = video_frames[start_index + num_training_frame : start_index + total_frames, :, :, :] 
+                return observed_images, target_images
+        return None  
 
 #if __name__ == '__main__': 
     # ntu_set = NTU(train = False, coordinates = True)

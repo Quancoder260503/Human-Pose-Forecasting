@@ -7,31 +7,6 @@ from matplotlib import pyplot as plt
 from data.ImgUtil import torch2numpy, normalize_2d_kp
 import data.KeyPointUtil
 
-class WeakPerspectiveCamera(pyrender.Camera):
-    def __init__(self,
-                 scale,
-                 translation,
-                 znear = pyrender.camera.DEFAULT_Z_NEAR,
-                 zfar  = None,
-                 name=None):
-        super(WeakPerspectiveCamera, self).__init__(
-            znear=znear,
-            zfar=zfar,
-            name=name,
-        )
-        self.scale = scale
-        self.translation = translation
-
-    def get_projection_matrix(self, width=None, height=None):
-        P = np.eye(4)
-        P[0, 0] = self.scale
-        P[1, 1] = self.scale
-        P[0, 3] = self.translation[0] * self.scale
-        P[1, 3] = -self.translation[1] * self.scale
-        P[2, 2] = -1
-        return P
-
-
 def get_colors():
     colors = {
         'pink': np.array([197, 27, 125]),  # L lower leg
@@ -74,27 +49,6 @@ def draw_SMPL_joints2D(joints2D, image, kintree_table=None, color='red'):
 
     return image
 
-def visualize_sequence(sequence):
-
-    seqlen, size = sequence.shape
-    sequence = sequence.reshape((seqlen, -1, 3))
-
-    fig = plt.figure(figsize=(12, 7))
-
-    for i in range(seqlen):
-        ax = fig.add_subplot('111', projection='3d', aspect=1)
-        show3Dpose(sequence[i], ax, radius=0.6)
-        ax.view_init(-75, -90)
-
-        plt.draw()
-        plt.pause(0.01)
-        plt.cla()
-
-    plt.close()
-
-
-import cv2
-import numpy as np
 
 def draw_skeleton(image, kp_2d, prob = None, dataset = 'pennaction', thickness = 1, shadow = 0.3):
     if prob is None : 

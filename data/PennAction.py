@@ -11,6 +11,12 @@ from torchvision import transforms
 from PIL import Image
 import math 
 
+'''
+TODO : 
+1. Visualizing the joint using video 
+2. Extracting joints and action class for classification task
+'''
+
 
 def get_pennaction_parents(): 
     return [0, 0, 0, 1, 2, 3, 4, 1, 2, 7, 8, 9, 10]
@@ -92,8 +98,8 @@ class PennAction(Dataset):
         frames = self.frames_data[index]
         data   = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
 
-        flags = [self.bone_vector, self.coordinates, self.velocity]
-        assert sum(flags) == 1, "Exactly one of root_relative, coordinates, or velocity must be True"
+        flags = [self.parent_relative, self.coordinates, self.velocity]
+        assert sum(flags) == 1, "Exactly one of parent_relative, coordinates, or velocity must be True"
         
         if self.coordinates : 
             observed_poses, target_poses, observed_images, target_images = self.transformation(data)
@@ -107,12 +113,14 @@ class PennAction(Dataset):
                 return observed_bones, target_bones, observed_poses, target_poses, scaled_factor, observed_images, target_images
             else : 
                 return observed_bones, target_bones, observed_poses, target_poses, scaled_factor
-        else : 
+        elif self.velocity : 
             observed_poses, target_poses, observed_velocity, target_velocity,  observed_images, target_images = self.transformation(data) 
             if self.require_image : 
                 return observed_poses, target_poses, observed_velocity, target_velocity, observed_images, target_images
             else : 
                 return observed_poses, target_poses, observed_velocity, target_velocity 
+        else :
+            raise NotImplementedError("Must be one of the input types") 
             
     def transformation(self, data, num_joints = 13): 
         '''
@@ -243,7 +251,7 @@ class PennAction(Dataset):
             target_poses = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 2) 
             target_poses[torch.repeat_interleave(target_masks, 2, dim = -1) == 0] = np.nan
 
-            target_velocity = torch.cat([target_poses[0, :] - observed_poses[-1, :],  target_poses[1:, :] -  target_poses[:-1, :]], dim = 0)
+            target_velocity = torch.cat([(target_poses[0, :] - observed_poses[-1, :]).unsqueeze(0),  target_poses[1:, :] -  target_poses[:-1, :]], dim = 0)
 
             observed_poses[torch.isnan(observed_poses)] = 0.5
             target_poses[torch.isnan(target_poses)]     = 0.5

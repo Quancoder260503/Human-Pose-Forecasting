@@ -369,20 +369,39 @@ BAD_IDENTIFIERS = {
 }
 
 # Should be in corect order
-JOINT_NAMES = [
-    'SpineBase', 'SpineMid', 'Neck', 'Head', 'ShoulderLeft', 'ElbowLeft',
-    'WristLeft', 'HandLeft', 'ShoulderRight', 'ElbowRight', 'WristRight',
-    'HandRight', 'HipLeft', 'KneeLeft', 'AnkleLeft', 'FootLeft', 'HipRight',
-    'KneeRight', 'AnkleRight', 'FootRight', 'SpineShoulder', 'HandTipLeft',
-    'ThumbLeft', 'HandTipRight', 'ThumbRight'
+NTU_JOINT_NAMES = [
+    'SpineBase', 
+    'SpineMid', 
+    'Neck', 
+    'Head', 
+    'ShoulderLeft', 
+    'ElbowLeft',
+    'WristLeft', 
+    'HandLeft', 
+    'ShoulderRight', 
+    'ElbowRight', 
+    'WristRight',
+    'HandRight', 
+    'HipLeft', 
+    'KneeLeft', 
+    'AnkleLeft', 
+    'FootLeft', 
+    'HipRight',
+    'KneeRight', 
+    'AnkleRight', 
+    'FootRight', 
+    'SpineShoulder', 
+    'HandTipLeft',
+    'ThumbLeft', 
+    'HandTipRight', 
+    'ThumbRight'
 ]
 
-JOINT_INDS = {
-    name: idx for idx, name in enumerate(JOINT_NAMES)
+NTU_JOINT_INDS = {
+    name: idx for idx, name in enumerate(NTU_JOINT_NAMES)
 }
 
-
-JOINT_PARENT_NAMES = {
+NTU_JOINT_PARENT_NAMES = {
     # parent root to itself for convenience
     'Head': 'Head',
     # stuff down the centre
@@ -414,8 +433,8 @@ JOINT_PARENT_NAMES = {
     'FootRight': 'AnkleRight'
 }
 
-JOINT_PARENT_INDS = [
-    JOINT_INDS[JOINT_PARENT_NAMES[child_name]] for child_name in JOINT_NAMES
+NTU_JOINT_PARENT_INDS = [
+    NTU_JOINT_INDS[NTU_JOINT_PARENT_NAMES[child_name]] for child_name in NTU_JOINT_NAMES
 ]
 
 EVAL_PERFORMERS = {6, 14, 27, 28, 31, 32, 37, 40}
@@ -423,9 +442,18 @@ EVAL_PERFORMERS = {6, 14, 27, 28, 31, 32, 37, 40}
 
 def get_ntu_skeleton():
     skeletons = []
-    for child_index, childname in enumerate(JOINT_NAMES): 
-       parent_index = JOINT_INDS[JOINT_PARENT_NAMES[childname]]
-       if parent_index == child_index : 
+    for child_index, childname in enumerate(NTU_JOINT_NAMES): 
+        parent_index = NTU_JOINT_INDS[NTU_JOINT_PARENT_NAMES[childname]]
+        if parent_index == child_index : 
            continue 
-       skeletons.append([parent_index, child_index])
+        skeletons.append([parent_index, child_index])
     return skeletons
+
+def get_ntu_parent():
+    return NTU_JOINT_PARENT_INDS
+
+def get_ntu_joint_names():
+    return NTU_JOINT_NAMES
+
+def get_ntu_joint_ids():
+    return NTU_JOINT_INDS

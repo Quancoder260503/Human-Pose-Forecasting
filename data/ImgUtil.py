@@ -1,3 +1,4 @@
+import torch 
 from torchvision import transforms
 import numpy as np
 import cv2
@@ -132,95 +133,6 @@ def transfrom_keypoints(kp_2d, center_x, center_y, width, height, patch_width, p
 
     return kp_2d, trans
 
-def get_image_crops(image_file, bboxes):
-    image = cv2.cvtColor(cv2.imread(image_file), cv2.COLOR_BGR2RGB)
-    crop_images = []
-    for bb in bboxes:
-        c_y, c_x = (bb[0]+bb[2]) // 2, (bb[1]+bb[3]) // 2
-        h, w = bb[2]-bb[0], bb[3]-bb[1]
-        w = h = np.where(w / h > 1, w, h)
-        crop_image, _ = generate_patch_image_cv(
-            cvimg=image.copy(),
-            c_x=c_x,
-            c_y=c_y,
-            bb_width=w,
-            bb_height=h,
-            patch_width=224,
-            patch_height=224,
-            do_flip=False,
-            scale=1.3,
-            rot=0,
-        )
-        crop_image = convert_cvimg_to_tensor(crop_image)
-        crop_images.append(crop_image)
-
-    batch_image = torch.cat([x.unsqueeze(0) for x in crop_images])
-    return batch_image
-
-def get_single_image_crop(image, bbox, scale=1.3):
-    if isinstance(image, str):
-        if os.path.isfile(image):
-            image = cv2.cvtColor(cv2.imread(image), cv2.COLOR_BGR2RGB)
-        else:
-            print(image)
-            raise BaseException(image, 'is not a valid file!')
-    elif isinstance(image, torch.Tensor):
-        image = image.numpy()
-    elif not isinstance(image, np.ndarray):
-        raise('Unknown type for object', type(image))
-
-    crop_image, _ = generate_patch_image_cv(
-        cvimg=image.copy(),
-        c_x=bbox[0],
-        c_y=bbox[1],
-        bb_width=bbox[2],
-        bb_height=bbox[3],
-        patch_width=224,
-        patch_height=224,
-        do_flip=False,
-        scale=scale,
-        rot=0,
-    )
-
-    crop_image = convert_cvimg_to_tensor(crop_image)
-
-    return crop_image
-
-def get_single_image_crop_demo(image, bbox, kp_2d, scale=1.2, crop_size=224):
-    if isinstance(image, str):
-        if os.path.isfile(image):
-            image = cv2.cvtColor(cv2.imread(image), cv2.COLOR_BGR2RGB)
-        else:
-            print(image)
-            raise BaseException(image, 'is not a valid file!')
-    elif isinstance(image, torch.Tensor):
-        image = image.numpy()
-    elif not isinstance(image, np.ndarray):
-        raise('Unknown type for object', type(image))
-
-    crop_image, trans = generate_patch_image_cv(
-        cvimg=image.copy(),
-        c_x=bbox[0],
-        c_y=bbox[1],
-        bb_width=bbox[2],
-        bb_height=bbox[3],
-        patch_width=crop_size,
-        patch_height=crop_size,
-        do_flip=False,
-        scale=scale,
-        rot=0,
-    )
-
-    if kp_2d is not None:
-        for n_jt in range(kp_2d.shape[0]):
-            kp_2d[n_jt, :2] = trans_point2d(kp_2d[n_jt], trans)
-
-    raw_image = crop_image.copy()
-
-    crop_image = convert_cvimg_to_tensor(crop_image)
-
-    return crop_image, raw_image, kp_2d
-
 
 def torch_vid2numpy(video):
     video = video.detach().cpu().numpy()
@@ -277,27 +189,6 @@ def get_default_transform():
         normalize,
     ])
     return transform
-
-
-def split_into_chunks(vid_names, sequence_len, stride):
-    vid_names = np.array(vid_names)
-    video_start_end_indices = []
-
-    video_names, group = np.unique(vid_names, return_index=True)
-    perm = np.argsort(group)
-    video_names, group = video_names[perm], group[perm]
-
-    indices = np.split(np.arange(0, vid_names.shape[0]), group[1:])
-
-    for idx in range(len(video_names)):
-        indexes = indices[idx]
-        if indexes.shape[0] < sequence_len:
-            continue
-        chunks = view_as_windows(indexes, (sequence_len,), step=stride)
-        start_finish = chunks[:, (0, -1)].tolist()
-        video_start_end_indices += start_finish
-
-    return video_start_end_indices
 
 def torch2numpy(image):
     image = image.detach().cpu()

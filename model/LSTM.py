@@ -97,5 +97,4 @@ def get_lstm_model(pose_dim = 13, coordinates = True, embedding_dim = 2048, hidd
         dropout = dropout, 
         device = device
     ) 
-    model = model.to(device)
     return model

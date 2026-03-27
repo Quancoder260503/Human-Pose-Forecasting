@@ -5,7 +5,8 @@ import pyrender
 import numpy as np
 from matplotlib import pyplot as plt
 from data.ImgUtil import torch2numpy, normalize_2d_kp
-import data.KeyPointUtil
+from data.KeyPointUtil import *
+from data.NTUmeta import *
 
 def get_colors():
     colors = {
@@ -50,7 +51,7 @@ def draw_SMPL_joints2D(joints2D, image, kintree_table=None, color='red'):
     return image
 
 
-def draw_skeleton(image, kp_2d, prob = None, dataset = 'pennaction', thickness = 1, shadow = 0.3):
+def draw_skeleton(image, kp_2d, prob = None, prob_draw = 0.6, dataset = 'pennaction', thickness = 1, shadow = 0.3, eps = 5):
     if prob is None : 
         prob  = np.ones(kp_2d.shape[0])
     kp_2d = np.array(kp_2d, dtype=int)
@@ -62,21 +63,16 @@ def draw_skeleton(image, kp_2d, prob = None, dataset = 'pennaction', thickness =
     pcolor = get_colors()['green'].tolist()
     lcolor = get_colors()['blue'].tolist()
 
-    skeleton = eval(f'util.KeyPointUtil.get_{dataset}_skeleton')()
-    common_lr = [0,0,1,1,0,0,0,0,1,0,0,1,1,1,1]
+    skeleton = get_ntu_skeleton() if dataset == 'ntu' else get_pennaction_skeleton()
     for idx, pt in enumerate(kp_2d):
-        if prob[idx] > 0.6 and pt[0] > 0 and pt[1] > 0:
+        if prob[idx] > prob_draw and pt[0] > eps and pt[1] > eps:
             cv2.circle(image, (pt[0], pt[1]), 4, pcolor, -1)
 
     for i, (j1, j2) in enumerate(skeleton):
-        if prob[j1] > 0.6 and prob[j2] > 0.6 and kp_2d[j1, 0] > 0 and kp_2d[j1, 1] > 0 and kp_2d[j2, 0] > 0 and kp_2d[j2, 1] > 0:
-            color = rcolor if common_lr[i] == 0 else (
-                lcolor if dataset == 'common' else (lcolor if i % 2 == 0 else rcolor)
-            )
-
+        if prob[j1] > prob_draw and prob[j2] > prob_draw and kp_2d[j1, 0] > eps and kp_2d[j1, 1] > eps and kp_2d[j2, 0] > eps and kp_2d[j2, 1] > eps:
+            color = rcolor
             pt1 = tuple(kp_2d[j1, :2])
             pt2 = tuple(kp_2d[j2, :2])
-
             cv2.line(image, pt1, pt2, color, thickness= 3)
 
     return image

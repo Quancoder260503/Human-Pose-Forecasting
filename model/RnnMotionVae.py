@@ -5,10 +5,7 @@ import torch.nn.functional as F
 """
 Model human motion using VAE, note that the input for this model would have to be in 
 the form of vectors
-
-:TODO, replace, q_theta
 """
-
 class Encoder(nn.Module): 
     def __init__(self, pose_dim = 26, hidden_dim = 32, latent_dim = 16, num_layers = 2, dropout = 0.2, device = 'cuda'):
         """
@@ -78,11 +75,11 @@ class Decoder(nn.Module):
             input_size  = pose_dim,  
             hidden_size = hidden_dim, 
             num_layers  = num_layers, 
-            dropout     = dropout, 
+            dropout     = dropout if num_layers > 1 else 0, 
             batch_first = True, 
         )
-        self.reconstruct_hidden = nn.Linear(latent_dim, hidden_dim)
-        self.reconstruct_pose   = nn.Linear(hidden_dim, pose_dim)
+        self.proj_hidden_dim  = nn.Linear(latent_dim, hidden_dim)
+        self.proj_pose_dim    = nn.Linear(hidden_dim, pose_dim)
 
     def forward(self, observed_poses, latent_vector, predicted_len): 
         '''
@@ -94,7 +91,7 @@ class Decoder(nn.Module):
         batch = observed_poses.shape[0]
         
         cell_state   = torch.zeros(self.num_layers, batch, self.hidden_dim, device = self.device, dtype = torch.float32)
-        hidden_state = self.reconstruct_hidden(latent_vector).unsqueeze(0) # (1, B, hidden_dim) 
+        hidden_state = self.proj_hidden_dim(latent_vector).unsqueeze(0) # (1, B, hidden_dim) 
         hidden_state = hidden_state.repeat(self.num_layers, 1, 1)
 
         curr_state   = (hidden_state, cell_state)
@@ -103,16 +100,16 @@ class Decoder(nn.Module):
     
         for _ in range(predicted_len):
            output, curr_state = self.decoder(last_observed, curr_state)          # output : (B, 1, hidden_dim) 
-           curr_pose = self.reconstruct_pose(output.squeeze(1)) # (B, pose_dim) 
+           curr_pose = self.proj_pose_dim(output.squeeze(1)) # (B, pose_dim) 
            predicted_poses.append(curr_pose) 
            last_observed = curr_pose.unsqueeze(1) # (B, 1, pose_dim)
         predicted_poses = torch.stack(predicted_poses, dim = 1) # (B, T, pose_dim)
         return predicted_poses 
     
 
-class MotionVAE(nn.Module): 
+class RNNMotionVAE(nn.Module): 
     def __init__(self, Encoder, Decoder): 
-        super(MotionVAE, self).__init__()
+        super(RNNMotionVAE, self).__init__()
         self.encoder = Encoder 
         self.decoder = Decoder 
     
@@ -121,7 +118,7 @@ class MotionVAE(nn.Module):
         var     = torch.exp(0.5 * log_var) # (B, latent_dim) 
         return epsilon * var + mean   
     
-    def forward(self, observed_sequences, predicted_len): 
+    def forward(self, observed_sequences, prediction_len): 
         '''
         :param : observed sequences (B, T, pose_dim)
         :predicted_len : prediction length 
@@ -130,7 +127,7 @@ class MotionVAE(nn.Module):
         '''
         mean, log_var = self.encoder(observed_sequences)
         z = self.reparameterization(mean, log_var) 
-        out = self.decoder(observed_sequences, z, predicted_len)
+        out = self.decoder(observed_sequences, z, prediction_len)
         return out, mean, log_var
 
 def vae_loss_function(pred_velos, gt_velos, mean, log_var): 
@@ -156,12 +153,7 @@ def get_rnn_vae_model(
     ):
     vae_encoder = Encoder(pose_dim = pose_dim * 2, hidden_dim = hidden_dim, latent_dim = latent_dim, num_layers = encoding_layers, dropout = dropout, device = device) 
     vae_decoder = Decoder(pose_dim = pose_dim * 2, hidden_dim = hidden_dim, latent_dim = latent_dim, num_layers = decoding_layers, dropout = dropout, device = device) 
-    rnn_vae     = MotionVAE(vae_encoder, vae_decoder) 
-    rnn_vae     = rnn_vae.to(device)
+    rnn_vae     = RNNMotionVAE(vae_encoder, vae_decoder) 
     return rnn_vae
 
-# if __name__ == "__main__":
-#     dummy = torch.randn(5, 10, 26).to('cuda') 
-#     model = JointVAE(Encoder(), Decoder()).to('cuda') #JointVAE(Encoder(), Decoder()).to('cuda')
-#     out, _, _ = model(dummy)
-#     print(out.shape) 
+

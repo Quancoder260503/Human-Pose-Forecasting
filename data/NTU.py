@@ -19,7 +19,7 @@ used for training and testing.
 TODO : 
 1. Visualizing the joint using video 
 2. Extracting joints and action class for classification task
-
+3. Fix the coordinates normalization to prevent data leakage 
 '''
 
 NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames/nturgb+d_rgb'
@@ -30,10 +30,8 @@ class NTU(Dataset):
         num_testing_frame  = 7, 
         ntu_input_w = 1920, 
         ntu_input_h = 1080, 
-        input_w = 640,
-        input_h = 640,
-        map_h   = 46,
-        map_w   = 46,
+        box_size  = 640, 
+        heatmap_size = 46, 
         num_joints     = 25,
         gaussian_sigma = 21,
         data_dir = 'dataset/NanyangTechRGB/',
@@ -48,8 +46,7 @@ class NTU(Dataset):
         """
         :param num_training_frame : frames extracted for training
         :param num_testing_frame  : frames extracted for testing  
-        :param input_w            : width of the normalized image 
-        :param input_h            : height of the normalized image 
+        :param box_size           : width of the normalized image 
         :param num_joints         : number of joints for the dataset 
         :param gaussian_sigma     : gaussian s.t.d for drawing heatmap 
         :param data_dir           : root to dataset 
@@ -67,13 +64,11 @@ class NTU(Dataset):
         self.ntu_input_h        = ntu_input_h 
         self.num_training_frame = num_training_frame 
         self.num_testing_frame  = num_testing_frame 
-        self.input_w = input_w
-        self.input_h = input_h
-        self.map_h = map_h
-        self.map_w = map_w
+        self.box_size       = box_size
+        self.heatmap_size   = heatmap_size
         self.num_joints     = num_joints
         self.gaussian_sigma = gaussian_sigma
-        self.transform      = self.get_default_transform() # Just in case I might use image for training 
+        self.transform      = self.get_default_transform() 
         self.train          = train
         self.require_action = require_action
         if self.train is True :
@@ -154,7 +149,6 @@ class NTU(Dataset):
         dim         = label.shape[2]
         assert num_joints == self.num_joints and dim == 2, "Does not match expected information"
         visibility  = np.ones((label.shape[0], label.shape[1], 1))
-        
         start_index    = np.random.randint(0, n_frames - 1 - total_frame + 1)
        
         #assert torch.isnan(label).sum() == 0, "NaN values found in label!"
@@ -179,7 +173,7 @@ class NTU(Dataset):
             target_poses  = label[start_index + self.num_training_frame : start_index + total_frame, :, :]
             target_poses  = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
 
-            assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
+            #assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
             
             observed_poses[torch.isnan(observed_poses)] = 0.5 
             target_poses[torch.isnan(target_poses)]     = 0.5
@@ -226,7 +220,7 @@ class NTU(Dataset):
             
             assert (not np.isnan(median_head_pos_x)) and (not np.isnan(median_head_pos_y)), f"cannot extract head set {name} and {storage}" 
             
-            min_x, max_x, min_y, max_y = self.input_w, 0, self.input_h, 0
+            min_x, max_x, min_y, max_y = self.ntu_input_w, 0, self.ntu_input_h, 0
 
             for time_step in range(start_index, start_index + total_frame): 
               for joint in range(self.num_joints): 
@@ -238,8 +232,9 @@ class NTU(Dataset):
 
             assert max_x >= min_x and max_y >= min_y, "No human ever appears in the scenes"
 
-            scale_x = 1. * (max_x - min_x) / self.ntu_input_w * self.input_w 
-            scale_y = 1. * (max_y - min_y) / self.ntu_input_h * self.input_h 
+            scale_x = 1. * (max_x - min_x) / self.ntu_input_w * self.box_size 
+            scale_y = 1. * (max_y - min_y) / self.ntu_input_h * self.box_size
+
             scale_factor = np.array([scale_x, scale_y]) 
 
             vector_label = np.zeros((total_frame, self.num_joints, 2))
@@ -260,8 +255,8 @@ class NTU(Dataset):
                     if parent_index == child_index : 
                         continue 
                     if visibility[time_step, child_index] and visibility[time_step, parent_index]:
-                        vector_label[curr_index, child_index, 0] = (x_norm[parent_index] - x_norm[child_index]) * self.input_w / scale_factor[0]
-                        vector_label[curr_index, child_index, 1] = (y_norm[parent_index] - y_norm[child_index]) * self.input_h / scale_factor[1]
+                        vector_label[curr_index, child_index, 0] = (x_norm[parent_index] - x_norm[child_index]) * self.box_size / scale_factor[0]
+                        vector_label[curr_index, child_index, 1] = (y_norm[parent_index] - y_norm[child_index]) * self.box_size / scale_factor[1]
 
 
             observed_poses = torch.tensor(label[start_index : start_index + self.num_training_frame, :, :]) 
@@ -285,7 +280,7 @@ class NTU(Dataset):
             
             assert (not np.isnan(median_root_pos_x)) and (not np.isnan(median_root_pos_y)), f"cannot extract root in set {name} and {storage}" 
             
-            min_x, max_x, min_y, max_y = self.input_w, 0, self.input_h, 0
+            min_x, max_x, min_y, max_y = self.ntu_input_w, 0, self.ntu_input_h, 0
 
             for time_step in range(start_index, start_index + total_frame): 
               for joint in range(self.num_joints): 
@@ -297,8 +292,9 @@ class NTU(Dataset):
 
             assert max_x >= min_x and max_y >= min_y, "No human ever appears in the scenes"
 
-            scale_x = 1. * (max_x - min_x) / self.ntu_input_w * self.input_w 
-            scale_y = 1. * (max_y - min_y) / self.ntu_input_h * self.input_h 
+            scale_x = 1. * (max_x - min_x) / self.ntu_input_w * self.box_size 
+            scale_y = 1. * (max_y - min_y) / self.ntu_input_h * self.box_size
+
             scale_factor = np.array([scale_x, scale_y]) 
 
             vector_label = np.zeros((total_frame, self.num_joints, 2))
@@ -317,8 +313,8 @@ class NTU(Dataset):
                 for child_index, childname in enumerate(self.joint_names): 
                     if child_index == root_position : 
                         continue 
-                    vector_label[curr_index, child_index, 0] = (x_norm[child_index] - x_norm[root_position]) * self.input_w / scale_factor[0]
-                    vector_label[curr_index, child_index, 1] = (y_norm[child_index] - y_norm[root_position]) * self.input_h / scale_factor[1]
+                    vector_label[curr_index, child_index, 0] = (x_norm[child_index] - x_norm[root_position]) * self.box_size / scale_factor[0]
+                    vector_label[curr_index, child_index, 1] = (y_norm[child_index] - y_norm[root_position]) * self.box_size / scale_factor[1]
 
 
             observed_poses        = torch.tensor(label[start_index : start_index + self.num_training_frame, :, :]) 
@@ -368,8 +364,8 @@ class NTU(Dataset):
             for j_idx in range(self.num_joints):
                 if label[2, j_idx, f_idx] > 0:
                     cx, cy   = label[0, j_idx, f_idx], label[1, j_idx, f_idx]
-                    cx = cx * self.map_w / self.input_w
-                    cy = cy * self.map_h / self.input_h
+                    cx = cx * self.heatmap_size / self.box_size
+                    cy = cy * self.heatmap_size / self.box_size
                     heat_map = self.get_center_map(x = cx, y = cy, sigma = sigma, size_w = self.map_w, size_h = self.map_h)
                 else :
                     heat_map = np.zeros((heatmap_size, heatmap_size))
@@ -430,7 +426,7 @@ class NTU(Dataset):
                 video_frames = np.array(resized_frames) 
                 observed_images = video_frames[start_index : start_index + num_training_frame, :, :, :] 
                 target_images   = video_frames[start_index + num_training_frame : start_index + total_frames, :, :, :] 
-                return observed_images, target_images
+            return observed_images, target_images
         return None  
 
 #if __name__ == '__main__': 

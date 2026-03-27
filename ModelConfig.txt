@@ -1,0 +1,9 @@
+# Model config used in the experiment
+
+motion_vae_v0
+:hidden_dim = 512 
+:latent_dim = 128 
+:lstm_encoding_layers = 2
+:lstm_decoding_layers = 1 
+
+attention_motion_vae_v0 

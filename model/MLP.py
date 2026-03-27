@@ -24,24 +24,24 @@ class PosePredictionMLP(nn.Module):
         self.mlp = nn.ModuleList()
         self.mlp.append(
             nn.Sequential(
-               nn.Linear(train_len * pose_dim, hidden_layers[0]), 
+               nn.Linear(self.train_len * self.pose_dim, self.hidden_layers[0]), 
                nn.ReLU(inplace = True), 
-               nn.Dropout(dropout)
+               nn.Dropout(self.dropout)
             )
         ) 
         for i in range(1, len(hidden_layers)): 
             self.mlp.append(
                nn.Sequential(
-                  nn.Linear(hidden_layers[i - 1], hidden_layers[i]), 
+                  nn.Linear(self.hidden_layers[i - 1], self.hidden_layers[i]), 
                   nn.ReLU(inplace = True), 
-                  nn.Dropout(dropout), 
+                  nn.Dropout(self.dropout), 
                )
             )
         self.mlp.append(
-            nn.Linear(hidden_layers[-1], predict_len * pose_dim)
+            nn.Linear(self.hidden_layers[-1], self.predict_len * self.pose_dim)
         )
 
-    def forward(self, observed_poses): 
+    def forward(self, observed_poses, prediction_len = 14): 
         """
         :param observed_poses : tensor of shape (batch, train_len, pose_dim)
         :return : 
@@ -73,7 +73,7 @@ def mlp_loss_function(pred_joints, gt_joints, time_step):
     return total_loss / time_step
 
 
-def get_mlp_model(pose_dim = 13 * 3, coordinates = True, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):
+def get_mlp_model(pose_dim = 13, coordinates = True, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):
     model = PosePredictionMLP( 
         pose_dim      = pose_dim,
         coordinates   = coordinates, 
@@ -82,5 +82,4 @@ def get_mlp_model(pose_dim = 13 * 3, coordinates = True, train_len = 15, predict
         hidden_layers = hidden_layers, 
         dropout       = dropout
     )
-    model = model.to(device)
     return model

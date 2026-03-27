@@ -15,6 +15,7 @@ import math
 TODO : 
 1. Visualizing the joint using video 
 2. Extracting joints and action class for classification task
+3.. Fix the coordinates normalization to prevent data leakage 
 '''
 
 
@@ -25,10 +26,8 @@ class PennAction(Dataset):
     def __init__(self,
         num_training_frame = 7, 
         num_testing_frame  = 7, 
-        input_w = 480,
-        input_h = 480,
-        map_h   = 46,
-        map_w   = 46,
+        box_size       = 480, 
+        heatmap_size   = 64, 
         num_joints     = 13,
         gaussian_sigma = 21,
         data_dir = 'dataset/PennAction/',
@@ -59,13 +58,11 @@ class PennAction(Dataset):
         super(PennAction, self).__init__()
         self.num_training_frame = num_training_frame 
         self.num_testing_frame  = num_testing_frame 
-        self.input_w = input_w
-        self.input_h = input_h
-        self.map_h = map_h
-        self.map_w = map_w
-        self.num_joints = num_joints
+        self.box_size = box_size
+        self.heatmap_size   = heatmap_size
+        self.num_joints     = num_joints
         self.gaussian_sigma = gaussian_sigma
-        self.transform = self.get_default_transform() # Just in case I might use image for training 
+        self.transform      = self.get_default_transform() # Just in case I might use image for training 
         self.train          = train
         self.require_image  = require_image 
         self.require_action = require_action
@@ -141,21 +138,21 @@ class PennAction(Dataset):
         start_index = np.random.randint(0, n_frames - 1 - total_frame + 1) 
 
         label        = np.zeros((3, num_joints, total_frame))  
-        images       = torch.zeros(total_frame, 3, self.input_h, self.input_w)
+        images       = torch.zeros(total_frame, 3, self.box_size, self.box_size)
         vector_label = np.zeros((2, num_joints, total_frame))
 
         # get median head pos
         h, w = dim 
         median_head_pos_x, median_head_pos_y = np.median(x[:, 0]), np.median(y[:, 0])
-        scale_x      = (np.max(x[start_index : start_index + total_frame, :]) - np.min(x[start_index : start_index + total_frame, :])) / w * self.input_w 
-        scale_y      = (np.max(y[start_index : start_index + total_frame, :]) - np.min(y[start_index : start_index + total_frame, :])) / h * self.input_h
+        scale_x      = (np.max(x[start_index : start_index + total_frame, :]) - np.min(x[start_index : start_index + total_frame, :])) / w * self.box_size 
+        scale_y      = (np.max(y[start_index : start_index + total_frame, :]) - np.min(y[start_index : start_index + total_frame, :])) / h * self.box_size
         scale_factor = np.array([scale_x, scale_y]) 
         
         for i in range(total_frame):
             img_path = os.path.join(frames_path, '%06d' % (start_index + i + 1) + '.jpg')
             img = cv2.imread(img_path)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (self.input_w, self.input_h), interpolation = cv2.INTER_CUBIC)
+            img = cv2.resize(img, (self.box_size, self.box_size), interpolation = cv2.INTER_CUBIC)
             images[i, :, :, :] = self.transform(img)
             
             label[0, :, i] = x[start_index + i, :] / w
@@ -175,10 +172,9 @@ class PennAction(Dataset):
 
             for joint, parent in enumerate(self.pennaction_parents[1:], start=1):
                 if visibility[start_index + i, joint] and visibility[start_index + i, parent] : 
-                    vector_label[0, joint, i] = (x_norm[parent] - x_norm[joint]) * self.input_w / scale_factor[0]
-                    vector_label[1, joint, i] = (y_norm[parent] - y_norm[joint]) * self.input_h / scale_factor[1]
+                    vector_label[0, joint, i] = (x_norm[parent] - x_norm[joint]) * self.box_size / scale_factor[0]
+                    vector_label[1, joint, i] = (y_norm[parent] - y_norm[joint]) * self.box_size / scale_factor[1]
                 
-    
 
         observed_img = images[: self.num_training_frame, :, :, :] 
         target_img   = images[self.num_training_frame :, :, :, :]
@@ -228,7 +224,7 @@ class PennAction(Dataset):
 
            return observed_bones, targeted_bones, observed_poses, target_poses, scale_factor, observed_img, target_img
         
-        else : # Velocity implementation 
+        elif self.velocity : # Velocity implementation 
 
             # This is poor software practice, but given the scale of the experiment, this can be neglected 
 
@@ -253,8 +249,8 @@ class PennAction(Dataset):
 
             target_velocity = torch.cat([(target_poses[0, :] - observed_poses[-1, :]).unsqueeze(0),  target_poses[1:, :] -  target_poses[:-1, :]], dim = 0)
 
-            observed_poses[torch.isnan(observed_poses)] = 0.5
-            target_poses[torch.isnan(target_poses)]     = 0.5
+            observed_poses[torch.isnan(observed_poses)] = 0
+            target_poses[torch.isnan(target_poses)]     = 0
 
             observed_poses = torch.cat([observed_poses.contiguous().view(-1, num_joints, 2), observed_masks.unsqueeze(-1)], dim = -1) 
             target_poses   = torch.cat([target_poses.contiguous().view(-1, num_joints, 2),   target_masks.unsqueeze(-1)],   dim = -1)
@@ -265,7 +261,9 @@ class PennAction(Dataset):
             target_velocity[torch.isnan(target_velocity)]     = 0
 
             return observed_poses, target_poses, observed_velocity, target_velocity, observed_img, target_img 
-
+        
+        else : 
+            raise NotImplementedError('Method not supported')
 
         # For now, skip these twos 
         # heat_maps  =  self.gen_heat_map(
@@ -320,8 +318,8 @@ class PennAction(Dataset):
             for j_idx in range(self.num_joints):
                 if label[2, j_idx, f_idx] > 0:
                     cx, cy   = label[0, j_idx, f_idx], label[1, j_idx, f_idx]
-                    cx = cx * self.map_w / self.input_w
-                    cy = cy * self.map_h / self.input_h
+                    cx = cx * self.heatmap_size / self.box_size
+                    cy = cy * self.heatmap_size / self.box_size
                     heat_map = self.get_center_map(x = cx, y = cy, sigma = sigma, size_w = self.map_w, size_h = self.map_h)
                 else :
                     heat_map = np.zeros((heatmap_size, heatmap_size))
@@ -351,9 +349,10 @@ class PennAction(Dataset):
 
 
 if __name__ == "__main__":
-    test_penn_action = PennAction(bone_vector = True, train = False, require_image = False) 
-    observed_bones, target_bones, scaled_factor = test_penn_action[0]
-    scaled_factor = torch.tensor(scaled_factor)
-    og_poses = PennAction.reconstruct_pose(observed_bones.unsqueeze(0), scaled_factor.unsqueeze(0))
+    test_penn_action = PennAction(velocity = True, train = False, require_image = False) 
+    observed_poses, target_poses, observed_velocities, target_velocities = test_penn_action[0] 
+
+    #scaled_factor = torch.tensor(scaled_factor)
+    #og_poses = PennAction.reconstruct_pose(observed_bones.unsqueeze(0), scaled_factor.unsqueeze(0))
  #   print(og_poses.shape)
     

@@ -12,7 +12,7 @@ from data.ImgUtil       import *
 from Util       import * 
 from model.Lstm               import *
 from model.Mlp                import *
-from model.RnnMotionVae       import *
+from model.LSTMMotionVae       import *
 from model.AttentionMotionVae import * 
 import math 
 import random 
@@ -37,38 +37,38 @@ def inference_by_coordinates(args, model, criterion, ntu):
 
    pck_prediction = get_ntu_predictions_dict()
 
-   observed_images, target_images = NTU.get_video_frames(name, start_index, args.num_training_frame, args.num_testing_frame)
-
+   observed_images, target_images = NTU.get_video_frames(name, start_index, args.num_training_frame, args.num_testing_frame, args.boxsize)
    for index in range(0, args.num_testing_frame): 
       curr_target_pose                    = target_poses[:, index, :].squeeze(0)
-      curr_target_pose, curr_target_prob  = torch.split(curr_target_prob.contiguous().view(args.num_joints, 3), [2, 1], dim = -1)  # Scale factor
+      curr_target_pose, curr_target_prob  = torch.split(curr_target_pose.contiguous().view(args.num_joints, 3), [2, 1], dim = -1)  
       
       curr_pred_pose                  = predicted_poses[:, index, :].squeeze(0)
       curr_pred_pose, curr_pred_prob  = torch.split(curr_pred_pose.contiguous().view(args.num_joints, 3), [2, 1], dim = -1)
 
-      pred_prob  = torch.sigmoid(pred_prob)
+      curr_pred_prob  = torch.sigmoid(curr_pred_prob)
 
-      curr_target_image = torch2numpy(target_images[index, :, :, :])
+      curr_target_image = target_images[index, :, :, :]
 
       pck_prediction = pck_joints(curr_pred_pose, curr_target_pose, pck_prediction, get_ntu_joint_names(), alpha = 0.05)
 
 
-      target_annotated_image  = draw_skeleton(curr_target_image, curr_target_pose.detach().cpu().numpy() * ntu.box_size, curr_target_prob.detach().cpu().numpy())
-      target_prediction_image = draw_skeleton(curr_target_image, curr_pred_pose.detach().cpu().numpy()   * ntu.box_size, curr_pred_prob.detach().cpu().numpy())
+      target_annotated_image  = draw_skeleton(curr_target_image, curr_target_pose.detach().cpu().numpy() * ntu.box_size, curr_target_prob.detach().cpu().numpy(), dataset = 'ntu')
+      target_prediction_image = draw_skeleton(curr_target_image, curr_pred_pose.detach().cpu().numpy()   * ntu.box_size, curr_pred_prob.detach().cpu().numpy(),   dataset = 'ntu')
 
       axes[0, index].imshow(target_annotated_image)
+      axes[0, index].axis('off')
+      axes[1, index].imshow(target_prediction_image)
       axes[1, index].axis('off')
-      axes[2, index].imshow(target_prediction_image)
-      axes[2, index].axis('off')
 
       videos_real.append(target_annotated_image)
       videos_pred.append(target_prediction_image)
 
       acc = get_acc(pck_prediction)
-      print(acc)
-
+      #print(acc)
+   print(acc)
    plt.tight_layout()
-   plt.show() 
+   plt.show()
+   show_video(videos_pred, fps = 5) 
 
 
 def inference_by_parent_relative(args, model, criterion, ntu):
@@ -96,7 +96,7 @@ def inference_by_parent_relative(args, model, criterion, ntu):
    videos_real = []
    videos_pred = [] 
 
-   observed_images, target_images = NTU.get_video_frames(name, start_index, args.num_training_frame, args.num_testing_frame)
+   observed_images, target_images = NTU.get_video_frames(name, start_index, args.num_training_frame, args.num_testing_frame, args.boxsize)
 
    for index in range(0, args.num_testing_frame):     
       curr_target_image = target_images[index, :, :, :]
@@ -143,7 +143,7 @@ def inference_by_velocity(args, model, criterion, ntu):
 
    pck_prediction = get_ntu_predictions_dict()
 
-   observed_images, target_images = NTU.get_video_frames(name, start_index, args.num_training_frame, args.num_testing_frame)
+   observed_images, target_images = NTU.get_video_frames(name, start_index, args.num_training_frame, args.num_testing_frame, args.boxsize)
    
    for index in range(0, args.num_testing_frame):     
       curr_target_image = target_images[index, :, :, :]
@@ -158,9 +158,9 @@ def inference_by_velocity(args, model, criterion, ntu):
       pck_prediction = pck_joints(curr_predict_pose, curr_target_pose, pck_prediction, get_pennaction_joint_names(), alpha = 0.05)
 
       
-      target_annotated_image = draw_skeleton(curr_target_image, curr_target_pose.detach().cpu().numpy()  * pennaction.box_size)
+      target_annotated_image = draw_skeleton(curr_target_image, curr_target_pose.detach().cpu().numpy()  * ntu.box_size, dataset = 'ntu')
       axes[0, index].imshow(target_annotated_image)
-      target_predicted_image = draw_skeleton(curr_target_image, curr_predict_pose.detach().cpu().numpy() * pennaction.box_size)
+      target_predicted_image = draw_skeleton(curr_target_image, curr_predict_pose.detach().cpu().numpy() * ntu.box_size, dataset = 'ntu')
       axes[1, index].imshow(target_predicted_image)
    
      
@@ -169,6 +169,7 @@ def inference_by_velocity(args, model, criterion, ntu):
       
       acc = get_acc(pck_prediction)
       print(acc)
+
      
    plt.tight_layout()
    plt.show() 
@@ -186,8 +187,8 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint',                                 type = str,   required = True)
     parser.add_argument('--dataset',            default = 'ntu',        type = str,   required = False)
     parser.add_argument('--num_joints',         default = 25,           type = int,   required = False)
-    parser.add_argument('--num_training_frame', default = 15,           type = int,   required = False)
-    parser.add_argument('--num_testing_frame',  default = 15,           type = int,   required = False) 
+    parser.add_argument('--num_training_frame', default = 14,           type = int,   required = False)
+    parser.add_argument('--num_testing_frame',  default = 7,           type = int,   required = False) 
     parser.add_argument('--learning_rate',      default = 1e-4,         type = float, required = False)
     parser.add_argument('--device',             default = 'cuda',       type = str,   required = False) 
     parser.add_argument('--model' ,             default = 'lstm',       type = str,   required = True) 
@@ -236,7 +237,7 @@ if __name__ == '__main__':
     ntu_dataset = NTU(
       num_training_frame = args.num_training_frame, 
       num_testing_frame  = args.num_testing_frame, 
-      box_size           = args.box_size,
+      box_size           = args.boxsize,
       num_joints         = args.num_joints, 
       train              = False, 
       root_relative      = args.root_relative, 

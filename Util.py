@@ -4,8 +4,7 @@ from data.KeyPointUtil import get_pennaction_joint_names, get_pennaction_parents
 from data.NTUmeta import *
 from model.Lstm               import *
 from model.Mlp                import *
-from model.RnnMotionVae       import *
-from model.AttentionMotionVae import * 
+from model.LstmMotionVae      import * 
 import torch 
 
 """
@@ -17,7 +16,7 @@ def get_model(args):
         model = get_mlp_model(
             pose_dim      = args.num_joints, 
             coordinates   = args.coordinates, 
-            train_len     = args.num_training_frame, 
+            train_len     = args.num_training_frame - (1 if args.velocity else 0), 
             predict_len   = args.num_testing_frame, 
             hidden_layers = args.mlp_hidden_layers, 
             dropout       = args.dropout, 
@@ -34,6 +33,7 @@ def get_model(args):
             num_layers     = args.lstm_num_layers, 
             dropout        = args.dropout, 
             device         = args.device, 
+            residual_connection = args.lstm_residual_connection,
         )
         criterion = lstm_loss_function 
         return model, criterion 
@@ -50,26 +50,6 @@ def get_model(args):
         )
         criterion_vae = vae_loss_function
         return vae_model, criterion_vae
-    
-    elif args.model == 'attention_motion_vae':
-        attention_vae_model = get_attention_vae_model(
-            pose_dim            = args.num_joints,
-            encoding_length     = args.num_training_frame - (1 if args.velocity else 0), 
-            num_heads           = args.attention_motion_vae_num_heads, 
-            model_dim           = args.attention_motion_vae_model_dim, 
-            query_dim           = args.attention_motion_vae_query_dim, 
-            value_dim           = args.attention_motion_vae_value_dim, 
-            fc_hidden_dim       = args.attention_motion_vae_fc_hidden_dim, 
-            num_encoding_layers = args.attention_motion_vae_num_encoding_layers,
-            num_decoding_layers = args.attention_motion_vae_num_decoding_layers, 
-            dropout             = args.dropout, 
-            latent_dim          = args.attention_motion_vae_latent_dim, 
-            temperature         = args.temperature, 
-            alpha               = args.alpha,
-            device              = args.device, 
-        )
-        criterion = attention_vae_loss_function
-        return attention_vae_model, criterion
 
 
     elif args.model == 'decouple_motion_vae': 
@@ -317,104 +297,159 @@ def get_acc(predictions):
 PENN ACTION PLOT 
 '''
 
-def plot_metric_pennaction(ax1, ax2, metric_list, title):
-    head_acc  = [[x[0]['headtop'], x[1]['headtop']] for x in metric_list] 
-    sho_acc   = [[(x[0]['lshoulder'] + x[0]['rshoulder']) / 2.0, 
-                  (x[1]['lshoulder'] + x[1]['rshoulder']) / 2.0] for x in metric_list]
-    elb_acc   = [[(x[0]['lelbow'] + x[0]['relbow']) / 2.0, 
-                  (x[1]['lelbow'] + x[1]['relbow']) / 2.0] for x in metric_list]
-    wri_acc   = [[(x[0]['lwrist'] + x[0]['rwrist']) / 2.0, 
-                  (x[1]['lwrist'] + x[1]['rwrist']) / 2.0] for x in metric_list]
-    hip_acc   = [[(x[0]['lhip'] + x[0]['rhip']) / 2.0, 
-                  (x[1]['lhip'] + x[1]['rhip']) / 2.0] for x in metric_list]
-    knee_acc  = [[(x[0]['lknee'] + x[0]['rknee']) / 2.0, 
-                  (x[1]['lknee'] + x[1]['rknee']) / 2.0] for x in metric_list]
-    ank_acc   = [[(x[0]['lankle'] + x[0]['rankle']) / 2.0, 
-                  (x[1]['lankle'] + x[1]['rankle']) / 2.0] for x in metric_list]
-    total_acc = [[x[0]['total'], x[1]['total']] for x in metric_list]
 
-    ax1.plot([x[0] for x in total_acc], label="Total")
-    ax1.plot([x[0] for x in head_acc],  label="Head")
-    ax1.plot([x[0] for x in sho_acc],   label="Shoulders")
-    ax1.plot([x[0] for x in elb_acc],   label="Elbows")
-    ax1.plot([x[0] for x in wri_acc],   label="Wrists")
-    ax1.plot([x[0] for x in hip_acc],   label="Hips")
-    ax1.plot([x[0] for x in knee_acc],  label="Knees")
-    ax1.plot([x[0] for x in ank_acc],   label="Ankles")
-    ax1.set_title("PCK accuracy on Training Set - " + title, fontsize=12)
-    ax1.set_ylabel("Score", fontsize=10)
-    ax1.set_xlabel("Epoch", fontsize=10)
-    ax1.legend(prop={'size': 10})
+def plot_metric_pennaction(ax1, ax2, metric_list, title, plot_training = True):
+    if plot_training : 
+        head_acc  = [[x[0]['headtop'], x[1]['headtop']] for x in metric_list] 
+        sho_acc   = [[(x[0]['lshoulder'] + x[0]['rshoulder']) / 2.0, 
+                      (x[1]['lshoulder'] + x[1]['rshoulder']) / 2.0] for x in metric_list]
+        elb_acc   = [[(x[0]['lelbow'] + x[0]['relbow']) / 2.0, 
+                      (x[1]['lelbow'] + x[1]['relbow']) / 2.0]       for x in metric_list]
+        wri_acc   = [[(x[0]['lwrist'] + x[0]['rwrist']) / 2.0, 
+                      (x[1]['lwrist'] + x[1]['rwrist']) / 2.0]       for x in metric_list]
+        hip_acc   = [[(x[0]['lhip'] + x[0]['rhip']) / 2.0, 
+                      (x[1]['lhip'] + x[1]['rhip']) / 2.0]           for x in metric_list]
+        knee_acc  = [[(x[0]['lknee'] + x[0]['rknee']) / 2.0, 
+                      (x[1]['lknee'] + x[1]['rknee']) / 2.0]         for x in metric_list]
+        ank_acc   = [[(x[0]['lankle'] + x[0]['rankle']) / 2.0, 
+                      (x[1]['lankle'] + x[1]['rankle']) / 2.0]       for x in metric_list]
+        
+        total_acc = [[x[0]['total'], x[1]['total']] for x in metric_list]
+        
+        ax1.plot([x[0] for x in total_acc], label="Total")
+        ax1.plot([x[0] for x in head_acc],  label="Head")
+        ax1.plot([x[0] for x in sho_acc],   label="Shoulders")
+        ax1.plot([x[0] for x in elb_acc],   label="Elbows")
+        ax1.plot([x[0] for x in wri_acc],   label="Wrists")
+        ax1.plot([x[0] for x in hip_acc],   label="Hips")
+        ax1.plot([x[0] for x in knee_acc],  label="Knees")
+        ax1.plot([x[0] for x in ank_acc],   label="Ankles")
+        ax1.set_title("PCK accuracy on Training Set - " + title, fontsize=12)
+        ax1.set_ylabel("Score", fontsize = 10)
+        ax1.set_xlabel("Epoch", fontsize = 10)
+        ax1.legend(prop={'size': 10})
+    
 
-    ax2.plot([x[1] for x in total_acc], label="Total")
-    ax2.plot([x[1] for x in head_acc],  label="Head")
-    ax2.plot([x[1] for x in sho_acc],   label="Shoulders")
-    ax2.plot([x[1] for x in elb_acc],   label="Elbows")
-    ax2.plot([x[1] for x in wri_acc],   label="Wrists")
-    ax2.plot([x[1] for x in hip_acc],   label="Hips")
-    ax2.plot([x[1] for x in knee_acc],  label="Knees")
-    ax2.plot([x[1] for x in ank_acc],   label="Ankles")
-    ax2.set_title("PCK accuracy on Validation Set - " + title, fontsize=12)
-    ax2.set_ylabel("Score", fontsize=10)
-    ax2.set_xlabel("Epoch", fontsize=10)
-    ax2.legend(prop={'size': 10})
+        ax2.plot([x[1] for x in total_acc], label="Total")
+        ax2.plot([x[1] for x in head_acc],  label="Head")
+        ax2.plot([x[1] for x in sho_acc],   label="Shoulders")
+        ax2.plot([x[1] for x in elb_acc],   label="Elbows")
+        ax2.plot([x[1] for x in wri_acc],   label="Wrists")
+        ax2.plot([x[1] for x in hip_acc],   label="Hips")
+        ax2.plot([x[1] for x in knee_acc],  label="Knees")
+        ax2.plot([x[1] for x in ank_acc],   label="Ankles")
+        ax2.set_title(f"PCK accuracy on Validation Set - " + title, fontsize=12)
+        ax2.set_ylabel("Score", fontsize=10)
+        ax2.set_xlabel("Epoch", fontsize=10)
+        ax2.legend(prop={'size': 10})
+    else : 
+        head_acc  = [x['headtop'] for x in metric_list] 
+        sho_acc   = [(x['lshoulder'] + x['rshoulder']) / 2.0 for x in metric_list]
+        elb_acc   = [(x['lelbow']    + x['relbow'])    / 2.0 for x in metric_list]
+        wri_acc   = [(x['lwrist']    + x['rwrist'])    / 2.0 for x in metric_list]
+        hip_acc   = [(x['lhip']      + x['rhip'])      / 2.0 for x in metric_list]
+        knee_acc  = [(x['lknee']     + x['rknee'])     / 2.0 for x in metric_list]
+        ank_acc   = [(x['lankle']    + x['rankle'])    / 2.0 for x in metric_list]
+        total_acc = [x['total'] for x in metric_list]
+        
+        ax2.plot([x for x in total_acc], label="Total")
+        ax2.plot([x for x in head_acc],  label="Head")
+        ax2.plot([x for x in sho_acc],   label="Shoulders")
+        ax2.plot([x for x in elb_acc],   label="Elbows")
+        ax2.plot([x for x in wri_acc],   label="Wrists")
+        ax2.plot([x for x in hip_acc],   label="Hips")
+        ax2.plot([x for x in knee_acc],  label="Knees")
+        ax2.plot([x for x in ank_acc],   label="Ankles")
+        ax2.set_title("PCK accuracy on Inference Time - " + title, fontsize=12)
+        ax2.set_ylabel("Score",        fontsize = 10)
+        ax2.set_xlabel("Time horizon (Num Frames)", fontsize = 10)
+        ax2.legend(prop={'size': 10})
 
 '''
 NTU PLOT
 '''
-def plot_metric_ntu(ax1, ax2, metric_list, title): 
-    head_acc     = [[x[0]['Head'],      x[1]['Head']]      for x in metric_list]
-    shoulder_acc = [[(x[0]['ShoulderLeft']  + x[0]['ShoulderRight']) / 2.0, 
-                     (x[1]['ShoulderLeft']  + x[1]['ShoulderRight']) / 2.0] for x in metric_list]
-    elbow_acc    = [[(x[0]['ElbowLeft'] + x[0]['ElbowRight']) / 2.0, 
-                     (x[1]['ElbowLeft'] + x[1]['ElbowRight']) / 2.0]        for x in metric_list]
-    wrist_acc    = [[(x[0]['WristLeft'] + x[0]['WristRight']) / 2.0, 
-                     (x[1]['WristLeft'] + x[1]['WristRight']) / 2.0]        for x in metric_list]
-    hip_acc      = [[(x[0]['HipLeft']   + x[0]['HipRight'])   / 2.0, 
-                     (x[1]['HipLeft']   + x[1]['HipRight'])   / 2.0]        for x in metric_list]
-    knee_acc     = [[(x[0]['KneeLeft']  + x[0]['KneeRight'])  / 2.0, 
-                     (x[1]['KneeLeft']  + x[1]['KneeRight'])  / 2.0]        for x in metric_list]
-    ank_acc      = [[(x[0]['AnkleLeft'] + x[0]['AnkleRight']) / 2.0, 
-                     (x[1]['AnkleLeft'] + x[1]['AnkleRight']) / 2.0]        for x in metric_list]
-    spine_base   = [[x[0]['SpineBase'], x[1]['SpineBase']] for x in metric_list]
-    # FIX 4: Were using x[1] for both train and val
-    spine_mid    = [[x[0]['SpineMid'],  x[1]['SpineMid']]  for x in metric_list]
-    neck         = [[x[0]['Neck'],      x[1]['Neck']]      for x in metric_list]
-    total_acc    = [[x[0]['total'],     x[1]['total']]     for x in metric_list]
-
+def plot_metric_ntu(ax1, ax2, metric_list, title, plot_training = True): 
+    if plot_training : 
     # Training plots
-    ax1.plot([x[0] for x in total_acc],    label="Total")
-    ax1.plot([x[0] for x in head_acc],     label="Head")
-    ax1.plot([x[0] for x in neck],         label="Neck")
-    ax1.plot([x[0] for x in spine_base],   label="Spine Base")
-    ax1.plot([x[0] for x in spine_mid],    label="Spine Mid")
-    ax1.plot([x[0] for x in shoulder_acc], label="Shoulders")
-    ax1.plot([x[0] for x in elbow_acc],    label="Elbows")
-    ax1.plot([x[0] for x in wrist_acc],    label="Wrists")
-    ax1.plot([x[0] for x in hip_acc],      label="Hips")
-    ax1.plot([x[0] for x in knee_acc],     label="Knees")
-    ax1.plot([x[0] for x in ank_acc],      label="Ankles")
-    ax1.set_title("PCK accuracy on Training Set - " + title, fontsize=12)
-    ax1.set_ylabel("Score", fontsize=10)
-    ax1.set_xlabel("Epoch", fontsize=10)
-    ax1.legend(prop={'size': 10})
+        head_acc     = [[x[0]['Head'],      x[1]['Head']]      for x in metric_list]
+        shoulder_acc = [[(x[0]['ShoulderLeft']  + x[0]['ShoulderRight']) / 2.0, 
+                     (x[1]['ShoulderLeft']  + x[1]['ShoulderRight']) / 2.0] for x in metric_list]
+        elbow_acc    = [[(x[0]['ElbowLeft'] + x[0]['ElbowRight']) / 2.0, 
+                     (x[1]['ElbowLeft'] + x[1]['ElbowRight']) / 2.0]        for x in metric_list]
+        wrist_acc    = [[(x[0]['WristLeft'] + x[0]['WristRight']) / 2.0, 
+                     (x[1]['WristLeft'] + x[1]['WristRight']) / 2.0]        for x in metric_list]
+        hip_acc      = [[(x[0]['HipLeft']   + x[0]['HipRight'])   / 2.0, 
+                     (x[1]['HipLeft']   + x[1]['HipRight'])   / 2.0]        for x in metric_list]
+        knee_acc     = [[(x[0]['KneeLeft']  + x[0]['KneeRight'])  / 2.0, 
+                     (x[1]['KneeLeft']  + x[1]['KneeRight'])  / 2.0]        for x in metric_list]
+        ank_acc      = [[(x[0]['AnkleLeft'] + x[0]['AnkleRight']) / 2.0, 
+                     (x[1]['AnkleLeft'] + x[1]['AnkleRight']) / 2.0]        for x in metric_list]
+        spine_base   = [[x[0]['SpineBase'], x[1]['SpineBase']] for x in metric_list]
+    
+        spine_mid    = [[x[0]['SpineMid'],  x[1]['SpineMid']]  for x in metric_list]
+        neck         = [[x[0]['Neck'],      x[1]['Neck']]      for x in metric_list]
 
-    # FIX 3: Were plotting neck/spine on ax1 instead of ax2 in the validation section
-    ax2.plot([x[1] for x in total_acc],    label="Total")
-    ax2.plot([x[1] for x in head_acc],     label="Head")
-    ax2.plot([x[1] for x in neck],         label="Neck")
-    ax2.plot([x[1] for x in spine_base],   label="Spine Base")
-    ax2.plot([x[1] for x in spine_mid],    label="Spine Mid")
-    ax2.plot([x[1] for x in shoulder_acc], label="Shoulders")
-    ax2.plot([x[1] for x in elbow_acc],    label="Elbows")
-    ax2.plot([x[1] for x in wrist_acc],    label="Wrists")
-    ax2.plot([x[1] for x in hip_acc],      label="Hips")
-    ax2.plot([x[1] for x in knee_acc],     label="Knees")
-    ax2.plot([x[1] for x in ank_acc],      label="Ankles")
-    ax2.set_title("PCK accuracy on Validation Set - " + title, fontsize=12)
-    ax2.set_ylabel("Score", fontsize=10)
-    ax2.set_xlabel("Epoch", fontsize=10)
-    ax2.legend(prop={'size': 10})
+        total_acc    = [[x[0]['total'],     x[1]['total']]     for x in metric_list]
+        ax1.plot([x[0] for x in total_acc],    label = "Total")
+        ax1.plot([x[0] for x in head_acc],     label = "Head")
+        ax1.plot([x[0] for x in neck],         label = "Neck")
+        ax1.plot([x[0] for x in spine_base],   label = "Spine Base")
+        ax1.plot([x[0] for x in spine_mid],    label = "Spine Mid")
+        ax1.plot([x[0] for x in shoulder_acc], label = "Shoulders")
+        ax1.plot([x[0] for x in elbow_acc],    label = "Elbows")
+        ax1.plot([x[0] for x in wrist_acc],    label = "Wrists")
+        ax1.plot([x[0] for x in hip_acc],      label = "Hips")
+        ax1.plot([x[0] for x in knee_acc],     label = "Knees")
+        ax1.plot([x[0] for x in ank_acc],      label = "Ankles")
+        ax1.set_title("PCK accuracy on Training Set - " + title, fontsize=12)
+        ax1.set_ylabel("Score", fontsize=10)
+        ax1.set_xlabel("Epoch", fontsize=10)
+        ax1.legend(prop={'size': 10})
+  
+        ax2.plot([x[1] for x in total_acc],    label = "Total")
+        ax2.plot([x[1] for x in head_acc],     label = "Head")
+        ax2.plot([x[1] for x in neck],         label = "Neck")
+        ax2.plot([x[1] for x in spine_base],   label = "Spine Base")
+        ax2.plot([x[1] for x in spine_mid],    label = "Spine Mid")
+        ax2.plot([x[1] for x in shoulder_acc], label = "Shoulders")
+        ax2.plot([x[1] for x in elbow_acc],    label = "Elbows")
+        ax2.plot([x[1] for x in wrist_acc],    label = "Wrists")
+        ax2.plot([x[1] for x in hip_acc],      label = "Hips")
+        ax2.plot([x[1] for x in knee_acc],     label = "Knees")
+        ax2.plot([x[1] for x in ank_acc],      label = "Ankles")
+        ax2.set_title(f"PCK accuracy on Validation Set - " + title, fontsize = 12)
+        ax2.set_ylabel("Score",       fontsize = 10)
+        ax2.set_xlabel("Epoch", fontsize=10)
+        ax2.legend(prop={'size': 10})
+    else : 
+        shoulder_acc = [(x['ShoulderLeft']  + x['ShoulderRight']) / 2.0 for x in metric_list]
+        elbow_acc    = [(x['ElbowLeft']     + x['ElbowRight'])    / 2.0 for x in metric_list]
+        wrist_acc    = [(x['WristLeft']     + x['WristRight'])    / 2.0 for x in metric_list]
+        hip_acc      = [(x['HipLeft']       + x['HipRight'])      / 2.0 for x in metric_list]
+        knee_acc     = [(x['KneeLeft']      + x['KneeRight'])     / 2.0 for x in metric_list]
+        ank_acc      = [(x['AnkleLeft']     + x['AnkleRight'])    / 2.0 for x in metric_list]
+        head_acc     = [x['Head']      for x in metric_list]
+        spine_base   = [x['SpineBase'] for x in metric_list]
+        spine_mid    = [x['SpineMid']  for x in metric_list]
+        neck         = [x['Neck']      for x in metric_list]
+        total_acc    = [x['total']     for x in metric_list]
+
+        ax2.plot([x for x in total_acc],    label = "Total")
+        ax2.plot([x for x in head_acc],     label = "Head")
+        ax2.plot([x for x in neck],         label = "Neck")
+        ax2.plot([x for x in spine_base],   label = "Spine Base")
+        ax2.plot([x for x in spine_mid],    label = "Spine Mid")
+        ax2.plot([x for x in shoulder_acc], label = "Shoulders")
+        ax2.plot([x for x in elbow_acc],    label = "Elbows")
+        ax2.plot([x for x in wrist_acc],    label = "Wrists")
+        ax2.plot([x for x in hip_acc],      label = "Hips")
+        ax2.plot([x for x in knee_acc],     label = "Knees")
+        ax2.plot([x for x in ank_acc],      label = "Ankles")
+        ax2.set_title(f"PCK accuracy on Inference Time " + title, fontsize = 12)
+        ax2.set_ylabel("Score",        fontsize = 10)
+        ax2.set_xlabel("Time horizon (Num Frames)", fontsize = 10)
+        ax2.legend(prop={'size': 10})
+    
 
 
 PLOT_METRIC_DICT = { 
@@ -431,16 +466,25 @@ def plot_loss(ax1, loss_list, title):
     ax1.set_ylabel("Loss",  fontsize=10) 
     ax1.legend(prop={'size': 10})
 
-
-def plot(loss_list, metric_list, title, dataset, save_path=None):
-    plot_metric_func = PLOT_METRIC_DICT[dataset]
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 8))
+def plot(loss_list, metric_list, title, dataset, save_path = None):
+    plot_metric_func     = PLOT_METRIC_DICT[dataset] 
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize = (24, 8))
     plot_loss(ax1, loss_list, title)
     plot_metric_func(ax2, ax3, metric_list, title)
     if save_path:
         plt.savefig(save_path)
         plt.close()
     else:
+        plt.show()
+
+def plot_inference(metric_list, title, dataset, save_path = None): 
+    plot_metric_func = PLOT_METRIC_DICT[dataset]
+    fig, ax = plt.subplots(1, 1, figsize = (24, 24))
+    plot_metric_func(None, ax, metric_list, title, plot_training = False)
+    if save_path : 
+        plt.savefig(save_path) 
+        plt.close() 
+    else : 
         plt.show()
 
 def save_checkpoint(epoch, model, optimizer, model_name, prefix_dir_name):
@@ -461,3 +505,4 @@ def save_checkpoint(epoch, model, optimizer, model_name, prefix_dir_name):
     }
     filename = prefix_dir_name + f'{model_name}.pth.tar'
     torch.save(state, filename)
+

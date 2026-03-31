@@ -1,11 +1,26 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import random 
+import math 
 
 """
 Model human motion using VAE, note that the input for this model would have to be in 
 the form of vectors
 """
+
+def KL_annealing(epoch, total_epochs, schedule_type = 'linear', start_beta = 0.0, end_beta = 1.0):
+    progress = epoch / total_epochs
+    if schedule_type == "linear":
+        return start_beta + (end_beta - start_beta) * progress
+    elif schedule_type == "cyclical":
+        return end_beta * (1 + math.cos(math.pi * (1 - progress))) / 2
+    elif schedule_type == "sigmoid":
+        return start_beta + (end_beta - start_beta) / (1 + math.exp(-10 * (progress - 0.5)))
+    else:
+        raise ValueError(f"Unknown schedule type: {schedule_type}")
+
+
 class Encoder(nn.Module): 
     def __init__(self, pose_dim = 26, hidden_dim = 32, latent_dim = 16, num_layers = 2, dropout = 0.2, device = 'cuda'):
         """
@@ -81,7 +96,7 @@ class Decoder(nn.Module):
         self.proj_hidden_dim  = nn.Linear(latent_dim, hidden_dim)
         self.proj_pose_dim    = nn.Linear(hidden_dim, pose_dim)
 
-    def forward(self, observed_poses, latent_vector, predicted_len): 
+    def forward(self, observed_poses, target_poses, latent_vector, predicted_len, teacher_forcing_rate): 
         '''
         :param : observed_poses : tensor of shape (B, T, pose_dim)
         :param : latent_vectors : tensor of shape (B, latent_dim) 
@@ -98,7 +113,9 @@ class Decoder(nn.Module):
         last_observed = observed_poses[:, -1, :].unsqueeze(1) # (B, 1, pose_dim)
         predicted_poses = [] 
     
-        for _ in range(predicted_len):
+        for t in range(predicted_len):
+           if target_poses is not None and random.random() < teacher_forcing_rate : 
+               last_observed = last_observed if t == 0 else target_poses[:, t - 1, :].unsqueeze(1)
            output, curr_state = self.decoder(last_observed, curr_state)          # output : (B, 1, hidden_dim) 
            curr_pose = self.proj_pose_dim(output.squeeze(1)) # (B, pose_dim) 
            predicted_poses.append(curr_pose) 
@@ -114,11 +131,11 @@ class RNNMotionVAE(nn.Module):
         self.decoder = Decoder 
     
     def reparameterization(self, mean, log_var): 
-        epsilon = torch.randn_like(mean) # (B, latent_dim) 
+        epsilon = torch.randn_like(mean)   # (B, latent_dim) 
         var     = torch.exp(0.5 * log_var) # (B, latent_dim) 
         return epsilon * var + mean   
     
-    def forward(self, observed_sequences, prediction_len): 
+    def forward(self, observed_sequences, target_sequences, prediction_len, teacher_forcing_rate = 0.5): 
         '''
         :param : observed sequences (B, T, pose_dim)
         :predicted_len : prediction length 
@@ -127,20 +144,21 @@ class RNNMotionVAE(nn.Module):
         '''
         mean, log_var = self.encoder(observed_sequences)
         z = self.reparameterization(mean, log_var) 
-        out = self.decoder(observed_sequences, z, prediction_len)
+        out = self.decoder(observed_sequences, target_sequences, z, prediction_len, teacher_forcing_rate)
         return out, mean, log_var
 
-def vae_loss_function(pred_velos, gt_velos, mean, log_var): 
+def vae_loss_function(pred_velos, gt_velos, mean, log_var, beta): 
     """
     :param pred_velos : tensor of shape (B, T, pose_dim)
     :param gt_velos   : tensor of shape (B, T, pose_dim) 
     :mean             : tensor of shape (B, latent_dim) 
     :log_var          : tensor of shape (B, latent_dim)
+    :beta             : beta coefficient
     """
     assert pred_velos.shape == gt_velos.shape
     reconstruction_loss = torch.mean(torch.norm(pred_velos - gt_velos, dim = -1))
     kullback_leiber_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-    return reconstruction_loss + 0.1 * kullback_leiber_loss
+    return reconstruction_loss + beta * kullback_leiber_loss
 
 def get_rnn_vae_model(
         pose_dim = 13,

@@ -22,7 +22,7 @@ TODO :
 3. Fix the coordinates normalization to prevent data leakage 
 '''
 
-NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames/nturgb+d_rgb'
+NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames'
 
 class NTU(Dataset):
     def __init__(self,
@@ -149,7 +149,8 @@ class NTU(Dataset):
         dim         = label.shape[2]
         assert num_joints == self.num_joints and dim == 2, "Does not match expected information"
         visibility  = np.ones((label.shape[0], label.shape[1], 1))
-        start_index    = np.random.randint(0, n_frames - 1 - total_frame + 1)
+
+        start_index    = 0 if n_frames == total_frame else np.random.randint(0, n_frames - 1 - total_frame + 1)
        
         #assert torch.isnan(label).sum() == 0, "NaN values found in label!"
 
@@ -410,19 +411,19 @@ class NTU(Dataset):
       frames = []
       while True:
         ret, frame = cap.read()
-        if not ret:
+        if not ret : 
            break  # End of video
         frames.append(frame) 
       return np.array(frames)
     
     @staticmethod 
-    def get_video_frames(name, start_index, num_training_frame, num_testing_frame, input_w, input_h):
-        video_frames = NTU.capture_video_frame(NTU_VIDEO_PATH, video_name = name) 
+    def get_video_frames(name, start_index, num_training_frame, num_testing_frame, box_size):
+        video_frames = NTU.capture_video_frame(os.path.join(NTU_VIDEO_PATH, 'nturgbd_rgb_s' + name[1:4], 'nturgb+d_rgb'), video_name = name) 
         total_frames = num_training_frame + num_testing_frame
         if video_frames is not None :
             resized_frames = []  
             for image in video_frames : 
-                resized_frames.append(cv2.resize(image, (input_w, input_h)))
+                resized_frames.append(cv2.resize(image, (box_size, box_size)))
                 video_frames = np.array(resized_frames) 
                 observed_images = video_frames[start_index : start_index + num_training_frame, :, :, :] 
                 target_images   = video_frames[start_index + num_training_frame : start_index + total_frames, :, :, :] 

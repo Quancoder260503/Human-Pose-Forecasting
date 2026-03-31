@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 
 '''
 For now, just experiment mainly on joints 
-:TODO : for velocity based approach, replace the LSTM in the decoupled pose paper by this Transformer Architecture, could have make 
-it learn the latent space mean and variance (an effective way to capture complex distribution of human motion ?). 
 :TODO : visualize attention 
-:TODO : researching on how to add information to the joint 
-:TODO : reconstruct pose from PoseTransformer
+Model human motion using VAE, note that the input for this model would have to be in 
+the form of vectors
+:TODO add a bit of distinguish noise for each joints 
+"""
 '''     
 
 class TransformerEncoder(nn.Module):
@@ -194,19 +194,19 @@ class TransformerDecoder(nn.Module):
 
 class PoseTransformer(nn.Module):
     def __init__(self, 
-                 pose_dim                        = 39,  
-                 encoding_length                 = 14,
-                 decoding_length                 = 14, 
-                 num_heads                       = 8,  
-                 query_dim                       = 64, 
-                 value_dim                       = 64, 
-                 model_dim                       = 512, 
-                 fc_hidden_dim                   = 2048,
-                 num_layers                      = 6,
-                 dropout                         = 0.2, 
-                 positional_encoding_temperature = 10000, 
-                 positional_encoding_alpha       = 1, 
-                 device                          = 'cuda', 
+        pose_dim                        = 39,  
+        encoding_length                 = 14,
+        decoding_length                 = 14, 
+        num_heads                       = 8,  
+        query_dim                       = 64, 
+        value_dim                       = 64, 
+        model_dim                       = 512, 
+        fc_hidden_dim                   = 2048,
+        num_layers                      = 6,
+        dropout                         = 0.2, 
+        positional_encoding_temperature = 10000, 
+        positional_encoding_alpha       = 1, 
+        device                          = 'cuda', 
     ): 
         """
         :param pose_dim        : input tensor, can represent either (x, y, visibility) or relative root (all - root) or velocity between frames (dx, dy) 
@@ -329,8 +329,23 @@ def transformer_loss_function(pred_joints, gt_joints, time_step):
         total_loss = total_loss + curr_loss
     return total_loss / time_step
 
-def reconstruct_poses(observed_joints, prediction_len): 
-    pass 
+def reconstruct_poses(transformer_model, observed_poses, prediction_len):
+    """
+    :param observed_poses : a tensor of shape (B, train_len, pose_dim)
+    :param prediction_len  : the number of prediction frames
+    function to inference transformers
+    """
+    generated_sequence = observed_poses[:, -1:, :].clone()  # (B, 1, pose_dim) 
+    encoder_input = observed_poses  
+    
+    for _ in range(prediction_len):
+        output = transformer_model(encoder_input, generated_sequence)
+        next_pose = output[:, -1:, :]  # (B, 1, pose_dim)
+        generated_sequence = torch.cat([generated_sequence, next_pose], dim = 1)
+    
+    predicted_poses = generated_sequence[:, 1:, :]
+    return predicted_poses
+    
 
 if __name__ == "__main__":
     dummy = torch.randn(1, 14, 39).to('cuda') 

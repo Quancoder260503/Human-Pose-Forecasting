@@ -51,7 +51,7 @@ def draw_SMPL_joints2D(joints2D, image, kintree_table=None, color='red'):
     return image
 
 
-def draw_skeleton(image, kp_2d, prob = None, prob_draw = 0.6, dataset = 'pennaction', thickness = 1, shadow = 0.3, eps = 5):
+def draw_skeleton(image, kp_2d, prob = None, prob_draw = 0.6, dataset = 'pennaction', thickness = 1, shadow = 0.3, eps = 10):
     if prob is None : 
         prob  = np.ones(kp_2d.shape[0])
     kp_2d = np.array(kp_2d, dtype=int)
@@ -105,15 +105,14 @@ def batch_draw_skeleton(images, target, max_images=8, dataset='common'):
 
     return result_image
 
+def show_video(video, fps=25, window_name = "Video"):
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    for frame in video:
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow(window_name, frame_bgr)
 
-def show_video(video, fps=25):
-    for fid, frame in enumerate(video):
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow(f'frame {fid}', frame)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # waitKey expects milliseconds
+        if cv2.waitKey(int(1000 / fps)) & 0xFF == ord('q'):
             break
-
-        time.sleep(1./fps)
 
     cv2.destroyAllWindows()

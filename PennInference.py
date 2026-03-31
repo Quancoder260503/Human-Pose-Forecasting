@@ -11,7 +11,7 @@ from data.ImgUtil       import *
 from Util       import * 
 from model.Lstm         import *
 from model.Mlp          import *
-from model.RnnMotionVae    import *
+from model.LSTMMotionVae    import *
 import math 
 import random 
 import argparse
@@ -23,7 +23,8 @@ def inference_by_coordinates(args, model, criterion, pennaction):
    observed_poses  = observed_poses.to(args.device, dtype = torch.float32).unsqueeze(0)
    target_poses    = target_poses.to(args.device,   dtype = torch.float32).unsqueeze(0)
 
-   predicted_poses = model(observed_poses = observed_poses, prediction_len = args.num_testing_frame)
+   predicted_poses = model(observed_poses = observed_poses, target_poses = None, prediction_len = args.num_testing_frame)
+
    loss            = criterion(predicted_poses, target_poses, args.num_testing_frame)
    print(f"RMSE Loss : {math.sqrt(loss.item()):.4f}")
 
@@ -42,14 +43,16 @@ def inference_by_coordinates(args, model, criterion, pennaction):
 
    pck_prediction = get_pennaction_predictions_dict()
 
+   pck_acc = []
+
    for index in range(0, args.num_testing_frame): 
       curr_target_pose                    = target_poses[:, index, :].squeeze(0)
-      curr_target_pose, curr_target_prob  = torch.split(curr_target_prob.contiguous().view(args.num_joints, 3), [2, 1], dim = -1)  # Scale factor
+      curr_target_pose, curr_target_prob  = torch.split(curr_target_pose.contiguous().view(args.num_joints, 3), [2, 1], dim = -1)  # Scale factor
       
       curr_pred_pose                  = predicted_poses[:, index, :].squeeze(0)
       curr_pred_pose, curr_pred_prob  = torch.split(curr_pred_pose.contiguous().view(args.num_joints, 3), [2, 1], dim = -1)
 
-      pred_prob  = torch.sigmoid(pred_prob)
+      curr_pred_prob  = torch.sigmoid(curr_pred_prob)
 
       curr_target_image = torch2numpy(target_images[index, :, :, :])
 
@@ -84,7 +87,7 @@ def inference_by_parent_relative(args, model, criterion, pennaction):
    target_bones   = target_bones.to(args.device,   dtype = torch.float32).unsqueeze(0)
    scaled_factor  = scaled_factor.to(args.device,  dtype = torch.float32).unsqueeze(0) 
    
-   predicted_bones = model(observed_bones, args.num_testing_frame)
+   predicted_bones = model(observed_bones, None, args.num_testing_frame)
 
    predicted_poses = reconstruct_pose(compressed_poses = predicted_bones, scaled_factor = scaled_factor, dataset = 'pennaction')
    target_poses    = reconstruct_pose(compressed_poses = target_bones,    scaled_factor = scaled_factor, dataset = 'pennaction')
@@ -132,7 +135,7 @@ def inference_by_velocity(args, model, criterion, pennaction):
    observed_poses   = observed_poses.contiguous().view(1, 7, -1, 3)[:, :, :, :2]
    observed_poses   = observed_poses.contiguous().view(1, 7, -1) 
 
-   predicted_velocity, _, _  = model(observed_velocity, args.num_testing_frame)
+   predicted_velocity = model(observed_velocity, None, args.num_testing_frame)
 
    predicted_poses = speed_to_pos(observed_poses = observed_poses, prediction_velocities = predicted_velocity, device = args.device)
 
@@ -142,6 +145,7 @@ def inference_by_velocity(args, model, criterion, pennaction):
    videos_pred = [] 
 
    pck_prediction = get_pennaction_predictions_dict()
+   accuracies = [] 
 
    for index in range(0, args.num_testing_frame):     
       curr_target_image = target_images[index, :, :, :]
@@ -166,8 +170,12 @@ def inference_by_velocity(args, model, criterion, pennaction):
       videos_pred.append(target_predicted_image)
       
       acc = get_acc(pck_prediction)
+      accuracies.append(acc)
       print(acc)
-     
+
+   plot_inference(accuracies, 'testing', 'pennaction')
+
+   show_video(videos_pred, fps = 5)
    plt.tight_layout()
    plt.show() 
    
@@ -196,6 +204,9 @@ if __name__ == '__main__':
     parser.add_argument('--pck_alpha',          default = 0.05,         type = float, required = False)
     parser.add_argument('--boxsize',            default = 480,          type = int,   required = False)
     parser.add_argument('--dropout',            default = 0.2,          type = float, required = False)
+    parser.add_argument('--temperature',        default = 10000,   type = float, required = False) 
+    parser.add_argument('--alpha',              default = 1,       type = float, required = False)
+    parser.add_argument('--weight_decay',       default = 0.00001, type = float, required = False)
 
     # MLP 
     parser.add_argument('--mlp_hidden_layers',  default = [1024, 2048, 1024], type = list[int], required = False) 
@@ -211,6 +222,16 @@ if __name__ == '__main__':
     parser.add_argument('--motion_vae_encoding_layers',  default = 2,   type = int, required = False) 
     parser.add_argument('--motion_vae_decoding_layers',  default = 1,   type = int, required = False) 
 
+    # ATTENTION MOTION VAE 
+    parser.add_argument('--attention_motion_vae_num_heads',           default = 8,    type = int, required = False)
+    parser.add_argument('--attention_motion_vae_model_dim',           default = 512,  type = int, required = False)
+    parser.add_argument('--attention_motion_vae_query_dim',           default = 64,   type = int, required = False) 
+    parser.add_argument('--attention_motion_vae_value_dim',           default = 64,   type = int, required = False)
+    parser.add_argument('--attention_motion_vae_fc_hidden_dim',       default = 2048, type = int, required = False)
+    parser.add_argument('--attention_motion_vae_num_encoding_layers', default = 6,    type = int, required = False)
+    parser.add_argument('--attention_motion_vae_num_decoding_layers', default = 1,    type = int, required = False)
+    parser.add_argument('--attention_motion_vae_latent_dim',          default = 128,  type = int, required = False)
+
     # DECOUPLE MOTION VAE
     parser.add_argument('--decouple_motion_vae_hidden_dim',       default = 32,  type = int, required = False) 
     parser.add_argument('--decouple_motion_vae_latent_dim',       default = 16,  type = int, required = False) 
@@ -221,7 +242,6 @@ if __name__ == '__main__':
     parser.add_argument('--decouple_lstm_num_layers',             default = 1,   type = int, required = False)
    
     args = parser.parse_args()
-    print(args.checkpoint)
     model, criterion = get_model(args)
     
     model_dict = torch.load(args.checkpoint, weights_only = False)  

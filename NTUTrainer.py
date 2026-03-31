@@ -6,7 +6,7 @@ import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
 from model.Lstm      import *
 from model.Mlp       import *
-from model.RnnMotionVae import *
+from model.LSTMMotionVae import *
 from Util    import *
 from data.NTU        import *
 import os 
@@ -682,7 +682,7 @@ def train(args):
     loss_list, metric_list = [], []
 
     print("Start Training ...\n")
-    for epoch in range(start_epoch, start_epoch + args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
 
         train_sampler.set_epoch(epoch)
         val_sampler.set_epoch(epoch)
@@ -760,6 +760,7 @@ if __name__ == '__main__':
     parser.add_argument('--lstm_embedding_dim', default=2048, type=int, required=False) 
     parser.add_argument('--lstm_hidden_dim',    default=256,  type=int, required=False)
     parser.add_argument('--lstm_num_layers',    default=2,    type=int, required=False) 
+    parser.add_argument('--lstm_residual_connection', default = True, type = bool, required = False)
 
     # MOTION VAE 
     parser.add_argument('--motion_vae_hidden_dim',      default=32, type=int, required=False) 

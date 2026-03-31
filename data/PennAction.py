@@ -135,7 +135,7 @@ class PennAction(Dataset):
         visibility = data['visibility']
         total_frame = self.num_training_frame + self.num_testing_frame
 
-        start_index = np.random.randint(0, n_frames - 1 - total_frame + 1) 
+        start_index = 0 if n_frames == total_frame else np.random.randint(0, n_frames - 1 - total_frame + 1) 
 
         label        = np.zeros((3, num_joints, total_frame))  
         images       = torch.zeros(total_frame, 3, self.box_size, self.box_size)
@@ -155,8 +155,8 @@ class PennAction(Dataset):
             img = cv2.resize(img, (self.box_size, self.box_size), interpolation = cv2.INTER_CUBIC)
             images[i, :, :, :] = self.transform(img)
             
-            label[0, :, i] = x[start_index + i, :] / w
-            label[1, :, i] = y[start_index + i, :] / h
+            label[0, :, i] = x[start_index + i, :]
+            label[1, :, i] = y[start_index + i, :]
             label[2, :, i] = visibility[start_index + i]
 
             if visibility[start_index + i, 0] == 0: 
@@ -179,7 +179,12 @@ class PennAction(Dataset):
         observed_img = images[: self.num_training_frame, :, :, :] 
         target_img   = images[self.num_training_frame :, :, :, :]
         
+
         if self.coordinates : 
+           
+            label[0, :, :] = label[0, :, :] / w 
+            label[1, :, :] = label[1, :, :] / h
+
             # Observed pose transformation
             observed_poses = torch.tensor(label[:2, :, : self.num_training_frame]) 
             observed_masks = torch.tensor(label[2,  :, : self.num_training_frame])
@@ -209,6 +214,10 @@ class PennAction(Dataset):
             return observed_poses, target_poses, observed_img, target_img 
 
         elif self.parent_relative: 
+           
+           label[0, :, :] = label[0, :, :] / w 
+           label[1, :, :] = label[1, :, :] / h
+
            observed_poses = torch.tensor(label[:, :, : self.num_training_frame])
            observed_poses = observed_poses.permute(2, 1, 0) # (Time, J, 3) 
            observed_bones = torch.tensor(vector_label[:, :, : self.num_training_frame]) # (2, J, train_len)
@@ -229,6 +238,8 @@ class PennAction(Dataset):
             # This is poor software practice, but given the scale of the experiment, this can be neglected 
 
             # Observed pose transformation 
+            label[0, :, :] = label[0, :, :] / w 
+            label[1, :, :] = label[1, :, :] / h
 
             observed_poses = torch.tensor(label[:2, :, : self.num_training_frame]) 
             observed_masks = torch.tensor(label[2,  :, : self.num_training_frame])

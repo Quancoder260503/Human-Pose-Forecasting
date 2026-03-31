@@ -39,13 +39,18 @@ def process_per_epoch_coordinates(args, model, train_loader, val_loader, optimiz
     model.train()
     for batch_idx, (observed_poses, target_poses) in enumerate(train_loader):
         observed_poses = observed_poses.to(device, dtype = torch.float32)
-        target_poses   = target_poses.to(device, dtype = torch.float32)
+        target_poses   = target_poses.to(device, dtype   = torch.float32)
             
         batch          = target_poses.shape[0]
         prediction_len = target_poses.shape[1]
             
-        predicted_poses = model(observed_poses, prediction_len)
-        loss = criterion(predicted_poses, target_poses, prediction_len) 
+        if args.model_type == 'vae':
+          predicted_poses, mean, log_var = model(observed_poses, target_poses, prediction_len, args.teacher_forcing_rate)
+          loss = criterion(predicted_poses, mean, log_var)
+
+        elif args.model_type == 'normal': 
+          predicted_poses = model(observed_poses, target_poses, prediction_len, args.teacher_forcing_rate)
+          loss            = criterion(predicted_poses, target_poses) 
         
         train_losses.append(loss.item())
 
@@ -81,8 +86,15 @@ def process_per_epoch_coordinates(args, model, train_loader, val_loader, optimiz
             target_poses   = target_poses.to(device,   dtype = torch.float32)
             batch          = target_poses.shape[0]
             prediction_len = target_poses.shape[1]
-            predicted_poses = model(observed_poses, prediction_len)
-            loss = criterion(predicted_poses, target_poses, prediction_len) 
+
+
+            if args.model_type == 'vae':
+               predicted_poses, mean, log_var = model(observed_poses, None, prediction_len)
+               loss = criterion(predicted_poses, mean, log_var)
+
+            elif args.model_type == 'normal': 
+               predicted_poses = model(observed_poses, None, prediction_len)
+               loss            = criterion(predicted_poses, target_poses) 
             
             valid_losses.append(loss.item())
 
@@ -135,8 +147,13 @@ def process_per_epoch_parent_relatives(args, model, train_loader, val_loader, op
         batch          = target_poses.shape[0]
         prediction_len = target_poses.shape[1]
 
-        predicted_bones = model(observed_bones, prediction_len)
-        loss            = criterion(predicted_bones, target_bones, prediction_len) 
+        if args.model_type == 'vae':
+          predicted_bones, mean, log_var = model(observed_bones, target_bones, prediction_len, args.teacher_forcing_rate)
+          loss = criterion(predicted_bones, mean, log_var)
+
+        elif args.model_type == 'normal': 
+          predicted_bones = model(observed_bones, target_bones, prediction_len, args.teacher_forcing_rate)
+          loss            = criterion(predicted_bones, target_bones) 
 
         train_losses.append(loss.item())
             
@@ -186,8 +203,13 @@ def process_per_epoch_parent_relatives(args, model, train_loader, val_loader, op
             batch          = target_poses.shape[0]
             prediction_len = target_poses.shape[1]
 
-            predicted_bones = model(observed_bones, prediction_len)
-            loss = criterion(predicted_bones, target_bones, prediction_len) 
+            if args.model_type == 'vae':
+              predicted_bones, mean, log_var = model(observed_bones, None, prediction_len)
+              loss = criterion(predicted_bones, mean, log_var)
+          
+            elif args.model_type == 'normal': 
+               predicted_bones = model(observed_bones, None, prediction_len)
+               loss            = criterion(predicted_bones, target_bones) 
 
             valid_losses.append(loss.item())
 
@@ -254,9 +276,15 @@ def process_per_epoch_velocity(args, model, train_loader, val_loader, optimizer,
             batch_size, prediction_len, _ = target_velocities.shape 
             
             # For motion use VAE to model
-            predicted_velocities, mean, log_var = model(observed_velocities, prediction_len = prediction_len)
+            if args.model_type == 'vae': 
+               predicted_velocities, mean, log_var = model(observed_velocities, target_velocities, prediction_len, args.teacher_forcing_rate)
+               loss = criterion(predicted_velocities, target_velocities, mean, log_var)
             
-            loss = criterion(predicted_velocities, target_velocities, mean, log_var)
+            elif args.model_type == 'normal':     
+                predicted_velocities = model(observed_velocities, target_velocities, prediction_len, args.teacher_forcing_rate)
+                loss = criterion(predicted_velocities, target_velocities)
+            else : 
+                raise NotImplementedError('Model type not supported')
             
             train_losses.append(loss.item())
 
@@ -294,7 +322,8 @@ def process_per_epoch_velocity(args, model, train_loader, val_loader, optimizer,
             
             if batch_idx > 0 and batch_idx % print_step == 0:
                 acc = train_total_predictions['total']['correct'] / train_total_predictions['total']['all']
-                print(f'Epoch {epoch + 1} | Batch {batch_idx}/{len(train_loader)} |  Loss = {np.mean(train_losses):.6f} | PCK accuracy = {acc:.4f}') 
+                print(f'Epoch {epoch + 1} | Batch {batch_idx}/{len(train_loader)} |  Loss = {np.mean(train_losses):.6f} | PCK accuracy = {acc:.4f}')
+             
 
     model.eval()
     with torch.no_grad():
@@ -308,10 +337,16 @@ def process_per_epoch_velocity(args, model, train_loader, val_loader, optimizer,
             batch_size, observed_len, _   = observed_velocities.shape
             batch_size, prediction_len, _ = target_velocities.shape 
 
-            predicted_velocities, mean, log_var = model(observed_velocities, prediction_len = prediction_len)
+            if args.model_type == 'vae': 
+                predicted_velocities, mean, log_var = model(observed_velocities, None, prediction_len)
+                loss = criterion(predicted_velocities, target_velocities, mean, log_var)
             
-            loss = criterion(predicted_velocities, target_velocities, mean, log_var)
-                
+            elif args.model_type == 'normal':     
+                predicted_velocities = model(observed_velocities, None, prediction_len)
+                loss = criterion(predicted_velocities, target_velocities)
+            else : 
+                raise NotImplementedError('Model type not supported')
+
             valid_losses.append(loss.item())
             target_poses   = target_poses.contiguous().view(batch_size, prediction_len,   -1, 3) 
             
@@ -336,6 +371,9 @@ def process_per_epoch_velocity(args, model, train_loader, val_loader, optimizer,
     return np.mean(train_losses), train_total_predictions, np.mean(valid_losses), valid_total_predictions
 
 
+"""
+For now, do ignore this.
+"""
 def process_per_epoch_decouple_velocity(args, model, train_loader, val_loader, optimizer, criterion, epoch, device):
     """
     Input represented as decoupled velocity
@@ -562,20 +600,19 @@ def train(args):
         optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas)
         optimizer.load_state_dict(model_dict['optimizer'])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor = 0.5, patience = 25, threshold = 1e-5)
-   
+         
     else : 
         model, criterion = get_model(args)
         optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor = 0.5, patience = 25, threshold = 1e-5)
         model.to(device)
-
+       
     best_accuracy = 0
     loss_list, metric_list = [], []
 
     print("Start Training ...\n")
-    for epoch in range(start_epoch, start_epoch + args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         train_loss, train_predictions, val_loss, val_predictions = process_per_epoch(args, model, train_loader, val_loader, optimizer, criterion, epoch, device)
-
         scheduler.step(train_loss)
 
         train_acc = get_acc(train_predictions)
@@ -618,59 +655,50 @@ def train(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset',            default = 'pennaction', type = str, required = False)
-    parser.add_argument('--model_version',                        type = str,   required = False)
-    parser.add_argument('--num_joints',         default = 13,     type = int,   required = False)
-    parser.add_argument('--num_training_frame', default = 7,      type = int,   required = False)
-    parser.add_argument('--num_testing_frame',  default = 7,      type = int,   required = False) 
-    parser.add_argument('--learning_rate',      default = 1e-4,   type = float, required = False)
-    parser.add_argument('--num_epochs',         default = 100,    type = int,   required = False) 
-    parser.add_argument('--batch_size',         default = 16,     type = int,   required = False) 
-    parser.add_argument('--num_workers',        default = 8,      type = int,   required = False)
-    parser.add_argument('--pin_memory',         default = True,   type = bool,  required = False)
-    parser.add_argument('--device',             default = 'cuda', type = str,   required = False) 
-    parser.add_argument('--model' ,             default = 'lstm', type = str,   required = True) 
-    parser.add_argument('--coordinates',        default = False,  type = bool,  required = False)
-    parser.add_argument('--velocity',           default = False,  type = bool,  required = False)
-    parser.add_argument('--decouple_velocity',  default = False,  type = bool,  required = False)
-    parser.add_argument('--parent_relative',    default = False,  type = bool,  required = False) 
-    parser.add_argument('--mode',               default = 'baseline', type = str,  required = True)
-    parser.add_argument('--scheduler_step',     default = 10000,  type = float,    required = False) 
-    parser.add_argument('--scheduler_gamma',    default = 0.3333, type = float,    required = False)
-    parser.add_argument('--betas',              default = (0.9, 0.999), type = tuple, required = False) 
-    parser.add_argument('--title',              type    = str, required = True)
-    parser.add_argument('--dropout',            default = 0.2,     type = float, required = False)
-    parser.add_argument('--pck_alpha',          default = 0.05,    type = float, required = False)
-    parser.add_argument('--boxsize',            default = 480,     type = int,   required = False)
-    parser.add_argument('--temperature',        default = 10000,   type = float, required = False) 
-    parser.add_argument('--alpha',              default = 1,       type = float, required = False)
-    parser.add_argument('--weight_decay',       default = 0.00001, type = float, required = False)
-
+    parser.add_argument('--dataset',              default = 'pennaction', type = str, required = False)
+    parser.add_argument('--model_version',                                type = str, required = False)
+    parser.add_argument('--model_type',           default = 'normal', type = str, required = True)
+    parser.add_argument('--num_joints',           default = 13,       type = int,    required = False)
+    parser.add_argument('--num_training_frame',   default = 7,        type = int,    required = False)
+    parser.add_argument('--num_testing_frame',    default = 7,        type = int,    required = False) 
+    parser.add_argument('--learning_rate',        default = 1e-4,     type = float,  required = False)
+    parser.add_argument('--num_epochs',           default = 100,      type = int,    required = False) 
+    parser.add_argument('--batch_size',           default = 16,       type = int,    required = False) 
+    parser.add_argument('--num_workers',          default = 8,        type = int,    required = False)
+    parser.add_argument('--pin_memory',           default = True,     type = bool,   required = False)
+    parser.add_argument('--device',               default = 'cuda',   type = str,    required = False) 
+    parser.add_argument('--model' ,               default = 'lstm',   type = str,    required = True) 
+    parser.add_argument('--coordinates',          default = False,    type = bool,   required = False)
+    parser.add_argument('--velocity',             default = False,    type = bool,   required = False)
+    parser.add_argument('--decouple_velocity',    default = False,    type = bool,   required = False)
+    parser.add_argument('--parent_relative',      default = False,    type = bool,   required = False) 
+    parser.add_argument('--mode',                 default = 'baseline', type = str,   required = True)
+    parser.add_argument('--scheduler_step',       default = 10000,      type = float, required = False) 
+    parser.add_argument('--scheduler_gamma',      default = 0.3333,     type = float, required = False)
+    parser.add_argument('--betas',                default = (0.9, 0.999), type = tuple, required = False) 
+    parser.add_argument('--title',                type    = str, required = True)
+    parser.add_argument('--dropout',              default = 0.2,     type = float, required = False)
+    parser.add_argument('--pck_alpha',            default = 0.05,    type = float, required = False)
+    parser.add_argument('--boxsize',              default = 480,     type = int,   required = False)
+    parser.add_argument('--temperature',          default = 10000,   type = float, required = False) 
+    parser.add_argument('--alpha',                default = 1,       type = float, required = False)
+    parser.add_argument('--weight_decay',         default = 0.00001, type = float, required = False)
+    parser.add_argument('--teacher_forcing_rate', default = 0.7,   type = float, required = False)
 
     # MLP 
     parser.add_argument('--mlp_hidden_layers',  default = [1024, 2048, 1024], type = list[int], required = False) 
     
     # LSTM 
-    parser.add_argument('--lstm_embedding_dim', default = 2048, type = int, required = False) 
-    parser.add_argument('--lstm_hidden_dim'   , default = 256,  type = int, required = False)
-    parser.add_argument('--lstm_num_layers',    default = 2,    type = int, required = False) 
+    parser.add_argument('--lstm_embedding_dim',       default = 2048, type = int,  required = False) 
+    parser.add_argument('--lstm_hidden_dim'   ,       default = 256,  type = int,  required = False)
+    parser.add_argument('--lstm_num_layers',          default = 2,    type = int,  required = False) 
+    parser.add_argument('--lstm_residual_connection', default = True, type = bool, required = False)
 
     # MOTION VAE 
     parser.add_argument('--motion_vae_hidden_dim',       default = 32, type = int, required = False) 
     parser.add_argument('--motion_vae_latent_dim',       default = 16, type = int, required = False) 
     parser.add_argument('--motion_vae_encoding_layers',  default = 2,  type = int, required = False) 
     parser.add_argument('--motion_vae_decoding_layers',  default = 1,  type = int, required = False) 
-
-
-    # ATTENTION MOTION VAE 
-    parser.add_argument('--attention_motion_vae_num_heads',           default = 8,    type = int, required = False)
-    parser.add_argument('--attention_motion_vae_model_dim',           default = 512,  type = int, required = False)
-    parser.add_argument('--attention_motion_vae_query_dim',           default = 64,   type = int, required = False) 
-    parser.add_argument('--attention_motion_vae_value_dim',           default = 64,   type = int, required = False)
-    parser.add_argument('--attention_motion_vae_fc_hidden_dim',       default = 2048, type = int, required = False)
-    parser.add_argument('--attention_motion_vae_num_encoding_layers', default = 6,    type = int, required = False)
-    parser.add_argument('--attention_motion_vae_num_decoding_layers', default = 1,    type = int, required = False)
-    parser.add_argument('--attention_motion_vae_latent_dim',          default = 128,  type = int, required = False)
 
 
     # DECOUPLE MOTION VAE
@@ -682,10 +710,9 @@ if __name__ == '__main__':
     parser.add_argument('--decouple_lstm_hidden_dim',             default = 16,  type = int, required = False)
     parser.add_argument('--decouple_lstm_num_layers',             default = 1,   type = int, required = False)
 
+    # VELOCITY TRANSFORMER 
     # TRANSFORMER 
 
-
-    
     args = parser.parse_args()
     model, loss_list, metric_list = train(args) 
 

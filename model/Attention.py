@@ -10,7 +10,7 @@ Attention module (MultiHeadAttention + Feed Forward Network)
 """
 
 class MultiHeadAttention(nn.Module): 
-    def __init__(self, num_heads, dim_model, dim_queries, dim_values, dropout, in_decoder = False, device = 'cuda'): 
+    def __init__(self, num_heads, dim_model, dim_queries, dim_values, dropout, self_attention = False, in_decoder = False, device = 'cuda'): 
         """
         :param num_heads   : number of attention heads 
         :param dim_model   : model dimension
@@ -33,6 +33,7 @@ class MultiHeadAttention(nn.Module):
         self.proj_o         = nn.Linear(num_heads * dim_values, dim_model)
         self.layernorm      = nn.LayerNorm(dim_model)
         self.softmax        = nn.Softmax(dim = -1) 
+        self.self_attention = self_attention
         self.device         = device 
 
     def forward(self, q_poses, kv_poses): 
@@ -46,7 +47,7 @@ class MultiHeadAttention(nn.Module):
         query_len  = q_poses.shape[1]
         keyval_len = kv_poses.shape[1]
         
-        self_attention = query_len == keyval_len
+        self_attention = self.self_attention
         
         curr_q_poses = q_poses.clone() # (B, J, dim_model) 
         q_poses = self.layernorm(q_poses)   

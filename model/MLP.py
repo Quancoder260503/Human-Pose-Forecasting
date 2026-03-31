@@ -41,9 +41,14 @@ class PosePredictionMLP(nn.Module):
             nn.Linear(self.hidden_layers[-1], self.predict_len * self.pose_dim)
         )
 
-    def forward(self, observed_poses, prediction_len = 14): 
+    def forward(self, observed_poses, target_poses, prediction_len, teacher_forcing_rate = 0.5): 
         """
         :param observed_poses : tensor of shape (batch, train_len, pose_dim)
+        :param target_poses   : tensor of shape (batch, test_len,  pose_dim)
+        :param teacher_forcing_rate : an integer
+        :param prediction_len       : an integer 
+        Note that target_poses and prediction_len, teacher_forcing_rate added are to avoid casework in the trainer, they 
+        have no real usage here.
         :return : 
            predicted joint sequences : a tensor of shape(batch, predicted_len, pose_dim) 
         """
@@ -56,21 +61,9 @@ class PosePredictionMLP(nn.Module):
         return out 
     
 
-def mlp_loss_function(pred_joints, gt_joints, time_step):
-    """
-    :param pred_joints : (B, T, posedim)
-    :param gt_joints   : (B, T, posedim)   
-    :param time_step   : prediction time step 
-    :return:
-    """
-    criterion  = nn.SmoothL1Loss(reduction = 'mean')
-    total_loss = 0
-    for t in range(time_step):
-        pred = pred_joints[:, t, :]
-        gt   = gt_joints[:,   t, :]
-        curr_loss = criterion(pred, gt)
-        total_loss = total_loss + curr_loss
-    return total_loss / time_step
+def mlp_loss_function(pred_joints, gt_joints):
+    criterion = nn.SmoothL1Loss(reduction = 'mean')
+    return criterion(pred_joints, gt_joints)
 
 
 def get_mlp_model(pose_dim = 13, coordinates = True, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):

@@ -157,7 +157,6 @@ def get_rnn_vae_model(
     vae_encoder = Encoder(pose_dim = pose_dim * 2, hidden_dim = hidden_dim, latent_dim = latent_dim, num_layers = encoding_layers, dropout = dropout, device = device) 
     vae_decoder = Decoder(pose_dim = pose_dim * 2, hidden_dim = hidden_dim, latent_dim = latent_dim, num_layers = decoding_layers, dropout = dropout, device = device) 
     rnn_vae     = MotionVAE(vae_encoder, vae_decoder) 
-    rnn_vae     = rnn_vae.to(device)
     return rnn_vae
 
 # if __name__ == "__main__":

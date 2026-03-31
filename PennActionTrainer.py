@@ -481,6 +481,7 @@ def train(args):
    
     else : 
         model, criterion = get_model(args)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
         optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor = 0.5, patience = 25, threshold = 1e-5)
 

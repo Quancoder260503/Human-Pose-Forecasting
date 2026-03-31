@@ -179,7 +179,7 @@ class NTU(Dataset):
             target_poses  = label[start_index + self.num_training_frame : start_index + total_frame, :, :]
             target_poses  = target_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
 
-            assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
+           # assert len(torch.isnan(observed_poses)) == 0 and len(torch.isnan(target_poses)) == 0
             
             observed_poses[torch.isnan(observed_poses)] = 0.5 
             target_poses[torch.isnan(target_poses)]     = 0.5
@@ -220,7 +220,7 @@ class NTU(Dataset):
             return observed_poses, target_poses, observed_velocity, target_velocity, start_index, name 
         
         elif self.parent_relative: 
-            head_position = self.joint_names['Head']
+            head_position = self.joint_inds['Head']
 
             median_head_pos_x, median_head_pos_y = np.median(label[:, head_position, 0]), np.median(label[:, head_position, 1]) 
             
@@ -254,9 +254,8 @@ class NTU(Dataset):
                 y_norm = label[time_step, :, 1] / self.ntu_input_h
 
                 vector_label[curr_index, head_position, 0], vector_label[curr_index, head_position, 1] = x_norm[head_position], y_norm[head_position] 
-
                 for child_index, childname in enumerate(self.joint_names): 
-                    parent_index = self.joint_inds[self.ntu_parents[childname]]
+                    parent_index = self.ntu_parents[child_index]
                     if parent_index == child_index : 
                         continue 
                     if visibility[time_step, child_index] and visibility[time_step, parent_index]:

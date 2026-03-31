@@ -10,8 +10,7 @@ import logging
 import json
 import cv2
 
-NTU_SKELETON_PATH = 'dataset/nturgbd_skeletons_s018_to_s032'
-NTU_VIDEO_PATH    = 'dataset/NanyangTechRGB/frames/nturgbd_rgb_s001/nturgb+d_rgb'
+NTU_SKELETON_PATH = 'dataset/NanyangTechRGB/nturgb+d_skeletons'
 NTU_IMAGE_RESOLUTION_H = 1920
 NTU_IMAGE_RESOLUTION_W = 1080
 
@@ -87,7 +86,7 @@ def get_raw_body_data(skes_path, ske_name):
 
 def remove_video(datadir):
     data_storages = os.listdir(datadir)
-    min_length = 30
+    min_length = 50
     bad_videos = [] 
     for storage_id in data_storages:
         storage     = np.load(os.path.join(datadir, storage_id), allow_pickle = True).item()
@@ -103,15 +102,15 @@ def remove_video(datadir):
           label       = data['colors'] 
           n_frames    = label.shape[0] 
           max_frames  = max(max_frames, n_frames)    
-        if max_frames < 30: 
+        if max_frames < min_length: 
             bad_videos.append(storage_id) 
             continue
         #assert max_frames >= 30, "num frames must be more than total frame"
         num_joints  = label.shape[1] 
         dim         = label.shape[2]
-  #  for bad_video in bad_videos: 
-  #     bad_video_path = os.path.join(datadir, bad_video)
-  #     os.remove(bad_video_path)
+    for bad_video in bad_videos: 
+      bad_video_path = os.path.join(datadir, bad_video)
+      os.remove(bad_video_path)
     print(len(bad_videos), len(data_storages)) 
 
 
@@ -130,15 +129,14 @@ if __name__ == '__main__':
     # num_train = int(directory_length * 0.7)
 
     # train_index = set(random_index[:num_train])
-    # test_index = set(random_index[num_train:])
+    # test_index  = set(random_index[num_train:])
 
     # train_dir = os.path.join(saved_dir, 'train')
     # test_dir  = os.path.join(saved_dir, 'test')
 
     # os.makedirs(train_dir, exist_ok = True)
-    # os.makedirs(test_dir, exist_ok  = True)
+    # os.makedirs(test_dir,  exist_ok  = True)
 
-    # start_index = 46140
     
     # for video_index, filename in enumerate(filenames):
     #     data_dict = get_raw_body_data(
@@ -146,29 +144,10 @@ if __name__ == '__main__':
     #         filename,
     #     )
     #     if video_index in train_index:
-    #         save_dir = os.path.join(train_dir, f"{start_index + video_index}.npy")
+    #         save_dir = os.path.join(train_dir, f"{video_index}.npy")
     #     else:
-    #         save_dir = os.path.join(test_dir, f"{start_index + video_index}.npy")
+    #         save_dir = os.path.join(test_dir, f"{video_index}.npy")
 
     #     np.save(save_dir, data_dict)
-    #remove_video('dataset/NanyangTechRGB/test')
-
-    # Sample script to show video 
-
-    video_file_path = NTU_VIDEO_PATH
-    cap = cv2.VideoCapture(os.path.join(video_file_path, 'S001C001P001R001A042_rgb.avi'))
-    num_frames = 0 
-    while True:
-      ret, frame = cap.read()
-      if not ret:
-        break  # End of video
-      num_frames += 1 
-    # Display the frame
-      cv2.imshow('A woman from NTU', frame)
-      
-      if cv2.waitKey(30) & 0xFF == 27:  # 27 = ESC key
-        break
-    print(num_frames)
-    # Release resources
-   # cap.release()
-   # cv2.destroyAllWindows()
+    remove_video('dataset/NanyangTechRGB/test')
+    remove_video('dataset/NanyangTechRGB/train')

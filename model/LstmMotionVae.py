@@ -9,18 +9,6 @@ Model human motion using VAE, note that the input for this model would have to b
 the form of vectors
 """
 
-def KL_annealing(epoch, total_epochs, schedule_type = 'linear', start_beta = 0.0, end_beta = 1.0):
-    progress = epoch / total_epochs
-    if schedule_type == "linear":
-        return start_beta + (end_beta - start_beta) * progress
-    elif schedule_type == "cyclical":
-        return end_beta * (1 + math.cos(math.pi * (1 - progress))) / 2
-    elif schedule_type == "sigmoid":
-        return start_beta + (end_beta - start_beta) / (1 + math.exp(-10 * (progress - 0.5)))
-    else:
-        raise ValueError(f"Unknown schedule type: {schedule_type}")
-
-
 class Encoder(nn.Module): 
     def __init__(self, pose_dim = 26, hidden_dim = 32, latent_dim = 16, num_layers = 2, dropout = 0.2, device = 'cuda'):
         """

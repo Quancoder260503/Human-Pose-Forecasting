@@ -103,7 +103,7 @@ def remove_video(datadir):
           label       = data['colors'] 
           n_frames    = label.shape[0] 
           max_frames  = max(max_frames, n_frames)    
-        if max_frames < 30: 
+        if max_frames < 50: 
             bad_videos.append(storage_id) 
             continue
         #assert max_frames >= 30, "num frames must be more than total frame"

@@ -12,7 +12,7 @@ torch.cuda.set_device(LOCAL_RANK)
 
 
 def train(args):
-    trainer = dataset_factory(args)
+    trainer, train_sampler = dataset_factory(args)
     device = args.device 
     print(device, 'is available')
 
@@ -37,7 +37,7 @@ def train(args):
        
        optimizer.load_state_dict(model_dict['optimizer'])
       
-       scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = args.lr_step_size, gamma = args.lr_gamma)
+       scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
        scheduler.load_state_dict(model_dict['scheduler'])
    
     else: 
@@ -51,7 +51,7 @@ def train(args):
           weight_decay = args.weight_decay
         )
 
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = args.lr_step_size, gamma = args.lr_gamma)
+        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
        
     best_accuracy = 0
         
@@ -65,6 +65,9 @@ def train(args):
 
     print("Start Training ...\n")
     for epoch in range(start_epoch, args.num_epochs):
+        train_sampler.set_epoch(epoch)
+        print(f"learning rate for epoch {epoch}: {scheduler.get_last_lr()[0]}")
+       
         train_loss, train_predictions, train_rmse, val_loss, val_predictions, val_rmse = trainer.process_per_epoch(
             args      = args, 
             model     = model, 

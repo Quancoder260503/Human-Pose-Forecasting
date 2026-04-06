@@ -103,7 +103,7 @@ def dataset_factory(args):
             frame_input_w = args.pennaction_frame_input_w,
         )
 
-        return trainer 
+        return trainer, train_sampler
     
     elif args.dataset == 'ntu': 
         dataset = dataset_class(
@@ -164,7 +164,7 @@ def dataset_factory(args):
             frame_input_w   = args.ntu_frame_input_w,
         )
 
-        return trainer 
+        return trainer, train_sampler 
     
     else : 
         raise NotImplementedError('dataset not supported')
@@ -259,6 +259,7 @@ def get_model(args):
 
 def lr_scheduler_factory(args, optimizer, start_epoch):
     if args.lr_scheduler == 'step':
+        print(f"Using StepLR with step size {args.lr_step_size} and gamma {args.lr_gamma}")
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer = optimizer, 
             step_size = args.lr_step_size, 
@@ -266,6 +267,7 @@ def lr_scheduler_factory(args, optimizer, start_epoch):
         )
         return scheduler
     elif args.lr_scheduler == 'cosine':
+        print(f"Using CosineAnnealingLR with T_max {args.num_epochs}, eta_min {args.lr_eta_min}")
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer  = optimizer,
             T_max      = args.num_epochs, 
@@ -274,6 +276,7 @@ def lr_scheduler_factory(args, optimizer, start_epoch):
         )
         return scheduler
     elif args.lr_scheduler == 'plateau':
+        print(f"Using ReduceLROnPlateau with factor {args.lr_factor} and patience {args.lr_patience}")
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer = optimizer, 
             mode      = 'min', 

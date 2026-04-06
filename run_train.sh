@@ -1,0 +1,15 @@
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29510 Train.py \
+    --dataset ntu \
+    --num_joints 25 \
+    --model transformer \
+    --model_type deterministic \
+    --model_version v0_bs_16 \
+    --model_input_type coordinates \
+    --mode main \
+    --num_training_frame 14 \
+    --num_testing_frame  14 \
+    --num_epochs 100 \
+    --batch_size 16 \
+    --learning_rate 1e-4 \
+    --lr_step_size 1 \
+    --lr_gamma 0.1 \

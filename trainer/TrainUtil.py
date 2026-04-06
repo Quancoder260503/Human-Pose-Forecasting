@@ -4,7 +4,8 @@ from data.DatasetUtil         import *
 import torch 
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-
+import os
+import shutil
 
 """
 MODEL UTILS 
@@ -12,26 +13,28 @@ MODEL UTILS
 
 PCK_ALPHA = 0.05
 
-
-def save_checkpoint(epoch, model, optimizer, model_name, prefix_dir_name):
+def save_checkpoint(epoch, model, optimizer, scheduler, model_name, prefix_dir_name):
     """
     Checkpoint saver. Each save overwrites the previous one.
     :param epoch: epoch number
-    :param model: transformer model weight
+    :param model: transformer model (handles DDP-wrapped models transparently)
     :param optimizer: optimizer state
-    :param model_name : model version 
-    :param prefix_dir_name: check point filename prefix
+    :param scheduler: lr scheduler state (pass None if not used)
+    :param model_name: model version name
+    :param prefix_dir_name: checkpoint directory path prefix
     """
-    # FIX 1: Save model.module.state_dict() when wrapped in DDP, so inference
-    # can load without needing DDP (avoids 'module.' prefix mismatch)
+    os.makedirs(prefix_dir_name, exist_ok=True)
+
     state = {
         'epoch'     : epoch,
         'model'     : model.module.state_dict() if hasattr(model, 'module') else model.state_dict(),
-        'optimizer' : optimizer.state_dict(), 
+        'optimizer' : optimizer.state_dict(),
+        'scheduler' : scheduler.state_dict() if scheduler is not None else None,
     }
+
     filename = prefix_dir_name + f'{model_name}.pth.tar'
     torch.save(state, filename)
-
+    
 """
 Metrics calculation
 """

@@ -25,3 +25,8 @@ attention_motion_vae_v1
 :attention_motion_vae_num_encoding_layers : 6  
 :attention_motion_vae_num_decoding_layers : 1 
 :attention_motion_vae_latent_dim'         : 128         
+
+
+(t0 v0_vs_32)
+(t1 v0_bs_16)
+(t3 v0_bs_64) 

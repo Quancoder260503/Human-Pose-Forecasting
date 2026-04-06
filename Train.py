@@ -3,6 +3,12 @@ import torch
 from trainer.Factory import *
 import os 
 import argparse 
+import torch.distributed as dist
+
+LOCAL_RANK = int(os.environ["LOCAL_RANK"])
+dist.init_process_group(backend = 'nccl')
+torch.cuda.set_device(LOCAL_RANK)
+
 
 
 def train(args):
@@ -15,27 +21,40 @@ def train(args):
     start_epoch = 0 
 
     if os.path.exists(checkpoint): 
-        model_dict = torch.load(checkpoint, weights_only = False) 
-        start_epoch = model_dict['epoch'] + 1 
-        model, criterion = get_model(args)
-        model.to(device)
-        model.load_state_dict(model_dict['model'])
-        optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas, weight_decay = args.weight_decay)
-        optimizer.load_state_dict(model_dict['optimizer'])
-        
-        #for g in optimizer.param_groups:
-        #   g['lr'] = args.learning_rate
+       model_dict = torch.load(checkpoint, weights_only = False) 
+       start_epoch = model_dict['epoch'] + 1 
+    
+       model, criterion = get_model(args)
+       model.load_state_dict(model_dict['model'])
+       model = torch.nn.parallel.DistributedDataParallel(model.to(device), device_ids=[LOCAL_RANK],  find_unused_parameters = True)
 
-        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
-        scheduler.load_state_dict(model_dict['scheduler'])
-        
-    else : 
+       optimizer = torch.optim.Adam(
+          model.parameters(), 
+          lr           = args.learning_rate, 
+          betas        = args.betas, 
+          weight_decay = args.weight_decay
+       )
+       
+       optimizer.load_state_dict(model_dict['optimizer'])
+      
+       scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = args.lr_step_size, gamma = args.lr_gamma)
+       scheduler.load_state_dict(model_dict['scheduler'])
+   
+    else: 
         model, criterion = get_model(args)
-        optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas, weight_decay = args.weight_decay)
-        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
-        model.to(device)
+        model = torch.nn.parallel.DistributedDataParallel(model.to(device), device_ids = [LOCAL_RANK],  find_unused_parameters = True) 
+
+        optimizer = torch.optim.Adam(
+          model.parameters(), 
+          lr           = args.learning_rate, 
+          betas        = args.betas, 
+          weight_decay = args.weight_decay
+        )
+
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = args.lr_step_size, gamma = args.lr_gamma)
        
     best_accuracy = 0
+        
     loss_list, metric_list = [], []
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -54,7 +73,7 @@ def train(args):
             epoch     = epoch,        
         )
 
-        scheduler.step(train_loss)
+        scheduler.step()
 
         train_acc = get_acc(train_predictions)
         val_acc   = get_acc(val_predictions)
@@ -73,6 +92,7 @@ def train(args):
                 epoch, 
                 model, 
                 optimizer, 
+                scheduler, 
                 model_name = f'{args.model_input_type}_{args.model}_{args.model_version}_{args.dataset}_{args.num_training_frame}_{args.num_testing_frame}', 
                 prefix_dir_name = f'checkpoint/{args.mode}/'
             )
@@ -115,7 +135,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--model' ,               default = 'lstm',   type = str,  required = True) 
     parser.add_argument('--model_input_type',     default = None,     type = str,  required = True)
-    parser.add_argument('--print_step',           default = 10,       type = int,  required = False)
+    parser.add_argument('--print_step',           default = 50,       type = int,  required = False)
     
     parser.add_argument('--mode',                 default = 'baseline', type = str,   required = True)
     parser.add_argument('--dropout',              default = 0.2,     type = float, required = False)
@@ -140,17 +160,19 @@ if __name__ == '__main__':
     parser.add_argument('--positional_encoding_alpha',       default = 1,            type = float, required = False)
     parser.add_argument('--max_norm',                        default = 0.1,          type = float, required = False)
 
+    # Learning rate scheduler config  
 
-    parser.add_argument('--lr_step_size', default = 10,   type = int,   required = False)
-    parser.add_argument('--lr_gamma',     default = 0.1,  type = float, required = False)
-    parser.add_argument('--lr_eta_min',   default = 1e-6, type = float, required = False)
-    parser.add_argument('--lr_factor',    default = 0.5,  type = float, required = False)
-    parser.add_argument('--lr_patience',  default = 3,    type = float, required = False)
+    parser.add_argument('--lr_scheduler', default = 'cosine', type = str,   required = True)
+    parser.add_argument('--lr_step_size', default = 10,       type = int,   required = False)
+    parser.add_argument('--lr_gamma',     default = 0.1,      type = float, required = False)
+    parser.add_argument('--lr_eta_min',   default = 1e-6,     type = float, required = False)
+    parser.add_argument('--lr_factor',    default = 0.5,      type = float, required = False)
+    parser.add_argument('--lr_patience',  default = 3,        type = float, required = False)
     
     # MODEL SPACE
 
     # MLP 
-    parser.add_argument('--mlp_hidden_layers',  default = [1024, 2048, 1024], type = list[int], required = False) 
+    parser.add_argument('--mlp_hidden_layers',  default = [1024, 2048, 1024], type = list, required = False) 
     
     # LSTM 
     parser.add_argument('--lstm_embedding_dim',       default = 2048, type = int,  required = False) 
@@ -177,10 +199,10 @@ if __name__ == '__main__':
     # VELOCITY TRANSFORMER 
 
     # TRANSFORMER 
-    parser.add_argument('--transformer_num_heads',         default = 4,     type = int,  required = False)  
-    parser.add_argument('--transformer_model_dim',         default = 256,   type = int,  required = False) 
+    parser.add_argument('--transformer_num_heads',         default = 8,     type = int,  required = False)  
+    parser.add_argument('--transformer_model_dim',         default = 512,   type = int,  required = False) 
     parser.add_argument('--transformer_fc_hidden_dim',     default = 2048,  type = int,  required = False) 
-    parser.add_argument('--transformer_num_layers',        default = 4,     type = int,  required = False) 
+    parser.add_argument('--transformer_num_layers',        default = 6,     type = int,  required = False) 
     parser.add_argument('--transformer_pre_normalization', default = False, type = bool, required = False)
     
 

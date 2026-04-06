@@ -1,5 +1,7 @@
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
+from torch.utils.data.distributed import DistributedSampler
+
 from trainer.CoordinatesTrainer  import * 
 from trainer.RootRelativeTrainer import *
 from trainer.VelocityTrainer     import * 
@@ -53,10 +55,6 @@ def dataset_factory(args):
             train              = True, 
         )
 
-        num_train = int(len(dataset) * 0.9)  # Validation set rate
-        num_valid = len(dataset) - num_train
-        train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
-
         test_dataset = dataset_class(
             num_training_frame = args.num_training_frame, 
             num_testing_frame  = args.num_testing_frame,
@@ -65,9 +63,31 @@ def dataset_factory(args):
             box_size           = args.pennaction_boxsize, 
             train              = False, 
         )
+        
+        num_train = int(len(dataset) * 0.9)  # Validation set rate
+        num_valid = len(dataset) - num_train
+        train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
 
-        train_loader  = DataLoader(train_dataset,   batch_size = args.batch_size, shuffle = True,  num_workers = args.num_workers, pin_memory = args.pin_memory) 
-        val_loader    = DataLoader(val_dataset,     batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers, pin_memory = args.pin_memory)
+
+        train_sampler = DistributedSampler(train_dataset)
+        val_sampler   = DistributedSampler(val_dataset, shuffle=False)
+    
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size  = args.batch_size,
+            sampler     = train_sampler,  
+            num_workers = args.num_workers,
+            pin_memory = args.pin_memory
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size  = args.batch_size,
+            sampler     = val_sampler,
+            num_workers = args.num_workers,
+            pin_memory  = args.pin_memory
+        )
 
         trainer       = trainer_class(
             pck_dict_fn  = get_pennaction_pck_dict, 
@@ -108,8 +128,27 @@ def dataset_factory(args):
             train              = False, 
         )
 
-        train_loader  = DataLoader(train_dataset,   batch_size = args.batch_size, shuffle = True,  num_workers = args.num_workers, pin_memory = args.pin_memory) 
-        val_loader    = DataLoader(val_dataset,     batch_size = args.batch_size, shuffle = False, num_workers = args.num_workers, pin_memory = args.pin_memory)
+        
+        train_sampler = DistributedSampler(train_dataset)
+        val_sampler   = DistributedSampler(val_dataset, shuffle = False)
+    
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size  = args.batch_size,
+            sampler     = train_sampler,  
+            num_workers = args.num_workers,
+            pin_memory  = args.pin_memory
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size  = args.batch_size,
+            sampler     = val_sampler,
+            num_workers = args.num_workers,
+            pin_memory  = args.pin_memory
+        )
+
 
         trainer       = trainer_class(
             pck_dict_fn     = get_ntu_pck_dict, 
@@ -121,8 +160,8 @@ def dataset_factory(args):
             print_step      = args.print_step, 
             model_type      = args.model_type, 
             video_getter_fn = get_video_frames_ntu, 
-            frame_input_h   = args.pennaction_frame_input_h, 
-            frame_input_w   = args.pennaction_frame_input_w,
+            frame_input_h   = args.ntu_frame_input_h, 
+            frame_input_w   = args.ntu_frame_input_w,
         )
 
         return trainer 

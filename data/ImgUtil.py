@@ -4,16 +4,12 @@ import numpy as np
 import cv2
 import random 
 
-def get_image(filename):
-    image = cv2.imread(filename)
-    return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
 def do_augmentation(scale_factor=0.3, color_factor=0.2):
-    scale = random.uniform(1.2, 1.2+scale_factor)
-    # scale = np.clip(np.random.randn(), 0.0, 1.0) * scale_factor + 1.2
-    rot = 0 # np.clip(np.random.randn(), -2.0, 2.0) * aug_config.rot_factor if random.random() <= aug_config.rot_aug_rate else 0
-    do_flip = False # aug_config.do_flip_aug and random.random() <= aug_config.flip_aug_rate
-    c_up = 1.0 + color_factor
+    scale    = random.uniform(1.2, 1.2+scale_factor)
+    rot     = 0 
+    do_flip = False 
+    c_up  = 1.0 + color_factor
     c_low = 1.0 - color_factor
     color_scale = [random.uniform(c_low, c_up), random.uniform(c_low, c_up), random.uniform(c_low, c_up)]
     return scale, rot, do_flip, color_scale
@@ -29,7 +25,7 @@ def rotate_2d(pt_2d, rot_rad):
     sn, cs = np.sin(rot_rad), np.cos(rot_rad)
     xx = x * cs - y * sn
     yy = x * sn + y * cs
-    return np.array([xx, yy], dtype=np.float32)
+    return np.array([xx, yy], dtype = np.float32)
 
 def gen_trans_from_patch_cv(c_x, c_y, src_width, src_height, dst_width, dst_height, scale, rot, inv=False):
     # augment size with scale
@@ -133,22 +129,6 @@ def transfrom_keypoints(kp_2d, center_x, center_y, width, height, patch_width, p
 
     return kp_2d, trans
 
-
-def torch_vid2numpy(video):
-    video = video.detach().cpu().numpy()
-    # video = np.transpose(video, (0, 2, 1, 3, 4)) # NCTHW->NTCHW (batch, time, channel, height, width)
-    # Denormalize
-    mean = np.array([-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.255])
-    std = np.array([1 / 0.229, 1 / 0.224, 1 / 0.255])
-
-    mean = mean[np.newaxis, np.newaxis, ..., np.newaxis, np.newaxis]
-    std = std[np.newaxis, np.newaxis, ..., np.newaxis, np.newaxis]
-
-    video = (video - mean) / std # [:, :, i, :, :].sub_(mean[i]).div_(std[i]).clamp_(0., 1.).mul_(255.)
-    video = video.clip(0.,1.) * 255
-    video = video.astype(np.uint8)
-    return video
-
 def get_bbox_from_kp2d(kp_2d):
     # get bbox
     if len(kp_2d.shape) > 2:
@@ -169,26 +149,19 @@ def get_bbox_from_kp2d(kp_2d):
     bbox = np.array([c_x, c_y, w, h])  # shape = (4,N)
     return bbox
 
-def normalize_2d_kp(kp_2d, crop_size = 224, inv=False):
-    # Normalize keypoints between -1, 1
-    if not inv:
-        ratio = 1.0 / crop_size
-        kp_2d = 2.0 * kp_2d * ratio - 1.0
-    else:
-        ratio = 1.0 / crop_size
-        kp_2d = (kp_2d + 1.0)/(2*ratio)
 
-    return kp_2d
 
 def get_default_transform():
     normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        mean = [0.485, 0.456, 0.406],
+        std  = [0.229, 0.224, 0.225]
     )
     transform = transforms.Compose([
         transforms.ToTensor(),
         normalize,
     ])
     return transform
+
 
 def torch2numpy(image):
     image = image.detach().cpu()

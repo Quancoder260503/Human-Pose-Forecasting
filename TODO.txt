@@ -26,3 +26,5 @@ into the network to train (Done)
 # Prepare : Model architecture + slides 
 
 # Setup a benchmark and comparison, ready for report, including image and poses 
+
+

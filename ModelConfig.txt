@@ -1,0 +1,32 @@
+# Model config used in the experiment
+
+mlp_v0
+:hidden_layers : 1024 -> 2048 -> 1024
+
+lstm_v0
+:lstm_embedding_dim = 2048 
+:lstm_hidden_state  = 256 
+:lstm_num_layers    = 2 
+
+motion_vae_v0
+:hidden_dim = 512 
+:latent_dim = 128 
+:lstm_encoding_layers = 2
+:lstm_decoding_layers = 1 
+
+
+attention_motion_vae_v1 
+-does change the kl terms (from sum to mean)
+:attention_motion_vae_num_heads : 8
+:attention_motion_vae_model_dim : 512         
+:attention_motion_vae_query_dim': 64         
+:attention_motion_vae_value_dim': 64           
+:attention_motion_vae_fc_hidden_dim : 2048     
+:attention_motion_vae_num_encoding_layers : 6  
+:attention_motion_vae_num_decoding_layers : 1 
+:attention_motion_vae_latent_dim'         : 128         
+
+
+(t0 v0_vs_32)
+(t1 v0_bs_16)
+(t3 v0_bs_64) 

@@ -22,14 +22,17 @@ def train(args):
         model.load_state_dict(model_dict['model'])
         optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas, weight_decay = args.weight_decay)
         optimizer.load_state_dict(model_dict['optimizer'])
-        for g in optimizer.param_groups:
-           g['lr'] = args.learning_rate
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode = 'min', factor = 0.5, patience = 3, threshold = 1e-5)
+        
+        #for g in optimizer.param_groups:
+        #   g['lr'] = args.learning_rate
+
+        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
+        scheduler.load_state_dict(model_dict['scheduler'])
         
     else : 
         model, criterion = get_model(args)
         optimizer = torch.optim.Adam(model.parameters(), lr = args.learning_rate, betas = args.betas, weight_decay = args.weight_decay)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode = 'min', factor = 0.5, patience = 3, threshold = 1e-5)
+        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
         model.to(device)
        
     best_accuracy = 0
@@ -126,12 +129,8 @@ if __name__ == '__main__':
     parser.add_argument('--pennaction_frame_input_h', default = 480, type = int, required = False) 
     parser.add_argument('--pennaction_frame_input_w', default = 640, type = int, required = False) 
     parser.add_argument('--pennaction_boxsize',       default = 480,  type = int, required = False) 
-
-
     
     # Embedding and Optimizer config
-    parser.add_argument('--scheduler_step',                  default = 10000,        type = float, required = False) 
-    parser.add_argument('--scheduler_gamma',                 default = 0.3333,       type = float, required = False)
     parser.add_argument('--betas',                           default = (0.9, 0.999), type = tuple, required = False) 
     parser.add_argument('--temperature',                     default = 10000,        type = float, required = False) 
     parser.add_argument('--alpha',                           default = 1,            type = float, required = False)
@@ -142,7 +141,13 @@ if __name__ == '__main__':
     parser.add_argument('--max_norm',                        default = 0.1,          type = float, required = False)
 
 
-
+    parser.add_argument('--lr_step_size', default = 10,   type = int,   required = False)
+    parser.add_argument('--lr_gamma',     default = 0.1,  type = float, required = False)
+    parser.add_argument('--lr_eta_min',   default = 1e-6, type = float, required = False)
+    parser.add_argument('--lr_factor',    default = 0.5,  type = float, required = False)
+    parser.add_argument('--lr_patience',  default = 3,    type = float, required = False)
+    
+    # MODEL SPACE
 
     # MLP 
     parser.add_argument('--mlp_hidden_layers',  default = [1024, 2048, 1024], type = list[int], required = False) 

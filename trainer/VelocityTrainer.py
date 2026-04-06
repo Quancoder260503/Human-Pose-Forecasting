@@ -7,10 +7,10 @@ from trainer.Trainer                  import *
 import torch 
 
 class VelocityTrainer(Trainer):
-    def __init__(self, pck_dict_fn, mse_dict_fn, train_loader, val_loader, test_dataset, print_step, model_type, video_getter_fn, frame_input_h, frame_input_w):
+    def __init__(self, pck_dict_fn, rmse_dict_fn, dataset, train_loader, val_loader, test_dataset, print_step, model_type, video_getter_fn, frame_input_h, frame_input_w):
         super(VelocityTrainer, self).__init__(
             pck_dict_fn     = pck_dict_fn , 
-            mse_dict_fn     = mse_dict_fn,  
+            rmse_dict_fn    = rmse_dict_fn,  
             train_loader    = train_loader, 
             val_loader      = val_loader, 
             test_dataset    = test_dataset, 
@@ -19,8 +19,9 @@ class VelocityTrainer(Trainer):
             video_getter_fn = video_getter_fn, 
             frame_input_h   = frame_input_h, 
             frame_input_w   = frame_input_w, 
+            dataset         = dataset, 
         )
-        self.pck_alpha     = min(self.frame_input_h, self.frame_input_w) * PCK_ALPHA 
+        self.pck_alpha     = PCK_ALPHA
         print("Input represented as Velocity")
 
     def process_per_epoch(self, args, model, optimizer, criterion, epoch):
@@ -61,6 +62,7 @@ class VelocityTrainer(Trainer):
 
 
                 predicted_velocities, loss = self.get_loss_fn(
+                    args  = args, 
                     train = True, 
                     model = model, 
                     criterion = criterion, 
@@ -129,6 +131,7 @@ class VelocityTrainer(Trainer):
 
 
                 predicted_velocities, loss = self.get_loss_fn(
+                    args  = args, 
                     train = False, 
                     model = model, 
                     criterion = criterion, 

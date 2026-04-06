@@ -216,3 +216,32 @@ def get_model(args):
         return (vae_model, lstm_model), (criterion_vae, criterion_lstm)
     else : 
         raise NotImplementedError('Model not supported for now') 
+
+
+def lr_scheduler_factory(args, optimizer, start_epoch):
+    if args.lr_scheduler == 'step':
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer = optimizer, 
+            step_size = args.lr_step_size, 
+            gamma     = args.lr_gamma, 
+        )
+        return scheduler
+    elif args.lr_scheduler == 'cosine':
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer  = optimizer,
+            T_max      = args.num_epochs, 
+            eta_min    = args.lr_eta_min, 
+            last_epoch = start_epoch - 1,  
+        )
+        return scheduler
+    elif args.lr_scheduler == 'plateau':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer = optimizer, 
+            mode      = 'min', 
+            factor    = args.lr_factor,
+            patience  = args.lr_patience, 
+        )
+        return scheduler
+    else : 
+        raise NotImplementedError('Learning Rate Scheduler not supported for now') 
+    

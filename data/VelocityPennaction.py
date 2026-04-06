@@ -51,8 +51,8 @@ class PennActionVelocity(Dataset2D):
 
         h, w = dim 
 
-        label[:, :, 0] = label[:, :, 0] / w * self.frame_input_w
-        label[:, :, 1] = label[:, :, 1] / h * self.frame_input_h
+        label[:, :, 0] = label[:, :, 0] / w
+        label[:, :, 1] = label[:, :, 1] / h
         
         total_frame = self.num_training_frame + self.num_testing_frame
         

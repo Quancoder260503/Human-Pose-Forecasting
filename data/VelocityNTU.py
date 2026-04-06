@@ -84,8 +84,8 @@ class NTUVelocity(Dataset2D):
                 if np.isnan(label[time_ind, joint_ind, 0]) or np.isnan(label[time_ind, joint_ind, 1]): 
                     visibility[time_ind, joint_ind] = 0
 
-      #  label[:, :, 0] = label[:, :, 0] / self.frame_input_w
-      #  label[:, :, 1] = label[:, :, 1] / self.frame_input_h
+        label[:, :, 0] = label[:, :, 0] / self.frame_input_w
+        label[:, :, 1] = label[:, :, 1] / self.frame_input_h
         
         label      = torch.tensor(label) 
         visibility = torch.tensor(visibility)

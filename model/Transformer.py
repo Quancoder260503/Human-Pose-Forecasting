@@ -5,13 +5,14 @@ import numpy as np
 import math 
 from model.PositionalEncoding import *
 import matplotlib.pyplot as plt
-from model.TransformerEncoder import *
-from model.TransformerDecoder import *
+from model.Encoder import *
+from model.Decoder import *
 from scipy.optimize import linear_sum_assignment
 
 class VanillaTransformer(nn.Module):
     def __init__(self, 
-        pose_dim                        = 39,  
+        num_joints                      = 13, 
+        joint_dim                       = 3, 
         encoding_length                 = 14,
         decoding_length                 = 14, 
         num_heads                       = 8,  
@@ -39,7 +40,9 @@ class VanillaTransformer(nn.Module):
         :param query_selection : perform query selection strategy or not.  
         """
         super(VanillaTransformer, self).__init__()
-        self.pose_dim            = pose_dim
+        self.num_joints          = num_joints
+        self.joint_dim           = joint_dim
+        self.pose_dim            = self.num_joints * self.joint_dim
         self.encoding_length     = encoding_length 
         self.decoding_length     = decoding_length
         self.num_heads           = num_heads
@@ -58,7 +61,8 @@ class VanillaTransformer(nn.Module):
 
         self.init_positional_encoding()
 
-        self.encoder            = TransformerEncoder(
+        self.encoder            = Encoder(
+            num_joints          = self.num_joints, 
             num_heads           = self.num_heads, 
             model_dim           = self.model_dim, 
             fc_hidden_dim       = self.fc_hidden_dim, 
@@ -66,20 +70,24 @@ class VanillaTransformer(nn.Module):
             dropout             = self.dropout, 
             device              = self.device, 
             pre_normalization   = self.pre_normalization, 
+            attention_mode      = 'vanilla', 
         )
 
-        self.decoder            = TransformerDecoder(
+        self.decoder            = Decoder(
+            num_joints          = self.num_joints, 
             num_heads           = self.num_heads, 
             model_dim           = self.model_dim, 
             fc_hidden_dim       = self.fc_hidden_dim, 
             num_layers          = self.num_layers, 
             dropout             = self.dropout, 
             device              = self.device, 
-            pre_normalization   = self.pre_normalization, 
+            pre_normalization   = self.pre_normalization,
+            attention_mode      = 'vanilla',  
         )
         self.proj_model              = nn.Linear(self.pose_dim,  self.model_dim)
         self.proj_out                = nn.Linear(self.model_dim, self.pose_dim) # map to the output space        
         self.decoder_query_embedding = nn.Embedding(self.decoding_length, self.model_dim)
+        self.dropout1                = nn.Dropout(self.dropout)
         
         """
         Taking inspiration from : 
@@ -156,7 +164,7 @@ class VanillaTransformer(nn.Module):
         return indices, soft_matrix
 
 
-    def forward(self, src_sequences):
+    def forward(self, src_sequences, get_attn_weight = False):
         """
         :param encoding_poses : tensor of shape (B, encoding_len, pose_dim)
         :param decoding_poses : tensor of shape (B, decoding_len, pose_dim)
@@ -167,7 +175,10 @@ class VanillaTransformer(nn.Module):
         batch_size, _, _ = src_sequences.shape
         encoder_inp      = self.proj_model(src_sequences)  
 
-        memory, _       = self.encoder(encoder_inp, self.encoder_positional_encoding)
+        memory, encoder_attn_weight = self.encoder(
+            src_sequence      = encoder_inp, 
+            temporal_embedding = self.encoder_positional_encoding
+        )
         
         if self.query_selection :
            indices, prob_matrix = self.process_index_selection(memory)
@@ -176,12 +187,26 @@ class VanillaTransformer(nn.Module):
         else :  
            tgt_sequences    = src_sequences[:, -1, :].clone().unsqueeze(1) # (B, 1, pose_dim)
            tgt_sequences    = tgt_sequences.repeat(1, self.decoding_length, 1) # (B, decoding_len, pose_dim)
-            
-        decoder_inp = self.proj_model(tgt_sequences)
+        
+        decoder_inp      = self.proj_model(tgt_sequences)
         query_embedding  = self.decoder_query_embedding.weight.unsqueeze(0)
-        out, _           = self.decoder(memory, decoder_inp, self.encoder_positional_encoding, query_embedding)
-        out              = self.proj_out(out) 
-        return out  
+        
+        out, decoder_attn_weight = self.decoder(
+            memory          = memory, 
+            tgt_sequence    = decoder_inp, 
+            encoder_temporal_embedding  = self.encoder_positional_encoding, 
+            query_embedding             = query_embedding, 
+        )
+
+        out  = self.proj_out(out)
+
+        if self.residual_connection : 
+            out = self.dropout1(out) + tgt_sequences 
+        
+        if get_attn_weight : 
+            return out, encoder_attn_weight, decoder_attn_weight 
+        else : 
+            return out 
 
 
 class DualTransformer(nn.Module):
@@ -221,25 +246,30 @@ class DualTransformer(nn.Module):
 
         self.init_positional_encoding() 
 
-        self.encoder = TransformerParallelDualEncoderLayer(
-            num_joints        = self.num_joints, 
-            num_heads         = self.num_heads, 
-            model_dim         = self.model_dim, 
-            fc_hidden_dim     = self.fc_hidden_dim, 
-            dropout           = self.dropout, 
-            device            = self.device, 
-            pre_normalization = self.pre_normalization,
+        self.encoder            = Encoder(
+            num_joints          = self.num_joints, 
+            num_heads           = self.num_heads, 
+            model_dim           = self.model_dim, 
+            fc_hidden_dim       = self.fc_hidden_dim, 
+            num_layers          = self.num_layers, 
+            dropout             = self.dropout, 
+            device              = self.device, 
+            pre_normalization   = self.pre_normalization, 
+            attention_mode      = 'parallel_dual', 
         )
 
-        self.decoder = TransformerParallelDualDecoderLayer(
-            num_joints        = self.num_joints,
-            num_heads         = self.num_heads, 
-            model_dim         = self.model_dim, 
-            fc_hidden_dim     = self.fc_hidden_dim,
-            dropout           = self.dropout, 
-            device            = self.device, 
-            pre_normalization = self.pre_normalization,  
+        self.decoder            = Decoder(
+            num_joints          = self.num_joints, 
+            num_heads           = self.num_heads, 
+            model_dim           = self.model_dim, 
+            fc_hidden_dim       = self.fc_hidden_dim, 
+            num_layers          = self.num_layers, 
+            dropout             = self.dropout, 
+            device              = self.device, 
+            pre_normalization   = self.pre_normalization,
+            attention_mode      = 'parallel_dual',  
         )
+
 
         self.encoder_spatial_embedding  = nn.Embedding(self.num_joints,      self.model_dim)
         self.decoder_spatial_embedding  = nn.Embedding(self.num_joints,      self.model_dim)
@@ -248,6 +278,8 @@ class DualTransformer(nn.Module):
 
         self.proj_model = nn.Linear(self.joint_dim, self.model_dim)
         self.proj_joint = nn.Linear(self.model_dim, self.joint_dim)
+        
+        self.dropout1   = nn.Dropout(self.dropout)
 
         if self.query_selection : 
             self.position_predictor = nn.Linear(self.num_joints * self.model_dim, self.decoding_length)
@@ -310,7 +342,7 @@ class DualTransformer(nn.Module):
         return indices, soft_matrix
 
 
-    def forward(self, src_sequences):
+    def forward(self, src_sequences, get_attn_weight = False):
         """
         :param src_sequences : tensor of shape (B, encoding_len, pose_dim)
         :return : 
@@ -321,7 +353,7 @@ class DualTransformer(nn.Module):
 
         encoder_inp = self.proj_model(src_sequences) 
 
-        memory, _ = self.encoder(
+        memory, self_attn_weight = self.encoder(
             src_sequence       = encoder_inp, 
             temporal_embedding = self.encoder_temporal_embedding.weight.unsqueeze(0),
             spatial_embedding  = self.encoder_spatial_embedding.weight.unsqueeze(0),  
@@ -332,23 +364,31 @@ class DualTransformer(nn.Module):
            tgt_sequences        = self.query_selection_fn(indices, src_sequences)
 
         else :  
-           tgt_sequences    = src_sequences[:, -1, :, :].clone().unsqueeze(1) # (batch_size, 1, num_joints, joint_dim)
+           tgt_sequences    = src_sequences[:, -1, :, :].clone().unsqueeze(1)     # (batch_size, 1, num_joints, joint_dim)
            tgt_sequences    = tgt_sequences.repeat(1, self.decoding_length, 1, 1) # (batch_size, decoding_len, num_joints, joint_dim)
         
         decoder_inp = self.proj_model(tgt_sequences)
         
-        out, _   = self.decoder(
-            memory                    = memory, 
-            tgt_sequences             = decoder_inp, 
-            encoder_spatial_embedding = self.encoder_spatial_embedding.weight.unsqueeze(0), 
-            encoder_temporal_embedding= self.encoder_temporal_embedding.weight.unsqueeze(0), 
-            spatial_query_embedding   = self.decoder_spatial_embedding.weight.unsqueeze(0), 
-            temporal_query_embedding  = self.decoder_temporal_embedding.weight.unsqueeze(0), 
+        out, cross_attn_weight = self.decoder(
+            memory                     = memory, 
+            tgt_sequences              = decoder_inp, 
+            encoder_spatial_embedding  = self.encoder_spatial_embedding.weight.unsqueeze(0), 
+            encoder_temporal_embedding = self.encoder_temporal_embedding.weight.unsqueeze(0), 
+            spatial_query_embedding    = self.decoder_spatial_embedding.weight.unsqueeze(0), 
+            temporal_query_embedding   = self.decoder_temporal_embedding.weight.unsqueeze(0), 
         )
 
         out = self.proj_joint(out) 
+        
+        if self.residual_connection:
+            out = self.dropout1(out) + tgt_sequences 
+
         out = out.contiguous().view(batch_size, self.decoding_length, -1)
-        return out 
+
+        if get_attn_weight : 
+            return out, self_attn_weight, cross_attn_weight
+        else :  
+            return out  
     
 
 def transformer_loss_function(pred_joints, gt_joints):
@@ -357,7 +397,7 @@ def transformer_loss_function(pred_joints, gt_joints):
 
 
 def get_transformer_model(
-    pose_dim        = 13, 
+    num_joints       = 13, 
     coordinates     = True, 
     encoding_length = 14, 
     decoding_length = 14, 
@@ -370,11 +410,13 @@ def get_transformer_model(
     positional_encoding_alpha       = 1, 
     device                          = 'cuda', 
     pre_normalization               = False,
-    transformer_type                = 'vanilla',  
+    transformer_type                = 'vanilla', 
+    residual_connection             = False,  
 ):
     if transformer_type == 'vanilla':
         model = VanillaTransformer(
-            pose_dim                        = pose_dim * (3 if coordinates else 2),  
+            num_joints                      = num_joints, 
+            joint_dim                       = (3 if coordinates else 2), 
             encoding_length                 = encoding_length,
             decoding_length                 = decoding_length, 
             num_heads                       = num_heads,  
@@ -385,12 +427,13 @@ def get_transformer_model(
             positional_encoding_temperature = positional_encoding_temperature, 
             positional_encoding_alpha       = positional_encoding_alpha, 
             device                          = device, 
-            pre_normalization               = pre_normalization, 
+            pre_normalization               = pre_normalization,
+            residual_connection             = residual_connection,  
         )
         return model 
     elif transformer_type == 'parallel_duel':
         model = DualTransformer(
-            num_joints         = pose_dim, 
+            num_joints         = num_joints, 
             joint_dim          = (3 if coordinates else 2), 
             encoding_length    = encoding_length, 
             decoding_length    = decoding_length, 
@@ -402,7 +445,8 @@ def get_transformer_model(
             positional_encoding_alpha       = positional_encoding_alpha, 
             positional_encoding_temperature = positional_encoding_temperature, 
             device                          = device, 
-            pre_normalization               = pre_normalization 
+            pre_normalization               = pre_normalization, 
+            residual_connection             = residual_connection, 
         )
         return model 
     else : 

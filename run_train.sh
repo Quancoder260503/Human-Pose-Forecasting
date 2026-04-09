@@ -1,4 +1,4 @@
-python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29501 Train.py \
+python3 -m torch.distributed.run --nproc_per_node=1 --master_port=29501 Train.py \
     --dataset pennaction \
     --num_joints 13 \
     --model transformer  \

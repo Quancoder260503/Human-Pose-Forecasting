@@ -6,7 +6,7 @@ import math
 from model.PositionalEncoding import *
 import matplotlib.pyplot as plt
 
-class TransformerDecoderLayer(nn.Module):
+class VanillaDecoderLayer(nn.Module):
     def __init__(self, 
             num_heads, 
             model_dim, 
@@ -24,7 +24,7 @@ class TransformerDecoderLayer(nn.Module):
         :param dropout             : dropout probability 
         :param pre_normalization   : forward mode, requires normalization afterwards ? 
         """
-        super(TransformerDecoderLayer, self).__init__() 
+        super(VanillaDecoderLayer, self).__init__() 
         self.num_heads           = num_heads 
         self.model_dim           = model_dim
         self.fc_hidden_dim       = fc_hidden_dim 
@@ -89,7 +89,6 @@ class TransformerDecoderLayer(nn.Module):
         tgt_sequence = tgt_sequence + self.dropout1(self_attn_out)
 
         tgt_sequence = self.layernorm1(tgt_sequence)
-
         key   = self.add_positional_embedding(memory, pos_embedding)
         query = self.add_positional_embedding(tgt_sequence, query_embedding)
         value = memory 
@@ -169,7 +168,7 @@ class TransformerDecoderLayer(nn.Module):
             return self.forward_pre_norm(memory, tgt_sequence, pos_embedding, query_embedding) 
         return self.forward_post_norm(memory, tgt_sequence, pos_embedding, query_embedding)
        
-class TransformerParallelDualDecoderLayer(nn.Module):
+class ParallelDualDecoderLayer(nn.Module):
     """
     Dual attention layer, combining spatial and temporal attention. 
     The spatial attention is applied to each frame independently, while the 
@@ -193,7 +192,7 @@ class TransformerParallelDualDecoderLayer(nn.Module):
         :param dropout             : dropout probability 
         :param pre_normalization   : forward mode, requires normalization afterwards ? 
         """
-        super(TransformerParallelDualDecoderLayer, self).__init__()
+        super(ParallelDualDecoderLayer, self).__init__()
         self.num_joints          = num_joints 
         self.num_heads           = num_heads 
         self.model_dim           = model_dim
@@ -248,7 +247,7 @@ class TransformerParallelDualDecoderLayer(nn.Module):
             batch_first = True, 
         )
 
-        self.proj_self_weight = nn.Linear(self.model_dim * 2, 2)
+        self.proj_self_weight  = nn.Linear(self.model_dim * 2, 2)
         self.proj_cross_weight = nn.Linear(self.model_dim * 2, 2)
 
         self.device              = device 
@@ -337,7 +336,7 @@ class TransformerParallelDualDecoderLayer(nn.Module):
 
         stacked_cross_attn  = torch.cat([temporal_cross_attn, spatial_cross_attn], dim = -1) # (B, T, J, 2 * D) 
         stacked_cross_attn  = self.proj_cross_weight(stacked_cross_attn) # (B, T, J, 2)
-        combined_weight    = self.softmax(stacked_cross_attn)            # (B, T, J, 2) 
+        combined_weight     = self.softmax(stacked_cross_attn)            # (B, T, J, 2) 
 
         w_temporal, w_spatial = combined_weight[:, :, :, 0].unsqueeze(-1), combined_weight[:, :, :, 1].unsqueeze(-1) # (B, T, J, 1) 
 
@@ -490,7 +489,8 @@ class TransformerParallelDualDecoderLayer(nn.Module):
                 spatial_query_embedding     = spatial_query_embedding, 
             )
 
-class TransformerDecoder(nn.Module):
+
+class Decoder(nn.Module):
     def __init__(self, 
             num_joints, 
             num_heads, 
@@ -510,7 +510,7 @@ class TransformerDecoder(nn.Module):
         :param dropout             : dropout probability 
         :param positional_encoding : distinguish noise 
         """
-        super(TransformerDecoder, self).__init__()
+        super(Decoder, self).__init__()
         self.num_heads           = num_heads 
         self.model_dim           = model_dim
         self.fc_hidden_dim       = fc_hidden_dim 
@@ -527,7 +527,7 @@ class TransformerDecoder(nn.Module):
     
     def make_decoder_layer(self): 
         if self.attention_mode == 'parallel_dual' : 
-            layer = TransformerParallelDualDecoderLayer(
+            layer = ParallelDualDecoderLayer(
                 num_joints        = self.num_joints, 
                 num_heads         = self.num_heads, 
                 model_dim         = self.model_dim, 
@@ -539,7 +539,7 @@ class TransformerDecoder(nn.Module):
             return layer
 
         elif self.attention_mode == 'vanilla' : 
-            layer = TransformerDecoderLayer(
+            layer = VanillaDecoderLayer(
                 num_heads         = self.num_heads, 
                 model_dim         = self.model_dim, 
                 fc_hidden_dim     = self.fc_hidden_dim,
@@ -603,7 +603,7 @@ class TransformerDecoder(nn.Module):
 
         return out, attn_weight_lst
     
-    def foward(self, 
+    def forward(self, 
         memory, 
         tgt_sequence, 
         query_embedding            = None, 

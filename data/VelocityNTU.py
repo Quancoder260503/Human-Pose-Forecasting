@@ -52,6 +52,7 @@ class NTUVelocity(Dataset2D):
             on_debug_mode        = on_debug_mode,
             require_action       = require_action,  
             input_representation = 'velocity', 
+            dataset_name         = 'ntu', 
         )
         
     def transformation(self, storage, num_joints): 

@@ -56,14 +56,15 @@ class NTURootRelative(Dataset2D):
             on_debug_mode        = on_debug_mode,
             require_action       = require_action,  
             input_representation = 'root_relative', 
+            dataset_name         = 'ntu', 
         )
         self.compute_stats()
         self.eps = 1e-7
 
     def compute_stats(self):    
         
-        root_distance_x  = [[] * self.num_joints]
-        root_distance_y  = [[] * self.num_joints]
+        root_distance_x  = [[] for _ in range(self.num_joints)]
+        root_distance_y  = [[] for _ in range(self.num_joints)]
 
         for index in range(len(self.frames_data)):
             frames        = self.frames_data[index]

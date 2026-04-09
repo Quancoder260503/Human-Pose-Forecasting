@@ -84,74 +84,23 @@ def get_raw_body_data(skes_path, ske_name):
     }
 
 
-def remove_video(datadir):
-    data_storages = os.listdir(datadir)
-    min_length = 50
-    bad_videos = [] 
-    for storage_id in data_storages:
-        storage     = np.load(os.path.join(datadir, storage_id), allow_pickle = True).item()
-        name        = storage['name']
-        human_id_list = list(storage['data'].keys())
-        if len(human_id_list) == 0: 
-            bad_videos.append(storage_id)
-            continue 
-       # human_id    = human_id_list[0] # So far only support spotting the first person in the video, idea may extened later 
-        max_frames = 0 
-        for human_id in human_id_list : 
-          data        = storage['data'][human_id]
-          label       = data['colors'] 
-          n_frames    = label.shape[0] 
-          max_frames  = max(max_frames, n_frames)    
-<<<<<<< HEAD
-        if max_frames < min_length: 
-=======
-        if max_frames < 50: 
->>>>>>> daa880a6a028896f0983792f87ac542ce6854fcd
-            bad_videos.append(storage_id) 
-            continue
-        #assert max_frames >= 30, "num frames must be more than total frame"
-        num_joints  = label.shape[1] 
-        dim         = label.shape[2]
-    for bad_video in bad_videos: 
-      bad_video_path = os.path.join(datadir, bad_video)
-      os.remove(bad_video_path)
-    print(len(bad_videos), len(data_storages)) 
-
-
-
-
 if __name__ == '__main__':
-    # saved_dir = 'dataset/NanyangTechRGB'
-    # os.makedirs(saved_dir, exist_ok=True)
+    saved_dir = 'dataset/NanyangTechRGB'
+    os.makedirs(saved_dir, exist_ok=True)
 
-    # filenames = os.listdir(NTU_SKELETON_PATH)
-    # directory_length = len(filenames)
+    filenames = os.listdir(NTU_SKELETON_PATH)
+    directory_length = len(filenames)
 
-    # random_index = np.arange(directory_length)
-    # np.random.shuffle(random_index)
+    random_index = np.arange(directory_length)
+    np.random.shuffle(random_index)
 
-    # num_train = int(directory_length * 0.7)
+    num_train = int(directory_length * 0.7)
 
-    # train_index = set(random_index[:num_train])
-    # test_index  = set(random_index[num_train:])
+    train_index = set(random_index[:num_train])
+    test_index  = set(random_index[num_train:])
 
-    # train_dir = os.path.join(saved_dir, 'train')
-    # test_dir  = os.path.join(saved_dir, 'test')
+    train_dir = os.path.join(saved_dir, 'train')
+    test_dir  = os.path.join(saved_dir, 'test')
 
-    # os.makedirs(train_dir, exist_ok = True)
-    # os.makedirs(test_dir,  exist_ok  = True)
-
-    
-    # for video_index, filename in enumerate(filenames):
-    #     data_dict = get_raw_body_data(
-    #         NTU_SKELETON_PATH,
-    #         filename,
-    #     )
-    #     if video_index in train_index:
-    #         save_dir = os.path.join(train_dir, f"{video_index}.npy")
-    #     else:
-    #         save_dir = os.path.join(test_dir, f"{video_index}.npy")
-
-    #     np.save(save_dir, data_dict)
-    remove_video('dataset/NanyangTechRGB/test')
-    remove_video('dataset/NanyangTechRGB/train')
+    os.makedirs(train_dir, exist_ok = True)
+    os.makedirs(test_dir,  exist_ok  = True)

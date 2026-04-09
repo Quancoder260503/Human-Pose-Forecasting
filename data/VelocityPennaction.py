@@ -36,6 +36,7 @@ class PennActionVelocity(Dataset2D):
             require_action       = require_action,  
             on_debug_mode        = on_debug_mode,
             input_representation = 'velocity',  
+            dataset_name         = 'pennaction', 
         )
 
     def transformation(self, storage, num_joints): 

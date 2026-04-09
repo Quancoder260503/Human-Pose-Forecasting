@@ -52,6 +52,7 @@ def dataset_factory(args):
             frame_input_h      = args.pennaction_frame_input_h, 
             frame_input_w      = args.pennaction_frame_input_w,
             box_size           = args.pennaction_boxsize, 
+            on_debug_mode      = args.mode == 'debug', 
             train              = True, 
         )
 
@@ -61,6 +62,7 @@ def dataset_factory(args):
             frame_input_h      = args.pennaction_frame_input_h, 
             frame_input_w      = args.pennaction_frame_input_w,
             box_size           = args.pennaction_boxsize, 
+            on_debug_mode      = args.mode == 'debug', 
             train              = False, 
         )
         
@@ -69,14 +71,11 @@ def dataset_factory(args):
         train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
 
 
-        train_sampler = DistributedSampler(train_dataset)
-        val_sampler   = DistributedSampler(val_dataset, shuffle=False)
     
 
         train_loader = DataLoader(
             train_dataset,
             batch_size  = args.batch_size,
-            sampler     = train_sampler,  
             num_workers = args.num_workers,
             pin_memory = args.pin_memory
         )
@@ -84,7 +83,6 @@ def dataset_factory(args):
         val_loader = DataLoader(
             val_dataset,
             batch_size  = args.batch_size,
-            sampler     = val_sampler,
             num_workers = args.num_workers,
             pin_memory  = args.pin_memory
         )
@@ -103,7 +101,7 @@ def dataset_factory(args):
             frame_input_w = args.pennaction_frame_input_w,
         )
 
-        return trainer, train_sampler
+        return trainer
     
     elif args.dataset == 'ntu': 
         dataset = dataset_class(
@@ -112,6 +110,7 @@ def dataset_factory(args):
             frame_input_h      = args.ntu_frame_input_h, 
             frame_input_w      = args.ntu_frame_input_w,
             box_size           = args.ntu_boxsize, 
+            on_debug_mode      = args.mode == 'debug', 
             train              = True, 
         )
 
@@ -125,18 +124,15 @@ def dataset_factory(args):
             frame_input_h      = args.ntu_frame_input_h, 
             frame_input_w      = args.ntu_frame_input_w,
             box_size           = args.ntu_boxsize, 
+            on_debug_mode      = args.mode == 'debug', 
             train              = False, 
         )
 
         
-        train_sampler = DistributedSampler(train_dataset)
-        val_sampler   = DistributedSampler(val_dataset, shuffle = False)
-    
 
         train_loader = DataLoader(
             train_dataset,
             batch_size  = args.batch_size,
-            sampler     = train_sampler,  
             num_workers = args.num_workers,
             pin_memory  = args.pin_memory
         )
@@ -144,7 +140,6 @@ def dataset_factory(args):
         val_loader = DataLoader(
             val_dataset,
             batch_size  = args.batch_size,
-            sampler     = val_sampler,
             num_workers = args.num_workers,
             pin_memory  = args.pin_memory
         )
@@ -164,7 +159,7 @@ def dataset_factory(args):
             frame_input_w   = args.ntu_frame_input_w,
         )
 
-        return trainer, train_sampler 
+        return trainer
     
     else : 
         raise NotImplementedError('dataset not supported')
@@ -212,7 +207,7 @@ def get_model(args):
     
     elif args.model == 'transformer': 
         model = get_transformer_model(
-            pose_dim          = args.num_joints, 
+            num_joints        = args.num_joints, 
             coordinates       = args.model_input_type == 'coordinates',
             encoding_length   = args.num_training_frame - (1 if args.model_input_type == 'velocity' else 0), 
             decoding_length   = args.num_testing_frame, 
@@ -225,6 +220,8 @@ def get_model(args):
             positional_encoding_temperature = args.positional_encoding_temperature, 
             positional_encoding_alpha       = args.positional_encoding_alpha, 
             device                          = args.device, 
+            transformer_type                = args.transformer_type, 
+            residual_connection             = args.transformer_residual_connection, 
         )
         criterion = transformer_loss_function 
         return model, criterion
@@ -249,7 +246,6 @@ def get_model(args):
             dropout        = args.dropout, 
             device         = args.device, 
         )
-
         criterion_lstm = lstm_loss_function
 
         return (vae_model, lstm_model), (criterion_vae, criterion_lstm)

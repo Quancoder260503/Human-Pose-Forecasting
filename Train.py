@@ -5,14 +5,9 @@ import os
 import argparse 
 import torch.distributed as dist
 
-LOCAL_RANK = int(os.environ["LOCAL_RANK"])
-dist.init_process_group(backend = 'nccl')
-torch.cuda.set_device(LOCAL_RANK)
-
-
 
 def train(args):
-    trainer, train_sampler = dataset_factory(args)
+    trainer = dataset_factory(args)
     device = args.device 
     print(device, 'is available')
 
@@ -26,7 +21,7 @@ def train(args):
     
        model, criterion = get_model(args)
        model.load_state_dict(model_dict['model'])
-       model = torch.nn.parallel.DistributedDataParallel(model.to(device), device_ids=[LOCAL_RANK],  find_unused_parameters = True)
+       model = model.to(device)
 
        optimizer = torch.optim.Adam(
           model.parameters(), 
@@ -39,11 +34,14 @@ def train(args):
       
        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
        scheduler.load_state_dict(model_dict['scheduler'])
+
+       for g in optimizer.param_groups: 
+           g['lr'] = args.learning_rate
    
     else: 
         model, criterion = get_model(args)
-        model = torch.nn.parallel.DistributedDataParallel(model.to(device), device_ids = [LOCAL_RANK],  find_unused_parameters = True) 
-
+        model = model.to(device)
+        
         optimizer = torch.optim.Adam(
           model.parameters(), 
           lr           = args.learning_rate, 
@@ -65,7 +63,6 @@ def train(args):
 
     print("Start Training ...\n")
     for epoch in range(start_epoch, args.num_epochs):
-        train_sampler.set_epoch(epoch)
         print(f"learning rate for epoch {epoch}: {scheduler.get_last_lr()[0]}")
        
         train_loss, train_predictions, train_rmse, val_loss, val_predictions, val_rmse = trainer.process_per_epoch(
@@ -76,7 +73,7 @@ def train(args):
             epoch     = epoch,        
         )
 
-        scheduler.step()
+        scheduler.step(train_loss)
 
         train_acc = get_acc(train_predictions)
         val_acc   = get_acc(val_predictions)
@@ -157,7 +154,7 @@ if __name__ == '__main__':
     parser.add_argument('--betas',                           default = (0.9, 0.999), type = tuple, required = False) 
     parser.add_argument('--temperature',                     default = 10000,        type = float, required = False) 
     parser.add_argument('--alpha',                           default = 1,            type = float, required = False)
-    parser.add_argument('--weight_decay',                    default = 1e-4,         type = float, required = False)
+    parser.add_argument('--weight_decay',                    default = 1e-5,         type = float, required = False)
     parser.add_argument('--teacher_forcing_rate',            default = 0.7,          type = float, required = False)
     parser.add_argument('--positional_encoding_temperature', default = 10000,        type = float, required = False)  
     parser.add_argument('--positional_encoding_alpha',       default = 1,            type = float, required = False)
@@ -202,12 +199,13 @@ if __name__ == '__main__':
     # VELOCITY TRANSFORMER 
 
     # TRANSFORMER 
-    parser.add_argument('--transformer_num_heads',         default = 8,     type = int,  required = False)  
-    parser.add_argument('--transformer_model_dim',         default = 512,   type = int,  required = False) 
-    parser.add_argument('--transformer_fc_hidden_dim',     default = 2048,  type = int,  required = False) 
-    parser.add_argument('--transformer_num_layers',        default = 6,     type = int,  required = False) 
-    parser.add_argument('--transformer_pre_normalization', default = False, type = bool, required = False)
-    
+    parser.add_argument('--transformer_num_heads',           default = 8,         type = int,  required = False)  
+    parser.add_argument('--transformer_model_dim',           default = 512,       type = int,  required = False) 
+    parser.add_argument('--transformer_fc_hidden_dim',       default = 2048,      type = int,  required = False) 
+    parser.add_argument('--transformer_num_layers',          default = 6,         type = int,  required = False) 
+    parser.add_argument('--transformer_pre_normalization',   default = False,     type = bool, required = False)
+    parser.add_argument('--transformer_residual_connection', default = True,      type = bool, required = False) 
+    parser.add_argument('--transformer_type',                default = 'vanilla', type = str,  required = False)
 
     args = parser.parse_args()
     train(args) 

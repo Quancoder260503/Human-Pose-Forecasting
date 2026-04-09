@@ -52,6 +52,7 @@ class NTUCoordinates(Dataset2D):
             on_debug_mode        = on_debug_mode,
             require_action       = require_action,  
             input_representation = 'coordinates', 
+            dataset_name         = 'ntu', 
         )
         
     def transformation(self, storage, num_joints): 

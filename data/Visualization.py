@@ -285,3 +285,25 @@ def show_video(video, output_path = "output.mp4", fps = 25):
 
     out.release()
     cv2.destroyAllWindows()
+
+
+"""
+Visualize Attention  
+"""
+def visualize_attention(attn_weights, cmap = 'viridis'):
+    num_mats = len(attn_weights)
+    cols = (num_mats + 1) // 2 
+    fig, axes = plt.subplots(2, cols, figsize = (4 * cols, 8))
+    axes = axes.flatten()
+    for i, attn in enumerate(attn_weights):
+        im = axes[i].imshow(attn, cmap = cmap)
+        axes[i].set_title(f'Head {i+1}')
+        axes[i].set_xlabel('Key')
+        axes[i].set_ylabel('Query')
+        fig.colorbar(im, ax = axes[i])
+        
+    for j in range(i+1, len(axes)):
+        axes[j].axis('off')
+    
+    plt.tight_layout()
+    plt.show()

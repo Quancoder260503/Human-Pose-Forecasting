@@ -23,19 +23,20 @@ class PennActionCoordinates(Dataset2D):
         on_debug_mode      = False,
     ):
         super(PennActionCoordinates, self).__init__(
-            num_training_frame = num_training_frame, 
-            num_testing_frame  = num_testing_frame, 
-            frame_input_w      = frame_input_w, 
-            frame_input_h      = frame_input_h,  
-            box_size           = box_size, 
-            heatmap_size       = heatmap_size, 
-            num_joints         = num_joints, 
-            gaussian_sigma     = gaussian_sigma, 
-            data_dir           = data_dir, 
-            train              = train,
-            require_action     = require_action,  
-            on_debug_mode      = on_debug_mode, 
+            num_training_frame   = num_training_frame, 
+            num_testing_frame    = num_testing_frame, 
+            frame_input_w        = frame_input_w, 
+            frame_input_h        = frame_input_h,  
+            box_size             = box_size, 
+            heatmap_size         = heatmap_size, 
+            num_joints           = num_joints, 
+            gaussian_sigma       = gaussian_sigma, 
+            data_dir             = data_dir, 
+            train                = train,
+            require_action       = require_action,  
+            on_debug_mode        = on_debug_mode, 
             input_representation = 'coordinates', 
+            dataset_name         = 'pennaction', 
         )
 
     def transformation(self, storage, num_joints): 
@@ -58,8 +59,7 @@ class PennActionCoordinates(Dataset2D):
         
         if self.train : 
         
-            start_index = np.random.randint(0, n_frames - total_frame + 1) 
-
+            start_index = 0 #np.random.randint(0, n_frames - total_frame + 1) 
             # zero out these terms 
             observed_poses = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :2]) 
             observed_masks = torch.tensor(label[start_index : (start_index + self.num_training_frame), :,  2])

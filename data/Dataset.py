@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 from torchvision import transforms
 from abc import ABC, abstractmethod
+import tqdm 
 import random
 
 class Dataset2D(Dataset, ABC):
@@ -27,6 +28,7 @@ class Dataset2D(Dataset, ABC):
         require_action, 
         on_debug_mode,
         input_representation, 
+        dataset_name, 
     ):
         """
         :param num_training_frame : frames extracted for training
@@ -52,15 +54,18 @@ class Dataset2D(Dataset, ABC):
         self.gaussian_sigma       = gaussian_sigma
         self.train                = train
         self.input_representation = input_representation
+        self.dataset_name         = dataset_name
+        self.min_frame            = num_training_frame + num_testing_frame
 
         if self.train is True :
             self.data_dir = data_dir + 'train/'
         else :
             self.data_dir = data_dir + 'test/'
 
-        self.frames_data         = os.listdir(self.data_dir)
+        #self.frames_data         = os.listdir(self.data_dir)
         self.on_debug_mode       = on_debug_mode
         self.require_action      = require_action 
+        self.load_data()
 
     def __len__(self):
         return len(self.frames_data)
@@ -77,3 +82,34 @@ class Dataset2D(Dataset, ABC):
     @abstractmethod    
     def transformation(self, storage, num_joints):
         pass 
+
+    def load_data(self):
+        frame_names = os.listdir(self.data_dir)
+        self.frames_data = [] 
+        if self.dataset_name == 'ntu':
+            for index in range(len(frame_names)):
+                frame_name = frame_names[index]
+                storage   = np.load(os.path.join(self.data_dir, frame_name), allow_pickle = True).item()
+                name          = storage['name']
+                human_id_list = list(storage['data'].keys())
+
+                assert len(human_id_list), f"video {name} has no person in the video"
+
+                human_id_list.sort(key = lambda x : storage['data'][x]['colors'].shape[0], reverse = True) 
+                human_id    = human_id_list[0]
+                data        = storage['data'][human_id]
+                label       = data['colors'] # projected 2D locations
+                n_frames    = label.shape[0]     
+
+                if n_frames >= self.min_frame : 
+                    self.frames_data.append(frame_name)
+
+        elif self.dataset_name == 'pennaction':
+            for index in range(len(self.frame_names)):
+                frame_name = frame_names[index]
+                storage   = np.load(os.path.join(self.data_dir, frame_name), allow_pickle = True).item()
+                n_frames    = storage['nframes']   
+                if n_frames >= self.min_frame : 
+                    self.frames_data.append(frame_name)
+        else : 
+            raise NotImplementedError('Dataset unknown')

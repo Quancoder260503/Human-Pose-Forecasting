@@ -5,420 +5,11 @@ import numpy as np
 import math 
 from model.PositionalEncoding import *
 import matplotlib.pyplot as plt
+from model.TransformerEncoder import *
+from model.TransformerDecoder import *
+from scipy.optimize import linear_sum_assignment
 
-class TransformerEncoderLayer(nn.Module):
-    def __init__(self, 
-                num_heads, 
-                model_dim, 
-                fc_hidden_dim, 
-                dropout, 
-                device            = 'cuda', 
-                pre_normalization  = False, 
-        ): 
-        """
-        :param num_heads           : number of attention heads 
-        :param model_dim           : model dimension (the dimension that accompanied with the object through the entire network)
-        :param fc_hidden_dim       : fully connected layer hidden dim 
-        :param num_layers          : number of (MultiheadAttn + FC) layers 
-        :param dropout             : dropout probability 
-        :param pre_normalization   : forward mode, requires normalization afterwards ? 
-        """
-        super(TransformerEncoderLayer, self).__init__() 
-        self.num_heads           = num_heads 
-        self.model_dim           = model_dim
-        self.fc_hidden_dim       = fc_hidden_dim 
-        self.dropout             = dropout
-        
-        self.dropout1            = nn.Dropout(self.dropout)
-        self.dropout2            = nn.Dropout(self.dropout)
-        self.dropout3            = nn.Dropout(self.dropout)
-
-        self.linear1             = nn.Linear(model_dim, fc_hidden_dim) 
-        self.linear2             = nn.Linear(fc_hidden_dim, model_dim)
-
-        self.layernorm1          = nn.LayerNorm(self.model_dim)
-        self.layernorm2          = nn.LayerNorm(self.model_dim)
-
-        self.relu                = nn.ReLU(inplace = True)
-
-        
-        self._self_attention      = nn.MultiheadAttention(
-            embed_dim   = self.model_dim, 
-            num_heads   = self.num_heads, 
-            dropout     = self.dropout, 
-            batch_first = True, 
-        )
-        
-        self.device              = device 
-        self.pre_normalization   = pre_normalization
-
-
-    def add_positional_embedding(self, inp, pos_embedding):
-        if pos_embedding is not None :
-            return inp + pos_embedding
-        return inp  
-    
-    def forward_post_norm(self, src_sequence, pos_embedding):
-        """
-        :param src_sequence  : a tensor of shape (batch_size, sequence_length, model_dim)
-        :param pos_embedding : a tensor of shape (batch_size, sequence_length, 1), getting broadcasted 
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        query = key = self.add_positional_embedding(src_sequence, pos_embedding)
-        value = src_sequence
-
-        self_attn_out, self_attn_weight = self._self_attention(query, key, value, need_weights = True)
-
-        src_sequence = src_sequence + self.dropout1(self_attn_out)
-
-        src_sequence = self.layernorm1(src_sequence)
-
-        curr_sequence = self.linear1(src_sequence) 
-        curr_sequence = self.relu(curr_sequence)
-        curr_sequence = self.dropout2(curr_sequence) 
-        
-        curr_sequence = self.linear2(curr_sequence) 
-        src_sequence  = src_sequence + self.dropout3(curr_sequence)
-        output        = self.layernorm2(src_sequence)
-
-        return output, self_attn_weight
-    
-    def forward_pre_norm(self, src_sequence, pos_embedding):
-        """
-        :param src_sequence  : a tensor of shape (batch_size, sequence_length, model_dim)
-        :param pos_embedding : a tensor of shape (batch_size, sequence_length, 1), getting broadcasted 
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        src_sequence = self.layernorm1(src_sequence)
-        
-        query = key = self.add_positional_embedding(src_sequence, pos_embedding)
-        value = src_sequence
-
-        self_attn_out, self_attn_weight = self._self_attention(query, key, value, need_weights = True)
-
-        src_sequence = src_sequence + self.dropout1(self_attn_out)
-        src_sequence = self.layernorm2(src_sequence)
-
-        curr_sequence  = self.linear1(src_sequence)
-        curr_sequence  = self.relu(curr_sequence) 
-        curr_sequence  = self.dropout2(curr_sequence) 
-
-        curr_sequence  = self.linear2(curr_sequence)
-        output         =  src_sequence + self.dropout3(curr_sequence)
-        return output, self_attn_weight
-
-    
-    def forward(self, src_sequence, pos_embedding): 
-        """
-        :param src_sequence  : a tensor of shape (batch_size, sequence_length, model_dim)
-        :param pos_embedding : a tensor of shape (batch_size, sequence_length, 1), getting broadcasted 
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        if self.pre_normalization : 
-            return self.forward_pre_norm(src_sequence, pos_embedding) 
-        return self.forward_post_norm(src_sequence, pos_embedding)
-    
-class TransformerEncoder(nn.Module):
-    def __init__(self, 
-                 num_heads, 
-                 model_dim, 
-                 fc_hidden_dim, 
-                 num_layers, 
-                 dropout, 
-                 device = 'cuda', 
-                 pre_normalization = False, 
-        ): 
-        """
-        :param num_heads           : number of attention heads 
-        :param model_dim           : model dimension (the dimension that accompanied with the object through the entire network)
-        :param fc_hidden_dim       : fully connected layer hidden dim 
-        :param num_layers          : number of (MultiheadAttn + FC) layers 
-        :param dropout             : dropout probability 
-        :param positional_encoding : distinguish noise 
-        """
-        super(TransformerEncoder, self).__init__()
-        self.num_heads           = num_heads 
-        self.model_dim           = model_dim
-        self.fc_hidden_dim       = fc_hidden_dim 
-        self.num_layers          = num_layers 
-        self.dropout             = dropout
-        self.device              = device 
-        self.pre_normalization   = pre_normalization 
-        self.layernorm           = nn.LayerNorm(self.model_dim)
-        self.encoder_layers = nn.ModuleList([
-            self.make_encoder_layer() for _ in range(self.num_layers)
-        ])
-    
-    def make_encoder_layer(self): 
-        layer = TransformerEncoderLayer(
-           num_heads         = self.num_heads, 
-           model_dim         = self.model_dim, 
-           fc_hidden_dim     = self.fc_hidden_dim,
-           dropout           = self.dropout, 
-           device            = self.device, 
-           pre_normalization = self.pre_normalization
-        )
-        return layer 
-    
-    def forward(self, src_sequence, pos_embedding): 
-        """
-        :param src_sequence  : a tensor of shape (batch_size, sequence_length, model_dim)
-        :param pos_embedding : a tensor of shape (batch_size, sequence_length, 1), getting broadcasted 
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        
-        out = src_sequence 
-        attn_weight_lst = [] 
-        for i in range(self.num_layers): 
-            out, attn_weights = self.encoder_layers[i](out, pos_embedding) 
-            attn_weight_lst.append(attn_weights)
-
-        if self.pre_normalization : 
-            out = self.layernorm(out)
-
-        return out, attn_weight_lst
-    
-class TransformerDecoderLayer(nn.Module):
-    def __init__(self, 
-                num_heads, 
-                model_dim, 
-                fc_hidden_dim, 
-                dropout, 
-                device            = 'cuda', 
-                pre_normalization  = False, 
-        ): 
-
-        """
-        :param num_heads           : number of attention heads 
-        :param model_dim           : model dimension (the dimension that accompanied with the object through the entire network)
-        :param fc_hidden_dim       : fully connected layer hidden dim 
-        :param num_layers          : number of (MultiheadAttn + FC) layers 
-        :param dropout             : dropout probability 
-        :param pre_normalization   : forward mode, requires normalization afterwards ? 
-        """
-        super(TransformerDecoderLayer, self).__init__() 
-        self.num_heads           = num_heads 
-        self.model_dim           = model_dim
-        self.fc_hidden_dim       = fc_hidden_dim 
-        self.dropout             = dropout
-        
-        self.dropout1            = nn.Dropout(self.dropout)
-        self.dropout2            = nn.Dropout(self.dropout)
-        self.dropout3            = nn.Dropout(self.dropout)
-        self.dropout4            = nn.Dropout(self.dropout)
-
-
-        self.linear1             = nn.Linear(model_dim, fc_hidden_dim) 
-        self.linear2             = nn.Linear(fc_hidden_dim, model_dim)
-
-        self.layernorm1          = nn.LayerNorm(self.model_dim)
-        self.layernorm2          = nn.LayerNorm(self.model_dim)
-        self.layernorm3          = nn.LayerNorm(self.model_dim)
-
-        self.relu                = nn.ReLU(inplace = True)
-
-        
-        self._self_attention      = nn.MultiheadAttention(
-            embed_dim   = self.model_dim, 
-            num_heads   = self.num_heads, 
-            dropout     = self.dropout, 
-            batch_first = True, 
-        )
-
-        self._cross_attention    = nn.MultiheadAttention(
-            embed_dim   =  self.model_dim, 
-            num_heads   =  self.num_heads, 
-            dropout     =  self.dropout, 
-            batch_first = True, 
-        )
-        
-        self.device              = device 
-        self.pre_normalization   = pre_normalization
-
-
-    def add_positional_embedding(self, inp, pos_embedding):
-        if pos_embedding is not None :
-            inp = inp + pos_embedding 
-        return inp  
-    
-    def forward_post_norm(self, memory, tgt_sequence, pos_embedding, query_embedding):
-        """
-        :param memory          : a tensor of shape (batch_size, src_sequence_length, model_dim), encoder output 
-        :param tgt_sequence    : a tensor of shape (batch_size, tgt_sequence_length, model_dim)
-        :param pos_embedding   : a tensor of shape (batch_size, pos_sequence_length, 1), getting broadcasted 
-        :param query_embedding : a tensor of shape (batch_size, tgt_sequence_length, 1), getting broadcasted
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-
-        # Self-attention 
-        key = query = self.add_positional_embedding(tgt_sequence, query_embedding)
-        value = tgt_sequence 
-
-        self_attn_out, self_attn_weight = self._self_attention(query, key, value, need_weights = True)
-
-        tgt_sequence = tgt_sequence + self.dropout1(self_attn_out)
-
-        tgt_sequence = self.layernorm1(tgt_sequence)
-
-        key   = self.add_positional_embedding(memory, pos_embedding)
-        query = self.add_positional_embedding(tgt_sequence, query_embedding)
-        value = memory 
-
-        cross_attn_out, cross_attn_weight = self._cross_attention(query, key, value, need_weights = True)
-
-        tgt_sequence = tgt_sequence + self.dropout2(cross_attn_out)
-
-        tgt_sequence = self.layernorm2(tgt_sequence)
-
-
-        curr_sequence = self.linear1(tgt_sequence) 
-        curr_sequence = self.relu(curr_sequence)
-        curr_sequence = self.dropout3(curr_sequence) 
-        
-        curr_sequence = self.linear2(curr_sequence) 
-        src_sequence  = tgt_sequence + self.dropout4(curr_sequence)
-        
-        output        = self.layernorm3(src_sequence)
-        return output, [self_attn_weight, cross_attn_weight]
-    
-    
-    def forward_pre_norm(self, memory, tgt_sequence, pos_embedding, query_embedding):
-        """
-        :param memory          : a tensor of shape (batch_size, src_sequence_length, model_dim), encoder output 
-        :param tgt_sequence    : a tensor of shape (batch_size, tgt_sequence_length, model_dim)
-        :param pos_embedding   : a tensor of shape (batch_size, pos_sequence_length, 1), getting broadcasted 
-        :param query_embedding : a tensor of shape (batch_size, tgt_sequence_length, 1), getting broadcasted
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             self_attn_weights  : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-             cross_attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length)
-        """
-        
-        # Self-attention 
-        tgt_sequence = self.layernorm1(tgt_sequence)
-        
-        query = key = self.add_positional_embedding(tgt_sequence, query_embedding)
-        value = tgt_sequence
-
-        self_attn_out, self_attn_weight = self._self_attention(query, key, value, need_weights = True)
-
-        tgt_sequence = tgt_sequence + self.dropout1(self_attn_out)
-        tgt_sequence = self.layernorm2(tgt_sequence)
-
-        query = self.add_positional_embedding(tgt_sequence, query_embedding) 
-        key   = self.add_positional_embedding(memory, pos_embedding)
-        value = memory 
-        
-        cross_attn_out, cross_attn_weight = self._cross_attention(query, key, value, need_weights = True)
-
-        tgt_sequence = tgt_sequence + self.dropout2(cross_attn_out)
-        tgt_sequence = self.layernorm3(tgt_sequence)
-
-
-        curr_sequence  = self.linear1(tgt_sequence)
-        curr_sequence  = self.relu(curr_sequence) 
-        curr_sequence  = self.dropout3(curr_sequence) 
-
-        curr_sequence  = self.linear2(curr_sequence)
-        output         = tgt_sequence + self.dropout4(curr_sequence)
-        return output, [self_attn_weight, cross_attn_weight]
-
-
-    
-    def forward(self, memory, tgt_sequence, pos_embedding, query_embedding):
-        """
-        :param memory          : a tensor of shape (batch_size, src_sequence_length, model_dim), encoder output 
-        :param tgt_sequence    : a tensor of shape (batch_size, tgt_sequence_length, model_dim)
-        :param pos_embedding   : a tensor of shape (batch_size, pos_sequence_length, 1), getting broadcasted 
-        :param query_embedding : a tensor of shape (batch_size, tgt_sequence_length, 1), getting broadcasted
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        if self.pre_normalization : 
-            return self.forward_pre_norm(memory, tgt_sequence, pos_embedding, query_embedding) 
-        return self.forward_post_norm(memory, tgt_sequence, pos_embedding, query_embedding)
-    
-class TransformerDecoder(nn.Module):
-    def __init__(self, 
-                num_heads, 
-                model_dim, 
-                fc_hidden_dim, 
-                num_layers, 
-                dropout, 
-                device = 'cuda', 
-                pre_normalization = False, 
-        ): 
-        """
-        :param num_heads           : number of attention heads 
-        :param model_dim           : model dimension (the dimension that accompanied with the object through the entire network)
-        :param fc_hidden_dim       : fully connected layer hidden dim 
-        :param num_layers          : number of (MultiheadAttn + FC) layers 
-        :param dropout             : dropout probability 
-        :param positional_encoding : distinguish noise 
-        """
-        super(TransformerDecoder, self).__init__()
-        self.num_heads           = num_heads 
-        self.model_dim           = model_dim
-        self.fc_hidden_dim       = fc_hidden_dim 
-        self.num_layers          = num_layers 
-        self.dropout             = dropout
-        self.device              = device 
-        self.pre_normalization   = pre_normalization 
-        self.layernorm           = nn.LayerNorm(self.model_dim)
-        self.decoder_layers      = nn.ModuleList([
-            self.make_decoder_layer() for _ in range(self.num_layers)
-        ])
-    
-    def make_decoder_layer(self): 
-        layer = TransformerDecoderLayer(
-           num_heads         = self.num_heads, 
-           model_dim         = self.model_dim, 
-           fc_hidden_dim     = self.fc_hidden_dim,
-           dropout           = self.dropout, 
-           device            = self.device, 
-           pre_normalization = self.pre_normalization
-        )
-        return layer 
-    
-    def forward(self, memory, tgt_sequence, pos_embedding, query_embedding): 
-        """
-        :param memory          : a tensor of shape (batch_size, src_sequence_length, model_dim), encoder output 
-        :param tgt_sequence    : a tensor of shape (batch_size, tgt_sequence_length, model_dim)
-        :param pos_embedding   : a tensor of shape (batch_size, pos_sequence_length, 1), getting broadcasted 
-        :param query_embedding : a tensor of shape (batch_size, tgt_sequence_length, 1), getting broadcasted
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             self_attn_weights  : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-             cross_attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length)
-        """
-        out = tgt_sequence 
-        attn_weight_lst = [] 
-        for i in range(self.num_layers): 
-            out, attn_weights = self.decoder_layers[i](memory, out, pos_embedding, query_embedding) 
-            attn_weight_lst.append(attn_weights)
-
-        if self.pre_normalization : 
-            out = self.layernorm(out)
-
-        return out, attn_weight_lst
-
-
-"""
-:TODO, add more methods to init the input decoder, such as parameterized a network to learn what we should choose from the src sequences.
-"""
-
-class Transformer(nn.Module):
+class VanillaTransformer(nn.Module):
     def __init__(self, 
         pose_dim                        = 39,  
         encoding_length                 = 14,
@@ -432,6 +23,8 @@ class Transformer(nn.Module):
         positional_encoding_alpha       = 1, 
         device                          = 'cuda', 
         pre_normalization               = False, 
+        query_selection                 = False, 
+        residual_connection             = False, 
     ): 
         """
         :param pose_dim        : input tensor, can represent either (x, y, visibility) or relative root (all - root) or velocity between frames (dx, dy) 
@@ -442,9 +35,10 @@ class Transformer(nn.Module):
         :param fc_hidden_dim   : fully connected layer hidden dim 
         :param num_layers      : number of (MultiheadAttn + FC) layers 
         :param dropout         : dropout probability 
-        :param positional_encoding : distinguish noise 
+        :param positional_encoding : distinguish noise
+        :param query_selection : perform query selection strategy or not.  
         """
-        super(Transformer, self).__init__()
+        super(VanillaTransformer, self).__init__()
         self.pose_dim            = pose_dim
         self.encoding_length     = encoding_length 
         self.decoding_length     = decoding_length
@@ -455,6 +49,8 @@ class Transformer(nn.Module):
         self.dropout             = dropout 
         self.device              = device
         self.pre_normalization   = pre_normalization
+        self.query_selection     = query_selection
+        self.residual_connection = residual_connection
 
         # Temperature and alpha for positional encoding 
         self.temperature = positional_encoding_temperature 
@@ -482,9 +78,20 @@ class Transformer(nn.Module):
             pre_normalization   = self.pre_normalization, 
         )
         self.proj_model              = nn.Linear(self.pose_dim,  self.model_dim)
-        self.proj_out                = nn.Linear(self.model_dim, self.pose_dim) # map to the output space
+        self.proj_out                = nn.Linear(self.model_dim, self.pose_dim) # map to the output space        
         self.decoder_query_embedding = nn.Embedding(self.decoding_length, self.model_dim)
-        self.init_weights() 
+        
+        """
+        Taking inspiration from : 
+          https://github.com/idiap/potr/blob/1e194130cd012d3c9a6137052f402e6f7fb5b71b/models/Transformer.py
+        """
+        if self.query_selection : 
+            self.position_predictor = nn.Linear(self.model_dim, self.decoding_length)
+
+
+
+        self.init_weights()
+        torch.nn.init.trunc_normal_(self.decoder_query_embedding.weight, std = 0.02)  
 
     def init_positional_encoding(self):
         encoder_positional = PositionalEncoding1D(
@@ -500,13 +107,53 @@ class Transformer(nn.Module):
         # Do not train the distinguish noise 
         self.encoder_positional_encoding = nn.Parameter(self.encoder_positional_encoding, requires_grad = False) 
 
-    def init_weights(self): 
+    def init_weights(self):
+        for m in self.modules():        
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, std = 0.02)
+                if m.bias is not None:
+                  nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.weight, 1.0)
+
+    def query_selecton_fn(self, indices, src_sequences):
+        """ 
+        Taking inspiration from : 
+        https://github.com/idiap/potr/blob/1e194130cd012d3c9a6137052f402e6f7fb5b71b/models/Transformer.py
+
+        Handles the way queries ar egenerated copying items from the input 
         """
-        Initialize the weights of the model 
+        batch_size = src_sequences.shape[0]
+        decoder_inputs = torch.FloatTensor(batch_size, self.decoding_length, self.pose_dim).to(self.device)
+
+        for i in range(batch_size): 
+            for j in range(self.decoding_length):
+                src_index, target_index = indices[i][0][j], indices[i][1][j] 
+                decoder_inputs[i, target_index] = src_sequences[i, src_index]
+        return decoder_inputs
+
+    def process_index_selection(self, memory, one_to_one_selection = False):
         """
-        for p in self.parameters():
-            if p.dim() > 1 and p.requires_grad : 
-                nn.init.xavier_uniform_(p, gain = 1.0) 
+        :param memory : encoder with memory shape [batch_size, src_len, model_dim]
+        :return 
+          a tuple with two list of i and j matrix entries of m 
+        """
+
+        batch_size = memory.shape[0] 
+
+        prob_matrix = self.position_predictor(memory) # (batch_size, src_len, tgt_length)
+
+        if one_to_one_selection : 
+            # Hungarian algorithm
+            soft_matrix = torch.softmax(prob_matrix, dim = -1) 
+            indices = [linear_sum_assignment(soft_matrix[i].cpu().detach(), maximize = True) for i in range(batch_size)]
+        else : 
+            soft_matrix = torch.softmax(prob_matrix, dim = -1)
+            indices_row = torch.argmax(soft_matrix, dim = 1)
+            indices = [(indices_row[i], list(range(prob_matrix.size()[2]))) for i in range(batch_size)]
+        
+        return indices, soft_matrix
 
 
     def forward(self, src_sequences):
@@ -518,19 +165,196 @@ class Transformer(nn.Module):
         """
 
         batch_size, _, _ = src_sequences.shape
-        src_sequences = self.proj_model(src_sequences)  
-        memory, _ = self.encoder(src_sequences, self.encoder_positional_encoding)
-        query_embedding = self.decoder_query_embedding.weight.unsqueeze(0).repeat(batch_size, 1, 1)
+        encoder_inp      = self.proj_model(src_sequences)  
 
-        tgt_sequences    = torch.zeros(batch_size, self.decoding_length, self.model_dim).to(self.device)
-        out, _           = self.decoder(memory, tgt_sequences, self.encoder_positional_encoding, query_embedding)
+        memory, _       = self.encoder(encoder_inp, self.encoder_positional_encoding)
+        
+        if self.query_selection :
+           indices, prob_matrix = self.process_index_selection(memory)
+           tgt_sequences        = self.query_selection_fn(indices, src_sequences)
+
+        else :  
+           tgt_sequences    = src_sequences[:, -1, :].clone().unsqueeze(1) # (B, 1, pose_dim)
+           tgt_sequences    = tgt_sequences.repeat(1, self.decoding_length, 1) # (B, decoding_len, pose_dim)
+            
+        decoder_inp = self.proj_model(tgt_sequences)
+        query_embedding  = self.decoder_query_embedding.weight.unsqueeze(0)
+        out, _           = self.decoder(memory, decoder_inp, self.encoder_positional_encoding, query_embedding)
         out              = self.proj_out(out) 
         return out  
 
 
+class DualTransformer(nn.Module):
+    def __init__(self, 
+        num_joints        = 13, 
+        joint_dim         = 3, 
+        encoding_length   = 14, 
+        decoding_length   = 14, 
+        num_heads         = 8, 
+        model_dim         = 512, 
+        fc_hidden_dim     = 2048, 
+        num_layers        = 6, 
+        dropout           = 0.1, 
+        positional_encoding_temperature = 10000,
+        positional_encoding_alpha       = 1, 
+        device = 'cuda', 
+        pre_normalization   = False, 
+        query_selection     = False, 
+        residual_connection = False, 
+    ):
+        super(DualTransformer, self).__init__()
+        self.num_joints                      = num_joints 
+        self.joint_dim                       = joint_dim 
+        self.encoding_length                 = encoding_length 
+        self.decoding_length                 = decoding_length 
+        self.num_heads                       = num_heads 
+        self.model_dim                       = model_dim 
+        self.fc_hidden_dim                   = fc_hidden_dim 
+        self.num_layers                      = num_layers 
+        self.dropout                         = dropout 
+        self.positional_encoding_temperature = positional_encoding_temperature 
+        self.positional_encoding_alpha       = positional_encoding_alpha 
+        self.device                          = device 
+        self.pre_normalization               = pre_normalization 
+        self.query_selection                 = query_selection
+        self.residual_connection             = residual_connection
+
+        self.init_positional_encoding() 
+
+        self.encoder = TransformerParallelDualEncoderLayer(
+            num_joints        = self.num_joints, 
+            num_heads         = self.num_heads, 
+            model_dim         = self.model_dim, 
+            fc_hidden_dim     = self.fc_hidden_dim, 
+            dropout           = self.dropout, 
+            device            = self.device, 
+            pre_normalization = self.pre_normalization,
+        )
+
+        self.decoder = TransformerParallelDualDecoderLayer(
+            num_joints        = self.num_joints,
+            num_heads         = self.num_heads, 
+            model_dim         = self.model_dim, 
+            fc_hidden_dim     = self.fc_hidden_dim,
+            dropout           = self.dropout, 
+            device            = self.device, 
+            pre_normalization = self.pre_normalization,  
+        )
+
+        self.encoder_spatial_embedding  = nn.Embedding(self.num_joints,      self.model_dim)
+        self.decoder_spatial_embedding  = nn.Embedding(self.num_joints,      self.model_dim)
+        self.encoder_temporal_embedding = nn.Embedding(self.encoding_length, self.model_dim)    
+        self.decoder_temporal_embedding = nn.Embedding(self.decoding_length, self.model_dim) 
+
+        self.proj_model = nn.Linear(self.joint_dim, self.model_dim)
+        self.proj_joint = nn.Linear(self.model_dim, self.joint_dim)
+
+        if self.query_selection : 
+            self.position_predictor = nn.Linear(self.num_joints * self.model_dim, self.decoding_length)
+
+
+        self.init_weights()
+
+        torch.nn.init.trunc_normal_(self.encoder_spatial_embedding.weight,  std = 0.02) 
+        torch.nn.init.trunc_normal_(self.decoder_spatial_embedding.weight,  std = 0.02)
+        torch.nn.init.trunc_normal_(self.encoder_temporal_embedding.weight, std = 0.02)
+        torch.nn.init.trunc_normal_(self.decoder_temporal_embedding.weight, std = 0.02)
+        
+    def init_weights(self):
+        for m in self.modules():        
+            if isinstance(m, nn.Linear):
+                nn.init.trunc_normal_(m.weight, std = 0.02)
+                if m.bias is not None:
+                  nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.constant_(m.bias, 0)
+                nn.init.constant_(m.weight, 1.0)
+
+    def query_selecton_fn(self, indices, src_sequences):
+        """ 
+        Taking inspiration from : 
+        https://github.com/idiap/potr/blob/1e194130cd012d3c9a6137052f402e6f7fb5b71b/models/Transformer.py
+
+        Handles the way queries ar egenerated copying items from the input 
+        """
+        batch_size = src_sequences.shape[0]
+        decoder_inputs = torch.FloatTensor(batch_size, self.decoding_length, self.num_joints, self.joint_dim).to(self.device)
+
+        for i in range(batch_size): 
+            for j in range(self.decoding_length):
+                src_index, target_index = indices[i][0][j], indices[i][1][j] 
+                decoder_inputs[i, target_index] = src_sequences[i, src_index]
+        return decoder_inputs
+
+    def process_index_selection(self, memory, one_to_one_selection = False):
+        """
+        :param memory : encoder with memory shape [batch_size, src_len, num_joints, joint_dim]
+        :return 
+          a tuple with two list of i and j matrix entries of m 
+        """
+
+        batch_size, src_len, _, _ = memory.shape 
+        inp  = memory.contiguous().view(batch_size, src_len, -1)
+
+        prob_matrix = self.position_predictor(inp) # (batch_size, src_len, tgt_length)
+
+        if one_to_one_selection : 
+            # Hungarian algorithm
+            soft_matrix = torch.softmax(prob_matrix, dim = -1) 
+            indices = [linear_sum_assignment(soft_matrix[i].cpu().detach(), maximize = True) for i in range(batch_size)]
+        else : 
+            soft_matrix = torch.softmax(prob_matrix, dim = -1)
+            indices_row = torch.argmax(soft_matrix, dim = 1)
+            indices = [(indices_row[i], list(range(prob_matrix.size()[2]))) for i in range(batch_size)]
+        
+        return indices, soft_matrix
+
+
+    def forward(self, src_sequences):
+        """
+        :param src_sequences : tensor of shape (B, encoding_len, pose_dim)
+        :return : 
+             tensor of shape (B, decoding_len, pose_dim) 
+        """
+        batch_size, encoding_length, _ = src_sequences.shape
+        src_sequences = src_sequences.contiguous().view(batch_size, encoding_length, self.num_joints, self.joint_dim)
+
+        encoder_inp = self.proj_model(src_sequences) 
+
+        memory, _ = self.encoder(
+            src_sequence       = encoder_inp, 
+            temporal_embedding = self.encoder_temporal_embedding.weight.unsqueeze(0),
+            spatial_embedding  = self.encoder_spatial_embedding.weight.unsqueeze(0),  
+        )
+
+        if self.query_selection :
+           indices, prob_matrix = self.process_index_selection(memory)
+           tgt_sequences        = self.query_selection_fn(indices, src_sequences)
+
+        else :  
+           tgt_sequences    = src_sequences[:, -1, :, :].clone().unsqueeze(1) # (batch_size, 1, num_joints, joint_dim)
+           tgt_sequences    = tgt_sequences.repeat(1, self.decoding_length, 1, 1) # (batch_size, decoding_len, num_joints, joint_dim)
+        
+        decoder_inp = self.proj_model(tgt_sequences)
+        
+        out, _   = self.decoder(
+            memory                    = memory, 
+            tgt_sequences             = decoder_inp, 
+            encoder_spatial_embedding = self.encoder_spatial_embedding.weight.unsqueeze(0), 
+            encoder_temporal_embedding= self.encoder_temporal_embedding.weight.unsqueeze(0), 
+            spatial_query_embedding   = self.decoder_spatial_embedding.weight.unsqueeze(0), 
+            temporal_query_embedding  = self.decoder_temporal_embedding.weight.unsqueeze(0), 
+        )
+
+        out = self.proj_joint(out) 
+        out = out.contiguous().view(batch_size, self.decoding_length, -1)
+        return out 
+    
+
 def transformer_loss_function(pred_joints, gt_joints):
     criterion = nn.SmoothL1Loss(reduction = 'mean')
     return criterion(pred_joints, gt_joints)
+
 
 def get_transformer_model(
     pose_dim        = 13, 
@@ -545,20 +369,42 @@ def get_transformer_model(
     positional_encoding_temperature = 10000, 
     positional_encoding_alpha       = 1, 
     device                          = 'cuda', 
-    pre_normalization               = False, 
+    pre_normalization               = False,
+    transformer_type                = 'vanilla',  
 ):
-    model = Transformer(
-        pose_dim                        = pose_dim * (3 if coordinates else 2),  
-        encoding_length                 = encoding_length,
-        decoding_length                 = decoding_length, 
-        num_heads                       = num_heads,  
-        model_dim                       = model_dim, 
-        fc_hidden_dim                   = fc_hidden_dim,
-        num_layers                      = num_layers,
-        dropout                         = dropout, 
-        positional_encoding_temperature = positional_encoding_temperature, 
-        positional_encoding_alpha       = positional_encoding_alpha, 
-        device                          = device, 
-        pre_normalization               = pre_normalization, 
-    )
-    return model 
+    if transformer_type == 'vanilla':
+        model = VanillaTransformer(
+            pose_dim                        = pose_dim * (3 if coordinates else 2),  
+            encoding_length                 = encoding_length,
+            decoding_length                 = decoding_length, 
+            num_heads                       = num_heads,  
+            model_dim                       = model_dim, 
+            fc_hidden_dim                   = fc_hidden_dim,
+            num_layers                      = num_layers,
+            dropout                         = dropout, 
+            positional_encoding_temperature = positional_encoding_temperature, 
+            positional_encoding_alpha       = positional_encoding_alpha, 
+            device                          = device, 
+            pre_normalization               = pre_normalization, 
+        )
+        return model 
+    elif transformer_type == 'parallel_duel':
+        model = DualTransformer(
+            num_joints         = pose_dim, 
+            joint_dim          = (3 if coordinates else 2), 
+            encoding_length    = encoding_length, 
+            decoding_length    = decoding_length, 
+            num_heads          = num_heads, 
+            model_dim          = model_dim, 
+            fc_hidden_dim      = fc_hidden_dim, 
+            num_layers         = num_layers, 
+            dropout                         = dropout, 
+            positional_encoding_alpha       = positional_encoding_alpha, 
+            positional_encoding_temperature = positional_encoding_temperature, 
+            device                          = device, 
+            pre_normalization               = pre_normalization 
+        )
+        return model 
+    else : 
+        raise NotImplementedError('Transformer type not supported for now')
+    

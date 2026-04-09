@@ -188,13 +188,13 @@ class TransformerEncoder(nn.Module):
     
 class TransformerDecoderLayer(nn.Module):
     def __init__(self, 
-                num_heads, 
-                model_dim, 
-                fc_hidden_dim, 
-                dropout, 
-                device            = 'cuda', 
-                pre_normalization  = False, 
-        ): 
+            num_heads, 
+            model_dim, 
+            fc_hidden_dim, 
+            dropout, 
+            device            = 'cuda', 
+            pre_normalization  = False, 
+    ): 
 
         """
         :param num_heads           : number of attention heads 
@@ -414,10 +414,6 @@ class TransformerDecoder(nn.Module):
         return out, attn_weight_lst
 
 
-"""
-:TODO, add more methods to init the input decoder, such as parameterized a network to learn what we should choose from the src sequences.
-"""
-
 class Transformer(nn.Module):
     def __init__(self, 
         pose_dim                        = 39,  
@@ -518,11 +514,16 @@ class Transformer(nn.Module):
         """
 
         batch_size, _, _ = src_sequences.shape
+
+        tgt_sequences    = src_sequences[:, -1, :].clone().unsqueeze(1) # (B, 1, pose_dim)
+        tgt_sequences    = tgt_sequences.repeat(1, self.decoding_length, 1) # (B, decoding_len, pose_dim)
+
         src_sequences = self.proj_model(src_sequences)  
-        memory, _ = self.encoder(src_sequences, self.encoder_positional_encoding)
+        tgt_sequences = self.proj_model(tgt_sequences)
+
+        memory, _       = self.encoder(src_sequences, self.encoder_positional_encoding)
         query_embedding = self.decoder_query_embedding.weight.unsqueeze(0).repeat(batch_size, 1, 1)
 
-        tgt_sequences    = torch.zeros(batch_size, self.decoding_length, self.model_dim).to(self.device)
         out, _           = self.decoder(memory, tgt_sequences, self.encoder_positional_encoding, query_embedding)
         out              = self.proj_out(out) 
         return out  

@@ -1,20 +1,22 @@
-python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29501 Train.py \
-    --dataset pennaction \
-    --num_joints 13 \
-    --model transformer  \
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29502 Train.py \
+    --dataset ntu \
+    --num_joints 25 \
+    --model lstm \
     --model_type deterministic \
-    --model_version v0_bs_16_step \
+    --model_version v1_bs_16_step_no_residual \
     --model_input_type coordinates \
-    --mode debug \
+    --mode main \
     --lr_scheduler step \
-    --lr_step_size 1 \
+    --lr_step_size 10 \
     --lr_gamma 0.5 \
-    --num_training_frame 14 \
-    --num_testing_frame  14 \
+    --num_training_frame 25 \
+    --num_testing_frame  25 \
     --num_epochs 100 \
     --batch_size 16 \
     --learning_rate 1e-4 \
     --lr_eta_min 1e-6 \
-    --weight_decay 1e-4 \
+    --weight_decay 1e-5 \
     --print_step 100 \
     --teacher_forcing_rate 0.0 \
+    --print_step 100 \
+    

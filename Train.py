@@ -9,8 +9,6 @@ LOCAL_RANK = int(os.environ["LOCAL_RANK"])
 dist.init_process_group(backend = 'nccl')
 torch.cuda.set_device(LOCAL_RANK)
 
-
-
 def train(args):
     trainer, train_sampler = dataset_factory(args)
     device = args.device 
@@ -39,6 +37,9 @@ def train(args):
       
        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
        scheduler.load_state_dict(model_dict['scheduler'])
+
+       for g in optimizer.param_groups:
+          g['lr'] = args.learning_rate
    
     else: 
         model, criterion = get_model(args)
@@ -181,7 +182,7 @@ if __name__ == '__main__':
     parser.add_argument('--lstm_embedding_dim',       default = 2048, type = int,  required = False) 
     parser.add_argument('--lstm_hidden_dim'   ,       default = 256,  type = int,  required = False)
     parser.add_argument('--lstm_num_layers',          default = 2,    type = int,  required = False) 
-    parser.add_argument('--lstm_residual_connection', default = True, type = bool, required = False)
+    parser.add_argument('--lstm_residual_connection', default = False, type = bool, required = False)
 
     # MOTION VAE 
     parser.add_argument('--motion_vae_hidden_dim',       default = 32, type = int, required = False) 

@@ -5,9 +5,9 @@ Input from NTU processed and trained as Coordinates
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from data.Dataset import Dataset2D
+from data.Dataset     import Dataset2D
+from data.DatasetUtil import NTU_MAJOR_JOINTS_INDS_LST
 from torchvision import transforms
-import random
 
 class NTUCoordinates(Dataset2D):
     def __init__(self,
@@ -54,8 +54,9 @@ class NTUCoordinates(Dataset2D):
             input_representation = 'coordinates', 
             dataset_name         = 'ntu', 
         )
+        self.major_joint_inds = NTU_MAJOR_JOINTS_INDS_LST
         
-    def transformation(self, storage, num_joints): 
+    def transformation(self, storage): 
         name          = storage['name']
         human_id_list = list(storage['data'].keys())
 
@@ -73,11 +74,14 @@ class NTUCoordinates(Dataset2D):
 
         assert n_frames >= total_frame, "num frames must be more than total frame"
         
+        label = label[:, self.major_joint_inds, :] # (n_frames, 17, 2)
         num_joints  = label.shape[1] 
         dim         = label.shape[2]
 
         assert num_joints == self.num_joints and dim == 2, "Does not match expected information"
         
+
+
         visibility  = np.ones((label.shape[0], label.shape[1], 1))
         
         for time_ind in range(label.shape[0]): 

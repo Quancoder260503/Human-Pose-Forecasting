@@ -62,7 +62,6 @@ class Dataset2D(Dataset, ABC):
         else :
             self.data_dir = data_dir + 'test/'
 
-        #self.frames_data         = os.listdir(self.data_dir)
         self.on_debug_mode       = on_debug_mode
         self.require_action      = require_action 
         self.load_data()
@@ -73,14 +72,14 @@ class Dataset2D(Dataset, ABC):
     def __getitem__(self, index):
         if self.on_debug_mode : 
             index = 0
-        
+            
         frames = self.frames_data[index]
         data   = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
-        return self.transformation(data, self.num_joints) 
+        return self.transformation(data) 
 
         
     @abstractmethod    
-    def transformation(self, storage, num_joints):
+    def transformation(self, storage):
         pass 
 
     def load_data(self):
@@ -105,7 +104,7 @@ class Dataset2D(Dataset, ABC):
                     self.frames_data.append(frame_name)
 
         elif self.dataset_name == 'pennaction':
-            for index in range(len(self.frame_names)):
+            for index in range(len(frame_names)):
                 frame_name = frame_names[index]
                 storage   = np.load(os.path.join(self.data_dir, frame_name), allow_pickle = True).item()
                 n_frames    = storage['nframes']   

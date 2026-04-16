@@ -39,11 +39,11 @@ class PennActionVelocity(Dataset2D):
             dataset_name         = 'pennaction', 
         )
 
-    def transformation(self, storage, num_joints): 
+    def transformation(self, storage): 
         n_frames    = storage['nframes']      
         frames_path = storage['framepath']
         dim         = storage['dimensions']     
-
+        num_joints = self.num_joints
         label = np.zeros((n_frames, num_joints, 3)) 
 
         label[:, :, 0] = storage['x'].astype(np.float32)  

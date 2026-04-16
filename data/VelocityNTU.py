@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from data.Dataset import Dataset2D
+from data.DatasetUtil import NTU_MAJOR_JOINTS_INDS_LST
 from torchvision import transforms
 import random
 
@@ -54,8 +55,9 @@ class NTUVelocity(Dataset2D):
             input_representation = 'velocity', 
             dataset_name         = 'ntu', 
         )
+        self.major_joint_inds = NTU_MAJOR_JOINTS_INDS_LST
         
-    def transformation(self, storage, num_joints): 
+    def transformation(self, storage): 
         name          = storage['name']
         human_id_list = list(storage['data'].keys())
 
@@ -72,7 +74,7 @@ class NTUVelocity(Dataset2D):
 
 
         assert n_frames >= total_frame, "num frames must be more than total frame"
-        
+        label       = label[:, self.major_joint_inds, :]
         num_joints  = label.shape[1] 
         dim         = label.shape[2]
 

@@ -1,13 +1,13 @@
 import numpy as np
 import torch
-from trainer.Factory import *
+from runner.Factory import *
 import os 
 import argparse 
 import torch.distributed as dist
 
 
 def train(args):
-    trainer = dataset_factory(args)
+    runner = dataset_factory(args)
     device = args.device 
     print(device, 'is available')
 
@@ -19,7 +19,8 @@ def train(args):
        model_dict = torch.load(checkpoint, weights_only = False) 
        start_epoch = model_dict['epoch'] + 1 
     
-       model, criterion = get_model(args)
+       model     = get_model(args)
+       criterion = get_criterions(args)
        model.load_state_dict(model_dict['model'])
        model = model.to(device)
 
@@ -27,7 +28,7 @@ def train(args):
           model.parameters(), 
           lr           = args.learning_rate, 
           betas        = args.betas, 
-          weight_decay = args.weight_decay
+          weight_decay = args.weight_decay,
        )
        
        optimizer.load_state_dict(model_dict['optimizer'])
@@ -35,18 +36,17 @@ def train(args):
        scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
        scheduler.load_state_dict(model_dict['scheduler'])
 
-       for g in optimizer.param_groups: 
-           g['lr'] = args.learning_rate
    
     else: 
-        model, criterion = get_model(args)
+        model     = get_model(args)
+        criterion = get_criterions(args)
         model = model.to(device)
         
         optimizer = torch.optim.Adam(
           model.parameters(), 
           lr           = args.learning_rate, 
           betas        = args.betas, 
-          weight_decay = args.weight_decay
+          weight_decay = args.weight_decay,
         )
 
         scheduler = lr_scheduler_factory(args, optimizer, start_epoch)
@@ -63,17 +63,19 @@ def train(args):
 
     print("Start Training ...\n")
     for epoch in range(start_epoch, args.num_epochs):
-        print(f"learning rate for epoch {epoch}: {scheduler.get_last_lr()[0]}")
-       
-        train_loss, train_predictions, train_rmse, val_loss, val_predictions, val_rmse = trainer.process_per_epoch(
-            args      = args, 
+        print(f"learning rate for epoch {epoch + 1}: {scheduler.get_last_lr()[0]}")
+        
+        train_loss, train_predictions, train_rmse, val_loss, val_predictions, val_rmse = runner.process_per_epoch(
             model     = model, 
             optimizer = optimizer, 
             criterion = criterion, 
             epoch     = epoch,        
         )
 
-        scheduler.step(train_loss)
+        if args.lr_scheduler == 'plateau':
+           scheduler.step(train_loss)
+        else : 
+           scheduler.step()
 
         train_acc = get_acc(train_predictions)
         val_acc   = get_acc(val_predictions)
@@ -104,8 +106,6 @@ def train(args):
         dataset     = args.dataset, 
     )
 
-
-
     # Saved the training logs 
     npy_data = dict()
     npy_data['loss_list']   = np.array(loss_list) 
@@ -130,8 +130,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers',          default = 8,        type = int,    required = False)
     parser.add_argument('--pin_memory',           default = True,     type = bool,   required = False)
     parser.add_argument('--decouple_loss',        default = False,    type = bool,   required = False)
+    parser.add_argument('--step_per_epoch',       default = 1000,      type = int,    required = True)
 
-    parser.add_argument('--device',               default = 'cuda',   type = str,    required = False) 
+    parser.add_argument('--device',               default = 'cuda',     type = str, required = False) 
     
     parser.add_argument('--model' ,               default = 'lstm',   type = str,  required = True) 
     parser.add_argument('--model_input_type',     default = None,     type = str,  required = True)
@@ -154,7 +155,7 @@ if __name__ == '__main__':
     parser.add_argument('--betas',                           default = (0.9, 0.999), type = tuple, required = False) 
     parser.add_argument('--temperature',                     default = 10000,        type = float, required = False) 
     parser.add_argument('--alpha',                           default = 1,            type = float, required = False)
-    parser.add_argument('--weight_decay',                    default = 1e-5,         type = float, required = False)
+    parser.add_argument('--weight_decay',                    default = 1e-4,         type = float, required = False)
     parser.add_argument('--teacher_forcing_rate',            default = 0.7,          type = float, required = False)
     parser.add_argument('--positional_encoding_temperature', default = 10000,        type = float, required = False)  
     parser.add_argument('--positional_encoding_alpha',       default = 1,            type = float, required = False)
@@ -163,11 +164,19 @@ if __name__ == '__main__':
     # Learning rate scheduler config  
 
     parser.add_argument('--lr_scheduler', default = 'cosine', type = str,   required = True)
-    parser.add_argument('--lr_step_size', default = 10,       type = int,   required = False)
-    parser.add_argument('--lr_gamma',     default = 0.1,      type = float, required = False)
+    parser.add_argument('--lr_step_size', default = 40,       type = int,   required = False)
+    parser.add_argument('--lr_gamma',     default = 0.3,      type = float, required = False)
     parser.add_argument('--lr_eta_min',   default = 1e-6,     type = float, required = False)
     parser.add_argument('--lr_factor',    default = 0.5,      type = float, required = False)
     parser.add_argument('--lr_patience',  default = 3,        type = float, required = False)
+
+    # Loss function 
+    parser.add_argument('--loss_type',            default = 'penalize', type = str,    required = True)
+    parser.add_argument('--lambda_norm',          default = 1.0,        type = float,  required = False)
+    parser.add_argument('--lambda_specs',         default = 1.5,        type = float,  required = False)
+    parser.add_argument('--lambda_root',          default = 2.0,        type = float,  required = False)
+    parser.add_argument('--root_pos',             default = 0,          type = int,    required = False)
+    parser.add_argument('--special_joints',       default = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], type = list, required = False) # for NTU
     
     # MODEL SPACE
 
@@ -198,7 +207,7 @@ if __name__ == '__main__':
 
     # VELOCITY TRANSFORMER 
 
-    # TRANSFORMER 
+    # TRANSFORMER
     parser.add_argument('--transformer_num_heads',           default = 8,         type = int,  required = False)  
     parser.add_argument('--transformer_model_dim',           default = 512,       type = int,  required = False) 
     parser.add_argument('--transformer_fc_hidden_dim',       default = 2048,      type = int,  required = False) 
@@ -206,6 +215,7 @@ if __name__ == '__main__':
     parser.add_argument('--transformer_pre_normalization',   default = False,     type = bool, required = False)
     parser.add_argument('--transformer_residual_connection', default = True,      type = bool, required = False) 
     parser.add_argument('--transformer_type',                default = 'vanilla', type = str,  required = False)
+    parser.add_argument('--get_attn_weight',                 default = False,     type = bool, required = False)
 
     args = parser.parse_args()
     train(args) 

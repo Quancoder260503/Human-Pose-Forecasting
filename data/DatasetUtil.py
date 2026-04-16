@@ -4,6 +4,8 @@ import os
 import torch
 
 
+MIN_STD = 1e-4
+
 """
 Get Result Dict
 """
@@ -52,25 +54,17 @@ def get_ntu_pck_dict():
      'Head'          : { 'all' : 0, 'correct' : 0 }, 
      'ShoulderLeft'  : { 'all' : 0, 'correct' : 0 },  
      'ElbowLeft'     : { 'all' : 0, 'correct' : 0 },
-     'WristLeft'     : { 'all' : 0, 'correct' : 0 }, 
-     'HandLeft'      : { 'all' : 0, 'correct' : 0 }, 
+     'WristLeft'     : { 'all' : 0, 'correct' : 0 },  
      'ShoulderRight' : { 'all' : 0, 'correct' : 0 }, 
      'ElbowRight'    : { 'all' : 0, 'correct' : 0 }, 
      'WristRight'    : { 'all' : 0, 'correct' : 0 },
-     'HandRight'     : { 'all' : 0, 'correct' : 0 }, 
      'HipLeft'       : { 'all' : 0, 'correct' : 0 }, 
      'KneeLeft'      : { 'all' : 0, 'correct' : 0 }, 
      'AnkleLeft'     : { 'all' : 0, 'correct' : 0 }, 
-     'FootLeft'      : { 'all' : 0, 'correct' : 0 }, 
      'HipRight'      : { 'all' : 0, 'correct' : 0 },
      'KneeRight'     : { 'all' : 0, 'correct' : 0 }, 
      'AnkleRight'    : { 'all' : 0, 'correct' : 0 }, 
-     'FootRight'     : { 'all' : 0, 'correct' : 0 },
      'SpineShoulder' : { 'all' : 0, 'correct' : 0 }, 
-     'HandTipLeft'   : { 'all' : 0, 'correct' : 0 },
-     'ThumbLeft'     : { 'all' : 0, 'correct' : 0 }, 
-     'HandTipRight'  : { 'all' : 0, 'correct' : 0 }, 
-     'ThumbRight'    : { 'all' : 0, 'correct' : 0 }
     }
 
 def get_ntu_mse_dict():
@@ -83,24 +77,16 @@ def get_ntu_mse_dict():
       'ShoulderLeft'  : 0.0,  
       'ElbowLeft'     : 0.0,
       'WristLeft'     : 0.0, 
-      'HandLeft'      : 0.0, 
       'ShoulderRight' : 0.0, 
       'ElbowRight'    : 0.0, 
       'WristRight'    : 0.0,
-      'HandRight'     : 0.0, 
       'HipLeft'       : 0.0, 
       'KneeLeft'      : 0.0, 
-      'AnkleLeft'     : 0.0, 
-      'FootLeft'      : 0.0, 
+      'AnkleLeft'     : 0.0,  
       'HipRight'      : 0.0,
       'KneeRight'     : 0.0, 
       'AnkleRight'    : 0.0, 
-      'FootRight'     : 0.0,
       'SpineShoulder' : 0.0, 
-      'HandTipLeft'   : 0.0,
-      'ThumbLeft'     : 0.0, 
-      'HandTipRight'  : 0.0, 
-      'ThumbRight'    : 0.0
     }
 
 DATASET_PCK_DICT = { 
@@ -112,7 +98,6 @@ DATASET_MSE_DICT  = {
     'pennaction' : get_pennaction_mse_dict, 
     'ntu'        : get_ntu_mse_dict, 
 }
-
 
 """
 Joint Names
@@ -145,6 +130,41 @@ NTU_JOINT_NAMES = [
     'ThumbRight'
 ]
 
+NTU_MAJOR_JOINTS = [
+    'SpineBase', 
+    'SpineMid', 
+    'Neck', 
+    'Head', 
+    'ShoulderLeft', 
+    'ElbowLeft',
+    'WristLeft',  
+    'ShoulderRight', 
+    'ElbowRight', 
+    'WristRight', 
+    'HipLeft', 
+    'KneeLeft', 
+    'AnkleLeft', 
+    'HipRight',
+    'KneeRight', 
+    'AnkleRight',  
+    'SpineShoulder',
+]
+
+NTU_HIGH_SPEED_JOINTS = [
+    'ShoulderLeft', 
+    'ElbowLeft',
+    'WristLeft',  
+    'ShoulderRight', 
+    'ElbowRight', 
+    'WristRight', 
+    'HipLeft', 
+    'KneeLeft', 
+    'AnkleLeft', 
+    'HipRight',
+    'KneeRight', 
+    'AnkleRight', 
+]
+
 PENNACTION_JOINT_NAMES = [
     "headtop",    
     "lshoulder",  
@@ -164,6 +184,15 @@ PENNACTION_JOINT_NAMES = [
 NTU_JOINT_INDS = {
     name: idx for idx, name in enumerate(NTU_JOINT_NAMES)
 }
+
+NTU_MAJOR_JOINTS_INDS = { 
+    name : idx for idx, name in enumerate(NTU_MAJOR_JOINTS)
+}
+
+NTU_HIGH_SPEED_JOINT_INDS = [NTU_MAJOR_JOINTS_INDS[name] for name in NTU_HIGH_SPEED_JOINTS]
+
+NTU_MAJOR_JOINTS_INDS_LST = [NTU_JOINT_INDS[name] for name in NTU_MAJOR_JOINTS]
+
 
 PENNACTION_JOINT_INDS = { 
     name : idx for idx, name in enumerate(PENNACTION_JOINT_NAMES)
@@ -294,19 +323,22 @@ NTU_ACTION_CLASSES = {
 
 JOINT_NAMES = { 
     'pennaction' : PENNACTION_JOINT_NAMES, 
-    'ntu'        : NTU_JOINT_NAMES, 
+    'ntu'        : NTU_MAJOR_JOINTS, 
 }
 
 JOINT_INDS   = { 
     'pennaction' : PENNACTION_JOINT_INDS, 
-    'ntu'        : NTU_JOINT_INDS, 
+    'ntu'        : NTU_MAJOR_JOINTS_INDS, 
 }
 
 JOINT_PARENT_NAME = { 
     'pennaction' : PENNACTION_JOINT_PARENT_NAMES, 
-    'ntu'        : NTU_JOINT_PARENT_NAMES
+    'ntu'        : NTU_JOINT_PARENT_NAMES, 
 }
 
+HIGH_SPEED_JOINTS = { 
+    'ntu'        : NTU_HIGH_SPEED_JOINT_INDS, 
+}
 
 NTU_VIDEO_PATH  = 'dataset/NanyangTechRGB/frames'
 

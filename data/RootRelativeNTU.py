@@ -5,13 +5,10 @@ Input from NTU processed and trained as Coordinates
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from data.Dataset import Dataset2D
-from torchvision import transforms
-import random
+from data.Dataset     import Dataset2D
+from data.DatasetUtil import *
 import os 
 
-MIN_STD    = 1e-4
-MIN_FRAMES = 60 
 
 class NTURootRelative(Dataset2D):
     def __init__(self,
@@ -58,14 +55,11 @@ class NTURootRelative(Dataset2D):
             input_representation = 'root_relative', 
             dataset_name         = 'ntu', 
         )
+        self.major_joint_inds = NTU_MAJOR_JOINTS_INDS_LST
         self.compute_stats()
-        self.eps = 1e-7
 
     def compute_stats(self):    
-        
-        root_distance_x  = [[] for _ in range(self.num_joints)]
-        root_distance_y  = [[] for _ in range(self.num_joints)]
-
+        root_distance = []
         for index in range(len(self.frames_data)):
             frames        = self.frames_data[index]
             storage       = np.load(os.path.join(self.data_dir, frames), allow_pickle = True).item()
@@ -79,44 +73,24 @@ class NTURootRelative(Dataset2D):
 
             data        = storage['data'][human_id]
             label       = data['colors'] # projected 2D locations
-       
-            n_frames    = label.shape[0]     
-            num_joints  = label.shape[1] 
-            dim         = label.shape[2]
-        
-            visibility  = np.ones((label.shape[0], label.shape[1]))
-        
-            for time_ind in range(label.shape[0]): 
-                for joint_ind in range(label.shape[1]): 
-                    if np.isnan(label[time_ind, joint_ind, 0]) or np.isnan(label[time_ind, joint_ind, 1]): 
-                       visibility[time_ind, joint_ind] = 0
+            label       = label[:, self.major_joint_inds, :]            
             
-            root_position = 0
-
-            for time_step in range(n_frames):
-                if visibility[time_step, root_position] == 0:
-                    continue
-
-                for child_index in range(num_joints): 
-                    if child_index == root_position or visibility[time_step, child_index] == 0: 
-                        continue
+            # label : np.array of shape (num_frames, J, 2) 
     
-                    root_distance_x[child_index].append(label[time_step, child_index, 0] - label[time_step, root_position, 0]) 
-                    root_distance_y[child_index].append(label[time_step, child_index, 1] - label[time_step, root_position, 1])
+            root_sequences   = np.expand_dims(label[:, 0, :], axis = 1) 
+            action_sequences = label - root_sequences # (num_frames, J, 2)
+            root_distance.append(action_sequences[:, 1:, :]) # (num_frames, J - 1, 2)
         
+        root_distance = np.concatenate(root_distance, axis = 0) # (all_frames, J - 1, 2)
+        self.mean = np.nanmean(root_distance, axis = 0)
+        self.std  = np.nanstd(root_distance,  axis = 0)
+        self.std[np.where(self.std < MIN_STD)] = 1.0 
 
-        self.mean_x = np.mean(root_distance_x, axis = 0) # (num_joints, 1) 
-        self.mean_y = np.mean(root_distance_y, axis = 0) # (num_joints, 1)
-
-        self.std_x  = np.std(root_distance_x, axis = 0) + self.eps 
-        self.std_y  = np.std(root_distance_y, axis = 0) + self.eps 
-
-        self.std_x[self.std_x < MIN_STD] = 1 
-        self.std_y[self.std_y < MIN_STD] = 1
+        self.mean = self.mean.ravel()
+        self.std  = self.std.ravel()
 
 
-        
-    def transformation(self, storage, num_joints): 
+    def transformation(self, storage): 
         name          = storage['name']
         human_id_list = list(storage['data'].keys())
 
@@ -126,7 +100,7 @@ class NTURootRelative(Dataset2D):
         human_id    = human_id_list[0]
 
         data        = storage['data'][human_id]
-        label       = data['colors'] # projected 2D locations
+        label       = data['colors'].copy() # projected 2D locations
        
         n_frames    = label.shape[0]     
         total_frame   = self.num_training_frame + self.num_testing_frame
@@ -134,99 +108,79 @@ class NTURootRelative(Dataset2D):
 
         assert n_frames >= total_frame, "num frames must be more than total frame"
         
+        label       = label[:, self.major_joint_inds, :]
         num_joints  = label.shape[1] 
         dim         = label.shape[2]
 
+
         assert num_joints == self.num_joints and dim == 2, "Does not match expected information"
-        
-        visibility  = np.ones((label.shape[0], label.shape[1], 1))
-        
-        for time_ind in range(label.shape[0]): 
-            for joint_ind in range(label.shape[1]): 
-                if np.isnan(label[time_ind, joint_ind, 0]) or np.isnan(label[time_ind, joint_ind, 1]): 
-                    visibility[time_ind, joint_ind] = 0
 
 
-        
-        label      = torch.tensor(label) 
-        visibility = torch.tensor(visibility)
-        label      = torch.cat([label, visibility], dim = -1) # (x, y, visibility)
-
-        
         root_position = 0
 
-        median_root_pos_x, median_root_pos_y = np.median(label[:, root_position, 0]), np.median(label[:, root_position, 1]) 
+        median_root_pos_x, median_root_pos_y = np.nanmedian(label[:, root_position, 0]), np.nanmedian(label[:, root_position, 1]) 
             
         assert (not np.isnan(median_root_pos_x)) and (not np.isnan(median_root_pos_y)), f"cannot extract root in set {name} and {storage}" 
 
-        root_vectors = np.zeros((n_frames, num_joints, 2))
-
-        for time_step in range(n_frames):
-            if visibility[time_step, root_position] == 0: 
-                label[time_step, root_position, 0], label[time_step, root_position, 1] = median_root_pos_x, median_root_pos_y
+        # we do stuff a little bit differently here 
+        root_sequences = label[:, 0, :] # (n_frames, 2)
+        root_sequences[np.isnan(root_sequences[:, 0]), 0] = median_root_pos_x
+        root_sequences[np.isnan(root_sequences[:, 1]), 1] = median_root_pos_y
+        root_sequences = np.expand_dims(root_sequences, axis = 1) # (n_frames, 1, 2)
         
+        action_sequences = label - root_sequences # (n_frames, J, 2)
+        action_sequences[:, 0, :] = root_sequences[:, 0, :]  
 
-            root_vectors[time_step, root_position, 0] = label[time_step, root_position, 0] / self.frame_input_w 
-            root_vectors[time_step, root_position, 1] = label[time_step, root_position, 1] / self.frame_input_h
-
-            for child_index in range(num_joints): 
-                if child_index == root_position : 
-                    continue
-                root_vectors[time_step, child_index, 0] = (label[time_step, child_index, 0] - label[time_step, root_position, 0]) 
-                root_vectors[time_step, child_index, 1] = (label[time_step, child_index, 1] - label[time_step, root_position, 1]) 
-
-                root_vectors[time_step, child_index, 0] = (root_vectors[time_step, child_index, 0] - self.mean_x[child_index]) / self.std_x[child_index]
-                root_vectors[time_step, child_index, 1] = (root_vectors[time_step, child_index, 1] - self.mean_y[child_index]) / self.std_y[child_index]  
+        action_sequences = action_sequences.reshape((n_frames, -1))
+        action_sequences[:, 2:] = (action_sequences[:, 2:] - self.mean) / self.std 
+        action_sequences[:, 0]  = action_sequences[:, 0] / self.frame_input_w
+        action_sequences[:, 1]  = action_sequences[:, 1] / self.frame_input_h
 
 
         if self.train : 
             start_index = np.random.randint(0, n_frames - total_frame + 1)
-  
-            observed_poses        = torch.tensor(       label[start_index : (start_index + self.num_training_frame), :, :]) 
-            observed_root_vectors = torch.tensor(root_vectors[start_index : (start_index + self.num_training_frame), :, :])
-            observed_root_vectors = observed_root_vectors.contiguous().view(self.num_training_frame, -1) 
+            observed_poses    = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :]) 
+            observed_act_seqs = torch.tensor(action_sequences[start_index : (start_index + self.num_training_frame), :]) 
 
-            observed_root_vectors[torch.isnan(observed_root_vectors)] = 0  
-            observed_poses[torch.isnan(observed_poses)]               = 0
-        
-            targeted_poses        = torch.tensor(       label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
-            targeted_root_vectors = torch.tensor(root_vectors[(start_index + self.num_training_frame) : (start_index + total_frame), :, :]) 
-            targeted_root_vectors = targeted_root_vectors.contiguous().view(self.num_testing_frame, -1) 
+            observed_poses[torch.isnan(observed_poses)]       = 0
+            observed_act_seqs[torch.isnan(observed_act_seqs)] = 0
 
-            targeted_root_vectors[torch.isnan(targeted_root_vectors)] = 0 
-            targeted_poses[torch.isnan(targeted_poses)]               = 0
+            targeted_poses    = torch.tensor(label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
+            targeted_act_seqs = torch.tensor(action_sequences[(start_index + self.num_training_frame) : (start_index + total_frame), :]) 
+            
+            targeted_poses[torch.isnan(targeted_poses)]       = 0
+            targeted_act_seqs[torch.isnan(targeted_act_seqs)] = 0
 
-            return observed_poses, targeted_poses, observed_root_vectors, targeted_root_vectors, start_index, name
+            return observed_poses, observed_act_seqs, targeted_poses, targeted_act_seqs, start_index, name
         
         else : 
             observed_pose_lst = [] 
             targeted_pose_lst = []
-            observed_root_vector_lst = []
-            targeted_root_vector_lst = []
+            observed_act_seqs_lst = []
+            targeted_act_seqs_lst = []
 
             for start_index in range(n_frames - total_frame + 1):
-                observed_poses        = torch.tensor(       label[start_index : (start_index + self.num_training_frame), :, :]) 
-                observed_root_vectors = torch.tensor(root_vectors[start_index : (start_index + self.num_training_frame), :, :])
-                observed_root_vectors = observed_root_vectors.contiguous().view(self.num_training_frame, -1) 
+                observed_poses    = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :]) 
+                observed_act_seqs = torch.tensor(action_sequences[start_index : (start_index + self.num_training_frame), :]) 
 
-                observed_root_vectors[torch.isnan(observed_root_vectors)] = 0  
-                observed_poses[torch.isnan(observed_poses)]               = 0
-            
-                targeted_poses        = torch.tensor(       label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
-                targeted_root_vectors = torch.tensor(root_vectors[(start_index + self.num_training_frame) : (start_index + total_frame), :, :]) 
-                targeted_root_vectors = targeted_root_vectors.contiguous().view(self.num_testing_frame, -1) 
+                observed_poses[torch.isnan(observed_poses)]       = 0
+                observed_act_seqs[torch.isnan(observed_act_seqs)] = 0
 
-                targeted_root_vectors[torch.isnan(targeted_root_vectors)] = 0 
-                targeted_poses[torch.isnan(targeted_poses)]               = 0
+                targeted_poses    = torch.tensor(label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
+                targeted_act_seqs = torch.tensor(action_sequences[(start_index + self.num_training_frame) : (start_index + total_frame), :]) 
+    
+                targeted_poses[torch.isnan(targeted_poses)]       = 0
+                targeted_act_seqs[torch.isnan(targeted_act_seqs)] = 0
+
 
                 observed_pose_lst.append(observed_poses)
                 targeted_pose_lst.append(targeted_poses)
-                observed_root_vector_lst.append(observed_root_vectors)
-                targeted_root_vector_lst.append(targeted_root_vectors)   
+                observed_act_seqs_lst.append(observed_act_seqs)
+                targeted_act_seqs_lst.append(targeted_act_seqs)   
             
             observed_pose_lst = torch.stack(observed_pose_lst, dim = 0) 
             targeted_pose_lst = torch.stack(targeted_pose_lst, dim = 0) 
-            observed_root_vector_lst = torch.stack(observed_root_vector_lst, dim = 0) 
-            targeted_root_vector_lst = torch.stack(targeted_root_vector_lst, dim = 0)
+            observed_act_seqs_lst = torch.stack(observed_act_seqs_lst, dim = 0) 
+            targeted_act_seqs_lst = torch.stack(targeted_act_seqs_lst, dim = 0)
 
-            return observed_pose_lst, targeted_pose_lst, observed_root_vector_lst, targeted_root_vector_lst, start_index, name
+            return observed_pose_lst, observed_act_seqs_lst, targeted_pose_lst, targeted_act_seqs_lst, start_index, name

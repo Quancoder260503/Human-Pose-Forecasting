@@ -4,7 +4,7 @@
 # Read more about Latent Diffusion Model 
 # Loading MPII-Cooking for extra dataset
 
-# Plot data in different frames, use frame X to predict frame at X + 1, X + 2, X + 3, ...., X + N (Today)
+# Plot data in different frames, use frame X to predict frame at X + 1, X + 2, X + 3, ...., X + N (Done) 
 
 # Train a simple MLP on the observed poses and predict the sequences of future frame, in autoregressive fashion, can feed it again
 into the network to train (Done) 

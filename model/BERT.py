@@ -28,6 +28,7 @@ class VanillaBERT(nn.Module):
         pre_normalization               = False, 
         query_selection                 = False, 
         residual_connection             = False, 
+        attention_mode                  = 'vanilla', 
     ): 
         """
         :param pose_dim        : input tensor, can represent either (x, y, visibility) or relative root (all - root) or velocity between frames (dx, dy) 
@@ -57,21 +58,21 @@ class VanillaBERT(nn.Module):
         self.residual_connection = residual_connection
 
         # Temperature and alpha for positional encoding 
-        self.temperature = positional_encoding_temperature 
-        self.alpha       = positional_encoding_alpha
+        self.temperature    = positional_encoding_temperature 
+        self.alpha          = positional_encoding_alpha
+        self.attention_mode = attention_mode
 
-        self.causal_mask = ... # FILL IN 
+       # self.causal_mask = ... # FILL IN 
 
         self.init_positional_encoding()
-        self.init
 
         self.proj_model  = nn.Linear(self.pose_dim,  self.model_dim)
         self.proj_out    = nn.Linear(self.model_dim, self.pose_dim)  
         self.dropout1    = nn.Dropout(self.dropout)
         
+        self.init_attention_module()
 
         self.init_weights()
-        torch.nn.init.trunc_normal_(self.decoder_query_embedding.weight, std = 0.02)  
 
     def init_positional_encoding(self):
         positional_encoding = PositionalEncoding1D(
@@ -79,15 +80,16 @@ class VanillaBERT(nn.Module):
             temperature  = self.temperature, 
             alpha        = self.alpha, 
         )
-        self.positional_encoding = positional_encoding(sequence_length = self.encoding_length).contiguous().view(
+        self.positional_encoding = positional_encoding(sequence_length = self.window_size).contiguous().view(
             1, self.window_size, self.model_dim
         )
         # Do not train the distinguish noise 
-        self.positional_encoding = nn.Parameter(self.encoder_positional_encoding, requires_grad = False) 
+        self.positional_encoding = nn.Parameter(self.positional_encoding, requires_grad = False) 
 
     def init_attention_module(self):
         self.attention_module = Encoder(
-            num_joints        = self.num_joints, 
+            num_joints        = self.num_joints,
+            num_layers        = self.num_layers,  
             num_heads         = self.num_heads, 
             model_dim         = self.model_dim, 
             fc_hidden_dim     = self.fc_hidden_dim, 
@@ -125,7 +127,7 @@ class VanillaBERT(nn.Module):
             encoder_inp = self.proj_model(curr_inp) 
             memory, self_attn_weight = self.attention_module(
                src_sequence       = encoder_inp, 
-               temporal_embedding = self.encoder_positional_encoding
+               temporal_embedding = self.positional_encoding
             ) # (batch_size, window_size, model_dim) 
             out = self.proj_out(out) 
             if self.residual_connection : 
@@ -198,13 +200,12 @@ class DualBERT(nn.Module):
         self.init_positional_encoding()
 
 
-        self.proj_model = nn.Linear(self.joint_dim, self.model_dim)
-        self.proj_joint = nn.Linear(self.model_dim, self.joint_dim)
+        self.proj_model  = nn.Linear(self.joint_dim, self.model_dim)
+        self.proj_joint  = nn.Linear(self.model_dim, self.joint_dim)
         self.dropout1    = nn.Dropout(self.dropout)
         
 
         self.init_weights()
-        torch.nn.init.trunc_normal_(self.decoder_query_embedding.weight, std = 0.02)  
 
     def init_attention_module(self):
         self.attention_module = Encoder(
@@ -224,7 +225,7 @@ class DualBERT(nn.Module):
             temperature  = self.temperature, 
             alpha        = self.alpha, 
         )
-        self.positional_encoding = positional_encoding(sequence_length = self.encoding_length).contiguous().view(
+        self.positional_encoding = positional_encoding(sequence_length = self.window_size).contiguous().view(
             1, self.window_size, self.model_dim
         )
         # Do not train the distinguish noise 
@@ -281,8 +282,7 @@ class DualBERT(nn.Module):
 def get_bert_model(
     num_joints       = 13, 
     coordinates     = True, 
-    encoding_length = 14, 
-    decoding_length = 14, 
+    window_size     = 14, 
     num_heads       = 8, 
     model_dim       = 512, 
     fc_hidden_dim   = 2048, 
@@ -299,8 +299,7 @@ def get_bert_model(
         model = VanillaBERT(
             num_joints                      = num_joints, 
             joint_dim                       = (3 if coordinates else 2), 
-            encoding_length                 = encoding_length,
-            decoding_length                 = decoding_length, 
+            window_size                     = window_size,
             num_heads                       = num_heads,  
             model_dim                       = model_dim, 
             fc_hidden_dim                   = fc_hidden_dim,
@@ -317,8 +316,7 @@ def get_bert_model(
         model = DualBERT(
             num_joints         = num_joints, 
             joint_dim          = (3 if coordinates else 2), 
-            encoding_length    = encoding_length, 
-            decoding_length    = decoding_length, 
+            window_size        = window_size, 
             num_heads          = num_heads, 
             model_dim          = model_dim, 
             fc_hidden_dim      = fc_hidden_dim, 

@@ -1,30 +1,41 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from data.DatasetUtil         import *
-from trainer.TrainUtil                import *
-from trainer.CoordinatesTrainer       import *
-from trainer.Trainer                  import * 
 import torch 
+import random 
+from data.Visualization       import *
+from data.DatasetUtil         import *
+from runner.RunnerUtil        import *
+from runner.Runner            import * 
+from torch.nn.utils import clip_grad_norm_
 
-class VelocityTrainer(Trainer):
-    def __init__(self, pck_dict_fn, rmse_dict_fn, dataset, train_loader, val_loader, test_dataset, print_step, model_type, video_getter_fn, frame_input_h, frame_input_w):
-        super(VelocityTrainer, self).__init__(
+class VelocityRunner(Runner):
+    def __init__(self, 
+            pck_dict_fn, 
+            rmse_dict_fn, 
+            dataset, 
+            train_loader, 
+            val_loader, 
+            test_dataset, 
+            video_getter_fn, 
+            frame_input_h, 
+            frame_input_w,
+            mean = None, 
+            std  = None, 
+        ):
+        super(VelocityRunner, self).__init__(
             pck_dict_fn     = pck_dict_fn , 
             rmse_dict_fn    = rmse_dict_fn,  
             train_loader    = train_loader, 
             val_loader      = val_loader, 
             test_dataset    = test_dataset, 
-            print_step      = print_step, 
-            model_type      = model_type, 
             video_getter_fn = video_getter_fn, 
             frame_input_h   = frame_input_h, 
             frame_input_w   = frame_input_w, 
             dataset         = dataset, 
         )
-        self.pck_alpha     = PCK_ALPHA
         print("Input represented as Velocity")
 
-    def process_per_epoch(self, args, model, optimizer, criterion, epoch):
+    def process_per_epoch(self, model, optimizer, criterion, epoch):
         """
         Output poses is not normalized, may include a pixel constraint to compute this ? 
         Input represented as velocity 
@@ -52,23 +63,21 @@ class VelocityTrainer(Trainer):
         
         model.train()         
         for batch_idx, (observed_poses, target_poses, observed_velocities, target_velocities, _, _) in enumerate(self.train_loader):
-                observed_poses = observed_poses.to(args.device, dtype = torch.float32)           # (B, T_train, J * 2)
-                target_poses   = target_poses.to(args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
-                observed_velocities = observed_velocities.to(args.device, dtype = torch.float32) # (B, T_train, J * 2)
-                target_velocities   = target_velocities.to(args.device,   dtype = torch.float32) # (B, T_test,  J * 2)
+                observed_poses = observed_poses.to(self.args.device, dtype = torch.float32)           # (B, T_train, J * 2)
+                target_poses   = target_poses.to(self.args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
+                observed_velocities = observed_velocities.to(self.args.device, dtype = torch.float32) # (B, T_train, J * 2)
+                target_velocities   = target_velocities.to(self.args.device,   dtype = torch.float32) # (B, T_test,  J * 2)
                 
                 batch_size, observed_len,   _ = observed_velocities.shape
                 batch_size, prediction_len, _ = target_velocities.shape 
 
 
                 predicted_velocities, loss = self.get_loss_fn(
-                    args  = args, 
                     train = True, 
                     model = model, 
                     criterion = criterion, 
-                    encode_input = observed_velocities, 
-                    decode_input = target_velocities, 
-                    teacher_forcing_rate = args.teacher_forcing_rate, 
+                    src_seq      = observed_velocities, 
+                    tgt_seq      = target_velocities, 
                 )
                 
                 train_losses.append(loss.item())
@@ -77,6 +86,10 @@ class VelocityTrainer(Trainer):
                 #with torch.autograd.detect_anomaly(): 
                 optimizer.zero_grad()
                 loss.backward()
+
+                if self.args.max_norm > 0 : 
+                   clip_grad_norm_(model.parameters(), self.args.max_norm)
+                
                 optimizer.step() 
                     
                 target_poses = target_poses.contiguous().view(batch_size, prediction_len,   -1, 3) 
@@ -86,10 +99,15 @@ class VelocityTrainer(Trainer):
                 observed_poses = observed_poses.contiguous().view(batch_size, observed_len + 1, -1, 3)[:, :, :, :2]
                 observed_poses = observed_poses.contiguous().view(batch_size, observed_len + 1, -1)
 
+                if not isinstance(predicted_velocities, list):
+                    predicted_velocities = [predicted_velocities]
+
+                predicted_velocities = predicted_velocities[-1]
+
                 predicted_poses = speed_to_pos(
                     prediction_velocities =  predicted_velocities, 
                     observed_poses        =  observed_poses, 
-                    device                =  args.device, 
+                    device                =  self.args.device, 
                 )
 
                 predicted_poses = predicted_poses.contiguous().view(batch_size, prediction_len, -1, 2)
@@ -99,19 +117,19 @@ class VelocityTrainer(Trainer):
                     gt        = target_poses[:, :, :,    :2],  
                     time_step = prediction_len, 
                     dataset   = self.dataset, 
-                    alpha     = self.pck_alpha,  # Since this is not 0-1 anymore should be bigger constant
+                    alpha     = self.args.pck_alpha,  # Since this is not 0-1 anymore should be bigger constant
                 )
 
-                train_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses))
+                train_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
 
 
                 for dict in predictions:
                     for key in predictions[dict]:
                         train_total_pck[dict][key] += predictions[dict][key]    
                 
-                if batch_idx > 0 and batch_idx % args.print_step == 0:
+                if batch_idx > 0 and batch_idx % self.args.print_step == 0:
                     acc = train_total_pck['total']['correct'] / train_total_pck['total']['all']
-                    print(f'Epoch {epoch + 1} | Batch {batch_idx}/{len(self.train_loader)} |'
+                    print(f'Epoch {epoch + 1} | Batch {batch_idx}/{self.step_per_epoch} |'
                       f'Loss = {np.mean(train_losses):.6f} |' 
                       f'PJRMSE  = {np.mean(train_per_joint_rmse)} |' 
                       f'PCK accuracy = {acc:.4f}'
@@ -121,23 +139,22 @@ class VelocityTrainer(Trainer):
         model.eval()
         with torch.no_grad():
             for _, (observed_poses, target_poses, observed_velocities, target_velocities, _, _) in enumerate(self.val_loader):
-                observed_poses = observed_poses.to(args.device, dtype = torch.float32)           # (B, T_train, J * 2)
-                target_poses   = target_poses.to(args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
-                observed_velocities = observed_velocities.to(args.device, dtype = torch.float32) # (B, T_train, J * 2)
-                target_velocities   = target_velocities.to(args.device,   dtype = torch.float32) # (B, T_test,  J * 2)
+                observed_poses = observed_poses.to(self.args.device, dtype = torch.float32)           # (B, T_train, J * 2)
+                target_poses   = target_poses.to(self.args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
+                observed_velocities = observed_velocities.to(self.args.device, dtype = torch.float32) # (B, T_train, J * 2)
+                target_velocities   = target_velocities.to(self.args.device,   dtype = torch.float32) # (B, T_test,  J * 2)
                     
                 batch_size, observed_len, _   = observed_velocities.shape
                 batch_size, prediction_len, _ = target_velocities.shape 
 
 
                 predicted_velocities, loss = self.get_loss_fn(
-                    args  = args, 
+                    args  = self.args, 
                     train = False, 
                     model = model, 
                     criterion = criterion, 
-                    encode_input = observed_velocities, 
-                    decode_input = target_velocities, 
-                    teacher_forcing_rate = args.teacher_forcing_rate, 
+                    src_seq      = observed_velocities, 
+                    tgt_seq      = target_velocities, 
                 )
                 
 
@@ -147,7 +164,12 @@ class VelocityTrainer(Trainer):
                 
                 observed_poses = observed_poses.contiguous().view(batch_size, observed_len + 1, -1, 3)[:, :, :, :2]
                 observed_poses = observed_poses.contiguous().view(batch_size, observed_len + 1, -1)
-                
+
+                if not isinstance(predicted_velocities, list):
+                    predicted_velocities = [predicted_velocities]
+
+                predicted_velocities = predicted_velocities[-1]
+
                 predicted_poses = speed_to_pos(predicted_velocities, observed_poses) # (B, target_len, 26)
                 predicted_poses = predicted_poses.contiguous().view(batch_size, prediction_len, -1, 2)
 
@@ -157,10 +179,10 @@ class VelocityTrainer(Trainer):
                     gt        = target_poses[:, :, :, :2],  
                     time_step = prediction_len, 
                     dataset   = self.dataset, 
-                    alpha     = self.pck_alpha
+                    alpha     = self.args.pck_alpha
                 )
                 
-                valid_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses))
+                valid_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
 
                 for dict in predictions:
                     for key in predictions[dict]:
@@ -170,17 +192,17 @@ class VelocityTrainer(Trainer):
     
 
     @torch.no_grad()
-    def evaluation(self, args, model, criterion):
+    def evaluation(self, model, criterion):
         
         test_losses         = [] 
         test_per_joint_rmse = []
         test_total_pck      = self.pck_dict_fn()
         
         for _, (observed_poses, target_poses, observed_velocities, target_velocities, _, _) in enumerate(self.test_dataset):
-            observed_poses = observed_poses.to(args.device, dtype = torch.float32)           # (B, T_train, J * 2)
-            target_poses   = target_poses.to(args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
-            observed_velocities = observed_velocities.to(args.device, dtype = torch.float32) # (B, T_train, J * 2)
-            target_velocities   = target_velocities.to(args.device,   dtype = torch.float32) # (B, T_test,  J * 2)
+            observed_poses = observed_poses.to(self.args.device, dtype = torch.float32)           # (B, T_train, J * 2)
+            target_poses   = target_poses.to(self.args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
+            observed_velocities = observed_velocities.to(self.args.device, dtype = torch.float32) # (B, T_train, J * 2)
+            target_velocities   = target_velocities.to(self.args.device,   dtype = torch.float32) # (B, T_test,  J * 2)
                     
             batch_size, observed_len, _   = observed_velocities.shape
             batch_size, prediction_len, _ = target_velocities.shape 
@@ -190,11 +212,14 @@ class VelocityTrainer(Trainer):
                 train = False, 
                 model = model, 
                 criterion = criterion, 
-                encode_input = observed_velocities, 
-                decode_input = target_velocities, 
-                teacher_forcing_rate = args.teacher_forcing_rate, 
+                src_seq      = observed_velocities, 
+                tgt_seq      = target_velocities, 
             )
-                
+
+            if not isinstance(predicted_velocities, list):
+                predicted_velocities = [predicted_velocities]
+
+            predicted_velocities = predicted_velocities[-1]     
 
             test_losses.append(loss.item())
                 
@@ -212,10 +237,10 @@ class VelocityTrainer(Trainer):
                 gt        = target_poses[:, :, :, :2],  
                 time_step = prediction_len, 
                 dataset   = self.dataset, 
-                alpha     = self.pck_alpha
+                alpha     = self.args.pck_alpha
             )
                 
-            test_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses))
+            test_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
 
             for dict in predictions:
                 for key in predictions[dict]:
@@ -225,29 +250,34 @@ class VelocityTrainer(Trainer):
 
 
     @torch.no_grad()
-    def inference(self, args, model, criterion):
+    def inference(self, model, criterion):
         observed_poses, target_poses, observed_velocity, target_velocity, start_index, name = self.val_loader[random.randint(0, len(self.val_loader))]
        
-        observed_poses    = observed_poses.unsqueeze(0).to(args.device,    dtype = torch.float32)
-        observed_velocity = observed_velocity.unsqueeze(0).to(args.device, dtype = torch.float32)
-        target_poses      = target_poses.unsqueeze(0).to(args.device,      dtype = torch.float32)
-        target_velocity   = target_velocity.unsqueeze(0).to(args.device,   dtype = torch.float32)
+        observed_poses    = observed_poses.unsqueeze(0).to(self.args.device,    dtype = torch.float32)
+        observed_velocity = observed_velocity.unsqueeze(0).to(self.args.device, dtype = torch.float32)
+        target_poses      = target_poses.unsqueeze(0).to(self.args.device,      dtype = torch.float32)
+        target_velocity   = target_velocity.unsqueeze(0).to(self.args.device,   dtype = torch.float32)
 
-        observed_poses   = observed_poses.contiguous().view(1, args.num_training_frame, -1, 3)[:, :, :, :2]
-        observed_poses   = observed_poses.contiguous().view(1, args.num_training_frame, -1) 
+        observed_poses   = observed_poses.contiguous().view(1, self.args.num_training_frame, -1, 3)[:, :, :, :2]
+        observed_poses   = observed_poses.contiguous().view(1, self.args.num_training_frame, -1) 
 
         predicted_velocity, loss = self.get_loss_fn(
             train = False, 
             model = model, 
             criterion = criterion, 
-            encode_input = observed_velocity, 
-            decode_input = target_velocity, 
-            teacher_forcing_rate = args.teacher_forcing_rate, 
+            src_seq      = observed_velocity, 
+            tgt_seq      = target_velocity, 
         )
 
-        predicted_poses = speed_to_pos(observed_poses = observed_poses, prediction_velocities = predicted_velocity, device = args.device)
 
-        fig, axes = plt.subplots(2, args.num_testing_frame, figsize = (24, 8))  
+        if not isinstance(predicted_velocity, list):
+            predicted_velocity = [predicted_velocity]
+
+        predicted_velocity = predicted_velocity[-1]
+
+        predicted_poses = speed_to_pos(observed_poses = observed_poses, prediction_velocities = predicted_velocity, device = self.args.device)
+
+        fig, axes = plt.subplots(2, self.args.num_testing_frame, figsize = (24, 8))  
 
         videos_real = []
         videos_pred = [] 
@@ -258,13 +288,13 @@ class VelocityTrainer(Trainer):
         observed_imgs, target_imgs = self.video_getter_fn(
             name               = name, 
             start_index        = start_index, 
-            num_training_frame = args.num_training_frame, 
-            num_testing_frame  = args.num_testing_frame, 
+            num_training_frame = self.args.num_training_frame, 
+            num_testing_frame  = self.args.num_testing_frame, 
             frame_input_w      = self.frame_input_w,
             frame_input_h      = self.frame_input_h, 
         )
 
-        for index in range(0, args.num_testing_frame):     
+        for index in range(0, self.args.num_testing_frame):     
             curr_target_image = target_imgs[index, :, :, :]
             curr_target_image = np.ascontiguousarray(torch2numpy(curr_target_image))
 
@@ -279,9 +309,8 @@ class VelocityTrainer(Trainer):
                 curr_target_pose, 
                 pck_prediction,
                 self.dataset_joint_name, 
-                alpha = self.pck_alpha, 
+                alpha = self.args.pck_alpha, 
             )
-
             
             target_annotated_image = draw_skeleton(curr_target_image, curr_target_pose.detach().cpu().numpy())
             axes[0, index].imshow(target_annotated_image)

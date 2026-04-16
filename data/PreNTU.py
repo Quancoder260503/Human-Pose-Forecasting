@@ -10,7 +10,7 @@ import logging
 import json
 import cv2
 
-NTU_SKELETON_PATH = 'dataset/NanyangTechRGB/nturgb+d_skeletons'
+NTU_SKELETON_PATH = 'dataset/NanyangTechRGB/nturgbd_skeletons'
 NTU_IMAGE_RESOLUTION_H = 1920
 NTU_IMAGE_RESOLUTION_W = 1080
 
@@ -36,7 +36,6 @@ def get_raw_body_data(skes_path, ske_name):
     num_frames = int(str_data[0].strip('\r\n'))
     frames_drop = []
     bodies_data = dict()
-    valid_frames = -1
     current_line = 1
 
     for frame in range(num_frames):
@@ -46,7 +45,6 @@ def get_raw_body_data(skes_path, ske_name):
         if num_bodies == 0:
             frames_drop.append(frame)
             continue
-        valid_frames += 1
         joints = np.zeros((num_bodies, 25, 3), dtype = np.float32)
         colors = np.zeros((num_bodies, 25, 2), dtype = np.float32)
 
@@ -65,13 +63,12 @@ def get_raw_body_data(skes_path, ske_name):
                 body_data = dict()
                 body_data['joints'] = joints[b] # ndarray (25, 3)
                 body_data['colors'] = colors[b, np.newaxis] # ndarray : (1, 25, 2)
-                body_data['interval'] = [valid_frames]
+                body_data['interval'] = [frame]
             else :
                 body_data = bodies_data[bodyID]
                 body_data['joints'] = np.vstack((body_data['joints'], joints[b]))
                 body_data['colors'] = np.vstack((body_data['colors'], colors[b, np.newaxis]))
-                pre_frame_index = body_data['interval'][-1]
-                body_data['interval'].append(pre_frame_index + 1)
+                body_data['interval'].append(frame)
 
             bodies_data[bodyID] = body_data
 
@@ -80,7 +77,7 @@ def get_raw_body_data(skes_path, ske_name):
     return {
         'name' : ske_name,
         'data' : bodies_data,
-        'num_frames' : num_frames - num_frames_drop,
+        'num_frames' : num_frames - num_frames_drop, 
     }
 
 

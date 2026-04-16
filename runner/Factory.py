@@ -1,10 +1,10 @@
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-from torch.utils.data.distributed import DistributedSampler
 
-from trainer.CoordinatesTrainer  import * 
-from trainer.RootRelativeTrainer import *
-from trainer.VelocityTrainer     import * 
+from runner.CoordinatesRunner  import * 
+from runner.RootRelativeRunner import *
+from runner.VelocityRunner     import * 
+from runner.Losses             import *
 
 from data.DatasetUtil           import *
 from data.CoordinatesNTU        import * 
@@ -25,28 +25,29 @@ from model.Transformer        import *
 def class_factory(args):
     if args.dataset == 'pennaction':
         if args.model_input_type == 'coordinates': 
-            return PennActionCoordinates, CoordinatesTrainer
+            return PennActionCoordinates, CoordinatesRunner
         elif args.model_input_type == 'velocity'  : 
-            return PennActionVelocity, VelocityTrainer 
+            return PennActionVelocity, VelocityRunner 
         else : 
             raise NotImplementedError('representation is not supported for dataset')
         
     elif args.dataset == 'ntu':
         if   args.model_input_type == 'coordinates' : 
-            return NTUCoordinates,  CoordinatesTrainer
+            return NTUCoordinates, CoordinatesRunner
         elif args.model_input_type == 'velocity' : 
-            return NTUVelocity,     VelocityTrainer 
+            return NTUVelocity, VelocityRunner 
         elif args.model_input_type == 'root_relative' :
-            return NTURootRelative, RootRelativeTrainer 
+            return NTURootRelative, RootRelativeRunner 
         else : 
             raise NotImplementedError('representation is not supported for dataset')
     else : 
         raise NotImplementedError('dataset not supported')
 
 def dataset_factory(args):
-    dataset_class, trainer_class = class_factory(args)
+    dataset_class, runner_class = class_factory(args)
     if args.dataset == 'pennaction':
         dataset = dataset_class(
+            num_joints         = args.num_joints,
             num_training_frame = args.num_training_frame, 
             num_testing_frame  = args.num_testing_frame,
             frame_input_h      = args.pennaction_frame_input_h, 
@@ -57,6 +58,7 @@ def dataset_factory(args):
         )
 
         test_dataset = dataset_class(
+            num_joints         = args.num_joints, 
             num_training_frame = args.num_training_frame, 
             num_testing_frame  = args.num_testing_frame,
             frame_input_h      = args.pennaction_frame_input_h, 
@@ -66,45 +68,47 @@ def dataset_factory(args):
             train              = False, 
         )
         
-        num_train = int(len(dataset) * 0.9)  # Validation set rate
-        num_valid = len(dataset) - num_train
+        num_valid = int(len(dataset) * 0.05)  # Validation set rate
+        num_train = len(dataset) - num_valid
         train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
 
 
-    
-
         train_loader = DataLoader(
-            train_dataset,
+            dataset     = train_dataset, 
             batch_size  = args.batch_size,
             num_workers = args.num_workers,
-            pin_memory = args.pin_memory
+            pin_memory  = args.pin_memory,
+            shuffle     = True,  
         )
 
         val_loader = DataLoader(
-            val_dataset,
+            dataset     = val_dataset,
             batch_size  = args.batch_size,
             num_workers = args.num_workers,
-            pin_memory  = args.pin_memory
+            pin_memory  = args.pin_memory, 
         )
 
-        trainer       = trainer_class(
-            pck_dict_fn  = get_pennaction_pck_dict, 
-            rmse_dict_fn = get_pennaction_mse_dict, 
-            train_loader = train_loader, 
-            val_loader   = val_loader, 
-            test_dataset = test_dataset, 
-            dataset      = 'pennaction', 
-            print_step   = args.print_step, 
-            model_type   = args.model_type, 
+
+        runner      = runner_class(
+            args            = args, 
+            pck_dict_fn     = get_pennaction_pck_dict, 
+            rmse_dict_fn    = get_pennaction_mse_dict, 
+            train_loader    = train_loader, 
+            val_loader      = val_loader, 
+            test_dataset    = test_dataset, 
+            dataset         = 'pennaction', 
             video_getter_fn = get_video_frames_pennaction,
-            frame_input_h = args.pennaction_frame_input_h, 
-            frame_input_w = args.pennaction_frame_input_w,
+            frame_input_h   = args.pennaction_frame_input_h, 
+            frame_input_w   = args.pennaction_frame_input_w,
+            mean            = dataset.mean  if hasattr(dataset, "mean") else None, 
+            std             = dataset.std   if hasattr(dataset, "std")  else None, 
         )
 
-        return trainer
+        return runner
     
     elif args.dataset == 'ntu': 
         dataset = dataset_class(
+            num_joints         = args.num_joints,
             num_training_frame = args.num_training_frame, 
             num_testing_frame  = args.num_testing_frame,
             frame_input_h      = args.ntu_frame_input_h, 
@@ -114,11 +118,14 @@ def dataset_factory(args):
             train              = True, 
         )
 
-        num_train = int(len(dataset) * 0.9)  # Validation set rate
-        num_valid = len(dataset) - num_train
+        num_valid = int(len(dataset) * 0.05)  # Validation set rate
+        num_train = len(dataset) - num_valid
         train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
 
+
+
         test_dataset =  dataset_class(
+            num_joints         = args.num_joints,
             num_training_frame = args.num_training_frame, 
             num_testing_frame  = args.num_testing_frame,
             frame_input_h      = args.ntu_frame_input_h, 
@@ -127,45 +134,47 @@ def dataset_factory(args):
             on_debug_mode      = args.mode == 'debug', 
             train              = False, 
         )
-
-        
+       
 
         train_loader = DataLoader(
-            train_dataset,
+            dataset     = train_dataset, 
             batch_size  = args.batch_size,
             num_workers = args.num_workers,
-            pin_memory  = args.pin_memory
+            pin_memory  = args.pin_memory, 
+            shuffle     = True, 
         )
 
         val_loader = DataLoader(
-            val_dataset,
+            dataset     = val_dataset,
             batch_size  = args.batch_size,
             num_workers = args.num_workers,
-            pin_memory  = args.pin_memory
+            pin_memory  = args.pin_memory,  
         )
 
 
-        trainer       = trainer_class(
+        runner             = runner_class(
+            args            = args, 
             pck_dict_fn     = get_ntu_pck_dict, 
             rmse_dict_fn    = get_ntu_mse_dict, 
             train_loader    = train_loader, 
             val_loader      = val_loader, 
             test_dataset    = test_dataset, 
             dataset         = 'ntu', 
-            print_step      = args.print_step, 
-            model_type      = args.model_type, 
             video_getter_fn = get_video_frames_ntu, 
             frame_input_h   = args.ntu_frame_input_h, 
             frame_input_w   = args.ntu_frame_input_w,
+            mean            = dataset.mean  if hasattr(dataset, "mean") else None, 
+            std             = dataset.std   if hasattr(dataset, "std")  else None, 
         )
 
-        return trainer
+        return runner
     
     else : 
         raise NotImplementedError('dataset not supported')
     
 
 def get_model(args):
+    model = None  
     if args.model == 'mlp': 
         model = get_mlp_model(
             pose_dim      = args.num_joints, 
@@ -176,8 +185,6 @@ def get_model(args):
             dropout       = args.dropout, 
             device        = args.device, 
         )
-        criterion = mlp_loss_function
-        return model, criterion 
     elif args.model == 'lstm': 
         model = get_lstm_model(
             pose_dim       = args.num_joints, 
@@ -189,8 +196,6 @@ def get_model(args):
             device         = args.device, 
             residual_connection = args.lstm_residual_connection,
         )
-        criterion = lstm_loss_function 
-        return model, criterion 
     
     elif args.model == 'motion_vae': 
         vae_model = get_rnn_vae_model(
@@ -202,8 +207,6 @@ def get_model(args):
             dropout         = args.dropout, 
             device          = args.device, 
         )
-        criterion_vae = vae_loss_function
-        return vae_model, criterion_vae
     
     elif args.model == 'transformer': 
         model = get_transformer_model(
@@ -223,34 +226,20 @@ def get_model(args):
             transformer_type                = args.transformer_type, 
             residual_connection             = args.transformer_residual_connection, 
         )
-        criterion = transformer_loss_function 
-        return model, criterion
-    elif args.model == 'decouple_motion_vae': 
-        # Motion Vae Comprises of two models, one for the root, and one for others 
-        vae_model = get_rnn_vae_model(
-            pose_dim        = args.num_joints, 
-            hidden_dim      = args.decouple_motion_vae_hidden_dim, 
-            latent_dim      = args.decouple_motion_vae_latent_dim,
-            encoding_layers = args.decouple_motion_vae_encoding_layers, 
-            decoding_layers = args.decouple_motion_vae_decoding_layers, 
-            dropout         = args.dropout, 
-            device          = args.device, 
-        )
-        criterion_vae = vae_loss_function
-        lstm_model = get_lstm_model(
-            pose_dim       = args.num_joints, 
-            coordinates    = args.model_input_type == 'coordinates', 
-            embedding_dim  = args.decouple_lstm_embedding_dim,
-            hidden_dim     = args.decouple_lstm_hidden_dim, 
-            num_layers     = args.decouple_lstm_num_layers, 
-            dropout        = args.dropout, 
-            device         = args.device, 
-        )
-        criterion_lstm = lstm_loss_function
-
-        return (vae_model, lstm_model), (criterion_vae, criterion_lstm)
     else : 
         raise NotImplementedError('Model not supported for now') 
+    
+    return model 
+
+def get_criterions(args):
+    criterion = None 
+    if args.loss_type   == 'naive': 
+        criterion = naive_loss_function 
+    elif args.loss_type == 'penalize': 
+        criterion = penalize_loss_function 
+    else : 
+        raise NotImplementedError('loss function unknown')
+    return criterion
 
 
 def lr_scheduler_factory(args, optimizer, start_epoch):

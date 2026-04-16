@@ -240,7 +240,7 @@ def draw_skeleton(
     if unnormalize : 
         poses[:, 0] = poses[:, 0] * frame_input_w
         poses[:, 1] = poses[:, 1] * frame_input_h
-    
+        
     if prob is None : 
         prob  = np.ones(poses.shape[0])
 
@@ -290,20 +290,36 @@ def show_video(video, output_path = "output.mp4", fps = 25):
 """
 Visualize Attention  
 """
-def visualize_attention(attn_weights, cmap = 'viridis'):
+import matplotlib.pyplot as plt
+import torch
+
+def visualize_attention(attn_weights, cmap='inferno'):
+    if isinstance(attn_weights[0], list):
+        attn_weights = [a[1] for a in attn_weights]
+
     num_mats = len(attn_weights)
-    cols = (num_mats + 1) // 2 
-    fig, axes = plt.subplots(2, cols, figsize = (4 * cols, 8))
+    cols = (num_mats + 1) // 2
+    fig, axes = plt.subplots(2, cols, figsize=(4 * cols, 8))
     axes = axes.flatten()
+
     for i, attn in enumerate(attn_weights):
-        im = axes[i].imshow(attn, cmap = cmap)
+        attn = attn.detach().cpu()
+
+        if attn.dim() == 3:
+            attn = attn.mean(dim = 0)
+
+        attn = (attn - attn.min()) / (attn.max() - attn.min() + 1e-8)
+
+        im = axes[i].imshow(attn.numpy(), cmap = cmap, aspect='auto')
+
         axes[i].set_title(f'Head {i+1}')
         axes[i].set_xlabel('Key')
         axes[i].set_ylabel('Query')
+
         fig.colorbar(im, ax = axes[i])
-        
-    for j in range(i+1, len(axes)):
+
+    for j in range(i + 1, len(axes)):
         axes[j].axis('off')
-    
+
     plt.tight_layout()
     plt.show()

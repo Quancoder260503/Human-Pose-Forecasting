@@ -61,10 +61,6 @@ class PosePredictionMLP(nn.Module):
         return out 
     
 
-def mlp_loss_function(pred_joints, gt_joints):
-    criterion = nn.SmoothL1Loss(reduction = 'mean')
-    return criterion(pred_joints, gt_joints)
-
 
 def get_mlp_model(pose_dim = 13, coordinates = True, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):
     model = PosePredictionMLP( 

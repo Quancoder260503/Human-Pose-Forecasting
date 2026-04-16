@@ -89,11 +89,6 @@ class PosePredictionLSTM(nn.Module):
         return torch.stack(predicted_poses, dim = 1)                   # (B, prediction_len, pose_dim)
 
 
-def lstm_loss_function(pred_joints, gt_joints):
-    criterion = nn.SmoothL1Loss(reduction = 'mean')
-    return criterion(pred_joints, gt_joints)
-
-
 def get_lstm_model(
     pose_dim      = 13,
     coordinates   = True,

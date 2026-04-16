@@ -134,19 +134,7 @@ class RNNMotionVAE(nn.Module):
         z = self.reparameterization(mean, log_var) 
         out = self.decoder(observed_sequences, target_sequences, z, prediction_len, teacher_forcing_rate)
         return out, mean, log_var
-
-def vae_loss_function(pred_velos, gt_velos, mean, log_var, beta): 
-    """
-    :param pred_velos : tensor of shape (B, T, pose_dim)
-    :param gt_velos   : tensor of shape (B, T, pose_dim) 
-    :mean             : tensor of shape (B, latent_dim) 
-    :log_var          : tensor of shape (B, latent_dim)
-    :beta             : beta coefficient
-    """
-    assert pred_velos.shape == gt_velos.shape
-    reconstruction_loss = torch.mean(torch.norm(pred_velos - gt_velos, dim = -1))
-    kullback_leiber_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-    return reconstruction_loss + beta * kullback_leiber_loss
+    
 
 def get_rnn_vae_model(
         pose_dim = 13,

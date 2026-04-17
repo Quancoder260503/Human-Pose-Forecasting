@@ -50,7 +50,7 @@
 # plt.tight_layout()
 # plt.show() 
 
-from model.Transformer import *
+from model.PoseEncoder import *
 
 model = get_transformer_model(
     transformer_type = 'joint', 

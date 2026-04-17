@@ -197,34 +197,28 @@ def get_model(args):
             residual_connection = args.lstm_residual_connection,
         )
     
-    elif args.model == 'motion_vae': 
-        vae_model = get_rnn_vae_model(
-            pose_dim        = args.num_joints, 
-            hidden_dim      = args.motion_vae_hidden_dim, 
-            latent_dim      = args.motion_vae_latent_dim,
-            encoding_layers = args.motion_vae_encoding_layers, 
-            decoding_layers = args.motion_vae_decoding_layers, 
-            dropout         = args.dropout, 
-            device          = args.device, 
-        )
-    
     elif args.model == 'transformer': 
         model = get_transformer_model(
-            num_joints        = args.num_joints, 
-            coordinates       = args.model_input_type == 'coordinates',
-            encoding_length   = args.num_training_frame - (1 if args.model_input_type == 'velocity' else 0), 
-            decoding_length   = args.num_testing_frame, 
-            num_heads         = args.transformer_num_heads, 
-            model_dim         = args.transformer_model_dim, 
-            fc_hidden_dim     = args.transformer_fc_hidden_dim, 
-            num_layers        = args.transformer_num_layers, 
-            dropout           = args.dropout, 
-            pre_normalization = args.transformer_pre_normalization, 
+            num_joints                      = args.num_joints, 
+            coordinates                     = args.model_input_type == 'coordinates',
+            encoding_length                 = args.num_training_frame - (1 if args.model_input_type == 'velocity' else 0), 
+            decoding_length                 = args.num_testing_frame, 
+            num_heads                       = args.transformer_num_heads, 
+            model_dim                       = args.transformer_model_dim, 
+            fc_hidden_dim                   = args.transformer_fc_hidden_dim, 
+            num_layers                      = args.transformer_num_layers, 
+            dropout                         = args.dropout, 
+            pre_normalization               = args.transformer_pre_normalization, 
             positional_encoding_temperature = args.positional_encoding_temperature, 
             positional_encoding_alpha       = args.positional_encoding_alpha, 
             device                          = args.device, 
             transformer_type                = args.transformer_type, 
             residual_connection             = args.transformer_residual_connection, 
+            joint_attn_embed_dim            = args.joint_attn_embed_dim, 
+            joint_attn_num_layers           = args.joint_attn_num_layers, 
+            joint_attn_num_heads            = args.joint_attn_num_heads, 
+            joint_attn_fc_hidden_dim        = args.joint_attn_fc_hidden_dim, 
+            proj_model_type                 = args.proj_model_type, 
         )
     else : 
         raise NotImplementedError('Model not supported for now') 

@@ -208,14 +208,21 @@ if __name__ == '__main__':
     # VELOCITY TRANSFORMER 
 
     # TRANSFORMER
-    parser.add_argument('--transformer_num_heads',           default = 8,         type = int,  required = False)  
-    parser.add_argument('--transformer_model_dim',           default = 512,       type = int,  required = False) 
+    parser.add_argument('--transformer_num_heads',           default = 4,         type = int,  required = False)  
+    parser.add_argument('--transformer_model_dim',           default = 256,       type = int,  required = False) 
     parser.add_argument('--transformer_fc_hidden_dim',       default = 2048,      type = int,  required = False) 
-    parser.add_argument('--transformer_num_layers',          default = 6,         type = int,  required = False) 
+    parser.add_argument('--transformer_num_layers',          default = 4,         type = int,  required = False) 
     parser.add_argument('--transformer_pre_normalization',   default = False,     type = bool, required = False)
     parser.add_argument('--transformer_residual_connection', default = True,      type = bool, required = False) 
     parser.add_argument('--transformer_type',                default = 'vanilla', type = str,  required = False)
     parser.add_argument('--get_attn_weight',                 default = False,     type = bool, required = False)
+    parser.add_argument('--joint_attn_embed_dim',            default = 128,       type = int,  required = False)   
+    parser.add_argument('--joint_attn_num_layers',           default = 2,         type = int,  required = False)
+    parser.add_argument('--joint_attn_num_heads',            default = 4,         type = int,  required = False)
+    parser.add_argument('--joint_attn_fc_hidden_dim',        default = 512,       type = int,  required = False)
+    parser.add_argument('--proj_model_type',                 default = 'attn',    type = str,  required = False) 
+
+
 
     args = parser.parse_args()
     train(args) 

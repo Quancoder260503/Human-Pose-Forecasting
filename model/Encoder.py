@@ -9,6 +9,9 @@ import math
 from model.PositionalEncoding import *
 import matplotlib.pyplot as plt
 
+# Learn more meaningful mapping rather than just an MLP 
+
+
 class VanillaEncoderLayer(nn.Module):
     def __init__(self, 
                 num_heads, 
@@ -132,250 +135,6 @@ class VanillaEncoderLayer(nn.Module):
         if self.pre_normalization : 
             return self.forward_pre_norm(src_sequence, pos_embedding) 
         return self.forward_post_norm(src_sequence, pos_embedding)    
-   
-class JointAttentionEncoderLayer(nn.Module):
-    def __init__(self, 
-            num_joints, 
-            num_heads, 
-            model_dim, 
-            fc_hidden_dim, 
-            dropout, 
-            device            = 'cuda', 
-            pre_normalization = False, 
-        ): 
-        """
-        :param num_joints          : number of joints in the dataset 
-        :param num_heads           : number of attention heads 
-        :param model_dim           : model dimension (the dimension that accompanied with the object through the entire network)
-        :param fc_hidden_dim       : fully connected layer hidden dim 
-        :param num_layers          : number of (MultiheadAttn + FC) layers 
-        :param dropout             : dropout probability 
-        :param pre_normalization   : forward mode, requires normalization afterwards ? 
-        """
-        super(JointAttentionEncoderLayer, self).__init__()
-        self.num_joints          = num_joints 
-        self.num_heads           = num_heads 
-        self.model_dim           = model_dim
-        self.fc_hidden_dim       = fc_hidden_dim 
-        self.dropout             = dropout
-        
-        self.dropout1            = nn.Dropout(self.dropout)
-        self.dropout2            = nn.Dropout(self.dropout)
-        self.dropout3            = nn.Dropout(self.dropout)
-        self.dropout4            = nn.Dropout(self.dropout)
-        self.dropout5            = nn.Dropout(self.dropout)
-
-        self.linear1             = nn.Linear(model_dim, fc_hidden_dim) 
-        self.linear2             = nn.Linear(fc_hidden_dim, model_dim)
-
-        self.layernorm1          = nn.LayerNorm(self.model_dim)
-        self.layernorm2          = nn.LayerNorm(self.model_dim)
-        self.layernorm3          = nn.LayerNorm(self.model_dim)
-        self.layernorm4          = nn.LayerNorm(self.model_dim)
-
-        self.relu                = nn.ReLU(inplace = True)
-
-        # per frame, compute the spatial attention of the joints within that frame 
-        self.joint_attention_1 = nn.MultiheadAttention(
-            embed_dim   = self.model_dim, 
-            num_heads   = self.num_heads, 
-            dropout     = self.dropout, 
-            batch_first = True, 
-        )
-        # per joint, compute the temporal attention of a particular joint across different frames
-
-        self.joint_attention_2 = nn.MultiheadAttention(
-            embed_dim   = self.model_dim, 
-            num_heads   = self.num_heads, 
-            dropout     = self.dropout, 
-            batch_first = True, 
-        )
-        
-        self.self_attention = nn.MultiheadAttention(
-            embed_dim   = self.model_dim, 
-            num_heads   = self.num_heads, 
-            dropout     = self.dropout, 
-            batch_first = True, 
-        )
-
-        self.proj_self_attn = nn.Linear(self.model_dim * self.num_joints, self.model_dim) 
-        self.proj_pose_dim  = nn.Linear(self.model_dim, self.model_dim * self.num_joints)
-
-        self.device              = device 
-        self.pre_normalization   = pre_normalization
-
-
-    def add_positional_embedding(self, inp, positional_embedding):
-        if positional_embedding is not None :
-            return inp + positional_embedding
-        return inp  
-    
-    def add_spatial_embedding(self, inp, spatial_embedding):
-        if spatial_embedding is not None : 
-            return inp + spatial_embedding 
-        return inp 
-    
-    
-    def forward_post_norm(self, src_sequence, positional_embedding, spatial_embedding):
-        """
-        :param src_sequence         : a tensor of shape (batch_size, sequence_length, num_joints, model_dim)
-        :param positional_embedding : a tensor of shape (1, sequence_length, model_dim), getting broadcasted 
-        :param spatial_embedding    : a tensor of shape (1, num_joints,      model_dim), getting broadcasted 
-        :return 
-            output       : a tensor of shape (batch_size, sequence_length, num_joints, model_dim) 
-            attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        batch_size, sequence_length, num_joints, model_dim = src_sequence.shape
-
-        inp = src_sequence.clone()
-        inp = inp.contiguous().view(batch_size * sequence_length, num_joints, model_dim)
-
-
-
-        joint_attn_1, joint_attn_1_weight = self.joint_attention_1(
-            query = self.add_spatial_embedding(inp, spatial_embedding), 
-            key   = self.add_spatial_embedding(inp, spatial_embedding),  
-            value = self.add_spatial_embedding(inp, spatial_embedding), 
-            need_weights = True, 
-        )
-
-        joint_attn_1     = self.dropout1(joint_attn_1)
-        joint_attn_1_out = self.layernorm1(joint_attn_1 + inp)
-
-        joint_attn_1_out  = joint_attn_1_out.contiguous().view(batch_size, sequence_length, num_joints, model_dim).permute(0, 2, 1, 3)
-        joint_attn_1_out  = joint_attn_1_out.contiguous().view(batch_size * num_joints, sequence_length, model_dim) 
-
-
-        joint_attn_2, joint_attn_2_weight = self.joint_attention_2(
-            query = self.add_spatial_embedding(joint_attn_1_out, positional_embedding), 
-            key   = self.add_spatial_embedding(joint_attn_1_out, positional_embedding),  
-            value = joint_attn_1_out, 
-            need_weights = True, 
-        )
-
-        joint_attn_2     = self.dropout2(joint_attn_2)
-        joint_attn_2_out = self.layernorm2(joint_attn_2 + joint_attn_1_out)
-        joint_attn_2_out = joint_attn_2_out.contiguous().view(batch_size, num_joints, sequence_length, model_dim).permute(0, 2, 1, 3)
-        attn_in          = joint_attn_2_out.contiguous().view(batch_size, sequence_length, num_joints * model_dim).clone()
-
-        attn_in          = self.proj_self_attn(attn_in)
-
-        self_attn, self_attn_weight = self.self_attention(
-            query = self.add_positional_embedding(attn_in, positional_embedding), 
-            key   = self.add_positional_embedding(attn_in, positional_embedding), 
-            value = attn_in, 
-            need_weights = True, 
-        )
-
-       
-        self_attn = self.dropout3(self_attn) 
-        attn_out  = self.layernorm3(self_attn + attn_in)
-        attn_out  = self.proj_pose_dim(attn_out)
-        
-        attn_out  = attn_out.contiguous().view(batch_size, sequence_length, num_joints, model_dim)
-
-        ffn_out = self.linear1(attn_out) 
-        ffn_out = self.relu(ffn_out)
-        ffn_out = self.dropout4(ffn_out) 
-        
-        ffn_out = self.linear2(ffn_out) 
-        ffn_out = self.dropout5(ffn_out)
-
-        output  = self.layernorm4(attn_out + ffn_out)
-
-        return output, [joint_attn_1_weight, joint_attn_2_weight, self_attn_weight]
-    
-    
-    
-    def forward_pre_norm(self, src_sequence, positional_embedding, spatial_embedding):
-        """
-        :param src_sequence         : a tensor of shape (batch_size, sequence_length, num_joints, model_dim)
-        :param positional_embedding : a tensor of shape (1, sequence_length, model_dim), getting broadcasted 
-        :param spatial_embedding    : a tensor of shape (1, num_joints,      model_dim), getting broadcasted 
-        :return 
-            output       : a tensor of shape (batch_size, sequence_length, num_joints, model_dim) 
-            attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-
-
-        """
-        :param src_sequence         : a tensor of shape (batch_size, sequence_length, num_joints, model_dim)
-        :param positional_embedding : a tensor of shape (1, sequence_length, model_dim), getting broadcasted 
-        :param spatial_embedding    : a tensor of shape (1, num_joints,      model_dim), getting broadcasted 
-        :return 
-            output       : a tensor of shape (batch_size, sequence_length, num_joints, model_dim) 
-            attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-
-        batch_size, sequence_length, num_joints, model_dim = src_sequence.shape
-        src_sequence = self.layernorm1(src_sequence)
-
-        inp = src_sequence.clone()
-        inp = inp.contiguous().view(batch_size * sequence_length, num_joints, model_dim)
-
-
-
-        joint_attn_1, joint_attn_1_weight = self.joint_attention_1(
-            query = self.add_spatial_embedding(inp, spatial_embedding), 
-            key   = self.add_spatial_embedding(inp, spatial_embedding),  
-            value = self.add_spatial_embedding(inp, spatial_embedding), 
-            need_weights = True, 
-        )
-
-        joint_attn_1     = self.dropout1(joint_attn_1)
-        joint_attn_1_out = self.layernorm2(joint_attn_1 + inp)
-
-        joint_attn_1_out  = joint_attn_1_out.contiguous().view(batch_size, sequence_length, num_joints, model_dim).permute(0, 2, 1, 3)
-        joint_attn_1_out  = joint_attn_1_out.contiguous().view(batch_size * num_joints, sequence_length, model_dim) 
-
-
-        joint_attn_2, joint_attn_2_weight = self.joint_attention_2(
-            query = self.add_spatial_embedding(joint_attn_1_out, positional_embedding), 
-            key   = self.add_spatial_embedding(joint_attn_1_out, positional_embedding),  
-            value = joint_attn_1_out, 
-            need_weights = True, 
-        )
-
-        joint_attn_2     = self.dropout2(joint_attn_2)
-        joint_attn_2_out = self.layernorm3(joint_attn_2 + joint_attn_1_out)
-        joint_attn_2_out = joint_attn_2_out.contiguous().view(batch_size, num_joints, sequence_length, model_dim).permute(0, 2, 1, 3)
-        attn_in          = joint_attn_2_out.contiguous().view(batch_size, sequence_length, num_joints * model_dim).clone()
-
-
-        self_attn, self_attn_weight = self.self_attention(
-            query = self.add_positional_embedding(attn_in, positional_embedding), 
-            key   = self.add_positional_embedding(attn_in, positional_embedding), 
-            value = attn_in, 
-            need_weights = True, 
-        )
-
-       
-        self_attn = self.dropout3(self_attn) 
-        attn_out  = self.layernorm4(attn_out + attn_in)
-        attn_out  = attn_out.contiguous().view(batch_size, sequence_length, num_joints, model_dim)
-
-        ffn_out = self.linear1(attn_out) 
-        ffn_out = self.relu(ffn_out)
-        ffn_out = self.dropout4(ffn_out) 
-        
-        ffn_out = self.linear2(ffn_out) 
-        ffn_out = self.dropout5(ffn_out)
-
-        output        = attn_out + ffn_out
-        return output, [joint_attn_1_weight, joint_attn_2_weight, self_attn_weight]
-    
-    def forward(self, src_sequence, positional_embedding, spatial_embedding): 
-        """
-        :param src_sequence       : a tensor of shape (batch_size, sequence_length, num_joints, model_dim)
-        :param positional_embedding : a tensor of shape (1, sequence_length, model_dim), getting broadcasted 
-        :param spatial_embedding  : a tensor of shape (1, num_joints,      model_dim), getting broadcasted 
-        :return 
-             output       : a tensor of shape (batch_size, sequence_length, model_dim) 
-             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
-        """
-        if self.pre_normalization : 
-            return self.forward_pre_norm(src_sequence, positional_embedding, spatial_embedding) 
-        return self.forward_post_norm(src_sequence, positional_embedding, spatial_embedding)
 
 class ParallelDualEncoderLayer(nn.Module):
     """
@@ -878,17 +637,6 @@ class Encoder(nn.Module):
                 pre_normalization = self.pre_normalization
             )
             return layer
-        elif self.attention_mode == 'joint':
-            layer = JointAttentionEncoderLayer(
-                num_joints        = self.num_joints, 
-                num_heads         = self.num_heads, 
-                model_dim         = self.model_dim, 
-                fc_hidden_dim     = self.fc_hidden_dim,
-                dropout           = self.dropout, 
-                device            = self.device, 
-                pre_normalization = self.pre_normalization, 
-            )
-            return layer 
         else : 
             raise NotImplementedError(f"Attention mode {self.attention_mode} not implemented for encoder") 
     
@@ -935,7 +683,7 @@ class Encoder(nn.Module):
         return out, attn_weight_lst
     
     def forward(self, src_sequence, positional_embedding = None, spatial_embedding = None):
-        if self.attention_mode in ['parallel_dual', 'stacked_dual', 'joint']:
+        if self.attention_mode in ['parallel_dual', 'stacked_dual']:
             return self.forward_with_spatial(src_sequence, positional_embedding, spatial_embedding)
         elif self.attention_mode == 'vanilla':
             return self.forward_single(src_sequence, positional_embedding)

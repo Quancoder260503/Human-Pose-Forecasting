@@ -22,6 +22,10 @@ from data.RootRelativeNTU       import *
 from data.Visualization         import * 
 from data.ImgUtil               import *
 from data.DatasetUtil           import *
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, Subset
+from torch.utils.data.distributed import DistributedSampler
 
 
 
@@ -41,33 +45,40 @@ class Runner(ABC):
         self.get_predicted_n_loss  = (
             self.get_deterministic_out if self.args.model_type == 'deterministic' else self.get_vae_output
         )
-        
+
+        # DDP setup
+        dist.init_process_group(backend='nccl')
+        self.local_rank  = int(os.environ['LOCAL_RANK'])
+        self.global_rank = int(os.environ['RANK'])
+        torch.cuda.set_device(self.local_rank)
+        self.args.device = torch.device(f'cuda:{self.local_rank}')
+
         self.model  = self.get_model()
-        self.model  = self.model.to(self.args.device) 
+        self.model  = self.model.to(self.args.device)
+        self.model  = DDP(self.model, device_ids=[self.local_rank])
+
         self.criterion = self.get_criterions()
         self.optimizer = self.get_optimizer(self.model.parameters())
         self.init_lr_scheduler()
         self.get_dataset()
-
-        print('-' * 40)
-        print('Number of train batches      =', min(self.args.step_per_epoch, len(self.train_loader)))
-        print('Number of validation batches =', len(self.val_loader))
-        print('Number of testing instances  =', len(self.test_dataset))
         
         self.start_epoch = 0 
 
         if os.path.exists(self.model_checkpoint): 
-            model_dict = torch.load(self.model_checkpoint, weights_only = False) 
+            map_location = {'cuda:0': f'cuda:{self.local_rank}'}
+            model_dict   = torch.load(self.model_checkpoint, map_location=map_location, weights_only=False) 
             self.start_epoch = model_dict['epoch'] + 1 
-
-            self.model.load_state_dict(model_dict['model'])
-        
-            
+            self.model.module.load_state_dict(model_dict['model'])
             self.optimizer.load_state_dict(model_dict['optimizer'])
             self.lr_scheduler.load_state_dict(model_dict['scheduler'])
 
-        self._last_attn   = None 
+        self._last_attn = None 
         
+        if self.global_rank == 0:
+            print('-' * 40)
+            print('Number of train batches      =', min(self.args.step_per_epoch, len(self.train_loader)))
+            print('Number of validation batches =', len(self.val_loader))
+            print('Number of testing instances  =', len(self.test_loader))
 
     
     def _forward(self, train, src_seq, tgt_seq):
@@ -361,28 +372,37 @@ class Runner(ABC):
         test_dataset, val_dataset = random_split(test_dataset, lengths = [num_test, num_valid])
 
 
+        self.train_sampler = DistributedSampler(train_dataset)
+        self.val_sampler   = DistributedSampler(val_dataset,   shuffle = False)
+        self.test_sampler  = DistributedSampler(self.test_dataset, shuffle = False)
+
         self.train_loader = DataLoader(
             dataset     = train_dataset, 
             batch_size  = self.args.batch_size,
             num_workers = self.args.num_workers,
-            pin_memory  = self.args.pin_memory, 
-            shuffle     = True, 
+            pin_memory  = self.args.pin_memory,
+            sampler     = self.train_sampler,   # replaces shuffle=True
         )
 
         self.val_loader = DataLoader(
             dataset     = val_dataset,
             batch_size  = self.args.batch_size,
             num_workers = self.args.num_workers,
-            pin_memory  = self.args.pin_memory,  
+            pin_memory  = self.args.pin_memory,
+            sampler     = self.val_sampler,
         )
 
         self.test_loader = DataLoader(
-            dataset     = test_dataset,
+            dataset     = self.test_dataset,
             batch_size  = self.args.batch_size,
             num_workers = self.args.num_workers,
-            pin_memory  = self.args.pin_memory, 
+            pin_memory  = self.args.pin_memory,
+            sampler     = self.test_sampler,
         )
+
 
         self.mean = train_dataset.mean if hasattr(train_dataset, "mean") else None
         self.std  = train_dataset.std  if hasattr(train_dataset, "std")  else None
-
+    
+    def set_epoch(self, epoch):
+        self.train_sampler.set_epoch(epoch) 

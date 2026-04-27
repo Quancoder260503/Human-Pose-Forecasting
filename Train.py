@@ -26,7 +26,7 @@ def train(args):
     print("Start Training ...\n")
     for epoch in range(runner.start_epoch, args.num_epochs):
         print(f"learning rate for epoch {epoch + 1}: {runner.lr_scheduler.get_last_lr()[0]}")
-        
+        runner.set_epoch(epoch)
         train_loss, train_predictions, train_rmse, val_loss, val_predictions, val_rmse = runner.process_per_epoch(epoch)
 
         train_acc = get_acc(train_predictions)

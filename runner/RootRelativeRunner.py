@@ -331,7 +331,6 @@ class RootRelativeRunner(Runner):
             show_video(videos_real, fps = 2, output_path = 'root_relative_real.mp4')
             plt.tight_layout()
             plt.show() 
-        
 
     
 

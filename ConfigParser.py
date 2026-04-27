@@ -1,6 +1,17 @@
 import argparse
 import yaml
+from runner.RunnerUtil import *
 
+
+def get_runner(args):
+    if   args.model_input_type == 'coordinates' : 
+        return CoordinatesRunner
+    elif args.model_input_type == 'velocity' : 
+        return VelocityRunner 
+    elif args.model_input_type == 'root_relative' :
+        return RootRelativeRunner 
+    else : 
+        raise NotImplementedError('representation is not supported for dataset')
 
 def str2bool(value):
     if isinstance(value, bool):

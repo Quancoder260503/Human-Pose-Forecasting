@@ -96,43 +96,43 @@ class NTUCoordinates(Dataset2D):
         visibility = torch.tensor(visibility)
         label  = torch.cat([label, visibility], dim = -1) # (x, y, visibility)
         
-        if self.train : 
-            start_index = np.random.randint(0, n_frames - total_frame + 1)
+       # if self.train : 
+        start_index = np.random.randint(0, n_frames - total_frame + 1)
 
-            observed_poses  = label[start_index : (start_index + self.num_training_frame), :, :]
-            observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3)
+        observed_poses  = label[start_index : (start_index + self.num_training_frame), :, :]
+        observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3)
 
-            targeted_poses  = label[(start_index + self.num_training_frame): (start_index + total_frame), :, :]
-            targeted_poses  = targeted_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
-            
-            observed_poses[torch.isnan(observed_poses)] = 0.5 
-            targeted_poses[torch.isnan(targeted_poses)] = 0.5
-            
-            return observed_poses, targeted_poses, start_index, name
+        targeted_poses  = label[(start_index + self.num_training_frame): (start_index + total_frame), :, :]
+        targeted_poses  = targeted_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
         
-        else : 
-            """
-            For testing we are going to test the generation based on all samples
-            """
-            observed_poses_lst = [] 
-            targeted_poses_lst = [] 
+        observed_poses[torch.isnan(observed_poses)] = 0.5 
+        targeted_poses[torch.isnan(targeted_poses)] = 0.5
+        
+        return observed_poses, targeted_poses, start_index, name
+        
+        # else : 
+        #     """
+        #     For testing we are going to test the generation based on all samples
+        #     """
+        #     observed_poses_lst = [] 
+        #     targeted_poses_lst = [] 
 
-            for start_index in range(0, n_frames - total_frame + 1):
-                observed_poses  = label[start_index : (start_index + self.num_training_frame), :, :]
-                observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3)
+        #     for start_index in range(0, n_frames - total_frame + 1):
+        #         observed_poses  = label[start_index : (start_index + self.num_training_frame), :, :]
+        #         observed_poses  = observed_poses.contiguous().view(self.num_training_frame, self.num_joints * 3)
 
-                targeted_poses  = label[(start_index + self.num_training_frame): (start_index + total_frame), :, :]
-                targeted_poses  = targeted_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
+        #         targeted_poses  = label[(start_index + self.num_training_frame): (start_index + total_frame), :, :]
+        #         targeted_poses  = targeted_poses.contiguous().view(self.num_testing_frame, self.num_joints * 3) 
 
-                observed_poses[torch.isnan(observed_poses)] = 0.5 
-                targeted_poses[torch.isnan(targeted_poses)] = 0.5
+        #         observed_poses[torch.isnan(observed_poses)] = 0.5 
+        #         targeted_poses[torch.isnan(targeted_poses)] = 0.5
 
-                observed_poses_lst.append(observed_poses) 
-                targeted_poses_lst.append(targeted_poses)
+        #         observed_poses_lst.append(observed_poses) 
+        #         targeted_poses_lst.append(targeted_poses)
 
-            observed_poses_lst = torch.stack(observed_poses_lst, dim = 0)
-            targeted_poses_lst = torch.stack(targeted_poses_lst, dim = 0)
+        #     observed_poses_lst = torch.stack(observed_poses_lst, dim = 0)
+        #     targeted_poses_lst = torch.stack(targeted_poses_lst, dim = 0)
 
-            return observed_poses_lst, targeted_poses_lst, n_frames, name
+        #     return observed_poses_lst, targeted_poses_lst, n_frames, name
         
     

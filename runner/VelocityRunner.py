@@ -162,14 +162,13 @@ class VelocityRunner(Runner):
     
 
     def evaluation(self):
-
         self.model.eval()
         with torch.no_grad():
             test_losses         = [] 
             test_per_joint_rmse = []
             test_total_pck      = self.pck_dict_fn()
             
-            for _, (observed_poses, target_poses, observed_velocities, target_velocities, _, _) in enumerate(self.test_dataset):
+            for _, (observed_poses, target_poses, observed_velocities, target_velocities, _, _) in enumerate(self.test_loader):
                 observed_poses = observed_poses.to(self.args.device, dtype = torch.float32)           # (B, T_train, J * 2)
                 target_poses   = target_poses.to(self.args.device,   dtype = torch.float32)           # (B, T_test,  J * 2)
                 observed_velocities = observed_velocities.to(self.args.device, dtype = torch.float32) # (B, T_train, J * 2)
@@ -215,7 +214,11 @@ class VelocityRunner(Runner):
                     for key in predictions[dict]:
                         test_total_pck[dict][key] += predictions[dict][key]
 
-            return np.mean(test_losses), test_total_pck, np.mean(test_per_joint_rmse) 
+            print(
+                f"Test Loss: {np.mean(test_losses):.4f} | "
+                f"PCK: {test_total_pck:.4f} | "
+                f"Per Joint RMSE: {np.mean(test_per_joint_rmse):.4f}"
+            )
 
 
     def inference(self):

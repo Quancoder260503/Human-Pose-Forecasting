@@ -5,16 +5,10 @@ import math
 from data.DatasetUtil         import *
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-from runner.CoordinatesRunner  import * 
-from runner.RootRelativeRunner import *
-from runner.VelocityRunner     import * 
-from runner.Losses             import *
 
 """
 MODEL UTILS 
 """
-
-PCK_ALPHA = 0.05
 
 def save_checkpoint(epoch, model, optimizer, scheduler, save_path):
     """
@@ -178,13 +172,3 @@ def KL_annealing(epoch, total_epochs, schedule_type = 'linear', start_beta = 0.0
     else:
         raise ValueError(f"Unknown schedule type: {schedule_type}")
 
-
-def get_runner(args):
-    if   args.model_input_type == 'coordinates' : 
-        return CoordinatesRunner
-    elif args.model_input_type == 'velocity' : 
-        return VelocityRunner 
-    elif args.model_input_type == 'root_relative' :
-        return RootRelativeRunner 
-    else : 
-        raise NotImplementedError('representation is not supported for dataset')

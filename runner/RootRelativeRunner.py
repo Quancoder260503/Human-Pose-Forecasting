@@ -190,7 +190,7 @@ class RootRelativeRunner(Runner):
         
         self.model.eval()
         with torch.no_grad():
-            for _, (observed_poses, observed_act_seqs, targeted_poses, targeted_act_seqs, _, _) in enumerate(self.test_dataset): 
+            for _, (observed_poses, observed_act_seqs, targeted_poses, targeted_act_seqs, _, _) in enumerate(self.test_loader): 
                 observed_act_seqs     = observed_act_seqs.to(self.args.device, dtype = torch.float32)
                 targeted_act_seqs     = targeted_act_seqs.to(self.args.device, dtype = torch.float32)
 
@@ -233,7 +233,11 @@ class RootRelativeRunner(Runner):
                     for key in predictions[metric]:
                         test_total_pck[metric][key] += predictions[metric][key]
         
-            return np.mean(test_losses), test_total_pck, np.mean(test_per_joint_rmse) 
+            print(
+                f"Test Loss: {np.mean(test_losses):.4f} | "
+                f"PCK: {test_total_pck:.4f} | "
+                f"Per Joint RMSE: {np.mean(test_per_joint_rmse):.4f}"
+            )
 
     def inference(self):
         self.model.eval()

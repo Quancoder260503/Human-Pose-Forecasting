@@ -333,99 +333,56 @@ class Runner(ABC):
 
     def get_dataset(self):
         dataset_class = self.prepare_dataset()
-        if self.args.dataset == 'pennaction':
-            dataset = dataset_class(
-                num_joints         = self.args.num_joints,
-                num_training_frame = self.args.num_training_frame, 
-                num_testing_frame  = self.args.num_testing_frame,
-                frame_input_h      = self.args.frame_input_h, 
-                frame_input_w      = self.args.frame_input_w,
-                box_size           = self.args.boxsize, 
-                on_debug_mode      = self.args.mode == 'debug', 
-                train              = True, 
-            )
+
+        train_dataset = dataset_class(
+            num_joints         = self.args.num_joints,
+            num_training_frame = self.args.num_training_frame, 
+            num_testing_frame  = self.args.num_testing_frame,
+            frame_input_h      = self.args.frame_input_h, 
+            frame_input_w      = self.args.frame_input_w,
+            box_size           = self.args.boxsize, 
+            on_debug_mode      = self.args.mode == 'debug', 
+            train              = True, 
+        )
+
+        test_dataset = dataset_class(
+            num_joints         = self.args.num_joints,
+            num_training_frame = self.args.num_training_frame, 
+            num_testing_frame  = self.args.num_testing_frame,
+            frame_input_h      = self.args.frame_input_h, 
+            frame_input_w      = self.args.frame_input_w,
+            box_size           = self.args.boxsize, 
+            on_debug_mode      = self.args.mode == 'debug', 
+            train              = False, 
+        )
+
+        num_valid = int(len(test_dataset) * 0.1)  # Validation set rate
+        num_test = len(test_dataset) - num_valid
+        test_dataset, val_dataset = random_split(test_dataset, lengths = [num_test, num_valid])
 
 
-            self.test_dataset = dataset_class(
-                num_joints         = self.args.num_joints, 
-                num_training_frame = self.args.num_training_frame, 
-                num_testing_frame  = self.args.num_testing_frame,
-                frame_input_h      = self.args.frame_input_h, 
-                frame_input_w      = self.args.frame_input_w,
-                box_size           = self.args.boxsize, 
-                on_debug_mode      = self.args.mode == 'debug', 
-                train              = False, 
-            )
-            
-            num_valid = int(len(dataset) * 0.05)  # Validation set rate
-            num_train = len(dataset) - num_valid
-            train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
+        self.train_loader = DataLoader(
+            dataset     = train_dataset, 
+            batch_size  = self.args.batch_size,
+            num_workers = self.args.num_workers,
+            pin_memory  = self.args.pin_memory, 
+            shuffle     = True, 
+        )
 
+        self.val_loader = DataLoader(
+            dataset     = val_dataset,
+            batch_size  = self.args.batch_size,
+            num_workers = self.args.num_workers,
+            pin_memory  = self.args.pin_memory,  
+        )
 
-            self.train_loader = DataLoader(
-                dataset     = train_dataset, 
-                batch_size  = self.args.batch_size,
-                num_workers = self.args.num_workers,
-                pin_memory  = self.args.pin_memory,
-                shuffle     = True,  
-            )
+        self.test_loader = DataLoader(
+            dataset     = test_dataset,
+            batch_size  = self.args.batch_size,
+            num_workers = self.args.num_workers,
+            pin_memory  = self.args.pin_memory, 
+        )
 
-            self.val_loader = DataLoader(
-                dataset     = val_dataset,
-                batch_size  = self.args.batch_size,
-                num_workers = self.args.num_workers,
-                pin_memory  = self.args.pin_memory, 
-            )
-        
-        elif self.args.dataset == 'ntu': 
-            dataset = dataset_class(
-                num_joints         = self.args.num_joints,
-                num_training_frame = self.args.num_training_frame, 
-                num_testing_frame  = self.args.num_testing_frame,
-                frame_input_h      = self.args.frame_input_h, 
-                frame_input_w      = self.args.frame_input_w,
-                box_size           = self.args.boxsize, 
-                on_debug_mode      = self.args.mode == 'debug', 
-                train              = True, 
-            )
-
-            num_valid = int(len(dataset) * 0.05)  # Validation set rate
-            num_train = len(dataset) - num_valid
-            train_dataset, val_dataset = random_split(dataset, lengths = [num_train, num_valid])
-
-            self.test_dataset =  dataset_class(
-                num_joints         = self.args.num_joints,
-                num_training_frame = self.args.num_training_frame, 
-                num_testing_frame  = self.args.num_testing_frame,
-                frame_input_h      = self.args.frame_input_h, 
-                frame_input_w      = self.args.frame_input_w,
-                box_size           = self.args.boxsize, 
-                on_debug_mode      = self.args.mode == 'debug', 
-                train              = False, 
-            )
-        
-
-            self.train_loader = DataLoader(
-                dataset     = train_dataset, 
-                batch_size  = self.args.batch_size,
-                num_workers = self.args.num_workers,
-                pin_memory  = self.args.pin_memory, 
-                shuffle     = True, 
-            )
-
-            self.val_loader = DataLoader(
-                dataset     = val_dataset,
-                batch_size  = self.args.batch_size,
-                num_workers = self.args.num_workers,
-                pin_memory  = self.args.pin_memory,  
-            )
-
-        else : 
-            raise NotImplementedError('dataset not supported')
-
-        self.mean = dataset.mean  if hasattr(dataset, "mean") else None
-        self.std  = dataset.std   if hasattr(dataset, "std")  else None         
-
-
-
+        self.mean = train_dataset.mean if hasattr(train_dataset, "mean") else None
+        self.std  = train_dataset.std  if hasattr(train_dataset, "std")  else None
 

@@ -151,50 +151,50 @@ class NTURootRelative(Dataset2D):
         action_sequences[:, 1]  = action_sequences[:, 1] / self.frame_input_h
 
 
-        if self.train : 
-            start_index = np.random.randint(0, n_frames - total_frame + 1)
-            observed_poses    = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :]) 
-            observed_act_seqs = torch.tensor(action_sequences[start_index : (start_index + self.num_training_frame), :]) 
+       # if self.train: 
+        start_index = np.random.randint(0, n_frames - total_frame + 1)
+        observed_poses    = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :]) 
+        observed_act_seqs = torch.tensor(action_sequences[start_index : (start_index + self.num_training_frame), :]) 
 
-            observed_poses[torch.isnan(observed_poses)]       = 0
-            observed_act_seqs[torch.isnan(observed_act_seqs)] = 0
+        observed_poses[torch.isnan(observed_poses)]       = 0
+        observed_act_seqs[torch.isnan(observed_act_seqs)] = 0
 
-            targeted_poses    = torch.tensor(label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
-            targeted_act_seqs = torch.tensor(action_sequences[(start_index + self.num_training_frame) : (start_index + total_frame), :]) 
-            
-            targeted_poses[torch.isnan(targeted_poses)]       = 0
-            targeted_act_seqs[torch.isnan(targeted_act_seqs)] = 0
-
-            return observed_poses, observed_act_seqs, targeted_poses, targeted_act_seqs, start_index, name
+        targeted_poses    = torch.tensor(label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
+        targeted_act_seqs = torch.tensor(action_sequences[(start_index + self.num_training_frame) : (start_index + total_frame), :]) 
         
-        else : 
-            observed_pose_lst = [] 
-            targeted_pose_lst = []
-            observed_act_seqs_lst = []
-            targeted_act_seqs_lst = []
+        targeted_poses[torch.isnan(targeted_poses)]       = 0
+        targeted_act_seqs[torch.isnan(targeted_act_seqs)] = 0
 
-            for start_index in range(n_frames - total_frame + 1):
-                observed_poses    = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :]) 
-                observed_act_seqs = torch.tensor(action_sequences[start_index : (start_index + self.num_training_frame), :]) 
-
-                observed_poses[torch.isnan(observed_poses)]       = 0
-                observed_act_seqs[torch.isnan(observed_act_seqs)] = 0
-
-                targeted_poses    = torch.tensor(label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
-                targeted_act_seqs = torch.tensor(action_sequences[(start_index + self.num_training_frame) : (start_index + total_frame), :]) 
+        return observed_poses, observed_act_seqs, targeted_poses, targeted_act_seqs, start_index, name
     
-                targeted_poses[torch.isnan(targeted_poses)]       = 0
-                targeted_act_seqs[torch.isnan(targeted_act_seqs)] = 0
+        # else : 
+        #     observed_pose_lst = [] 
+        #     targeted_pose_lst = []
+        #     observed_act_seqs_lst = []
+        #     targeted_act_seqs_lst = []
+
+        #     for start_index in range(n_frames - total_frame + 1):
+        #         observed_poses    = torch.tensor(label[start_index : (start_index + self.num_training_frame), :, :]) 
+        #         observed_act_seqs = torch.tensor(action_sequences[start_index : (start_index + self.num_training_frame), :]) 
+
+        #         observed_poses[torch.isnan(observed_poses)]       = 0
+        #         observed_act_seqs[torch.isnan(observed_act_seqs)] = 0
+
+        #         targeted_poses    = torch.tensor(label[(start_index + self.num_training_frame) : (start_index + total_frame), :, :])
+        #         targeted_act_seqs = torch.tensor(action_sequences[(start_index + self.num_training_frame) : (start_index + total_frame), :]) 
+    
+        #         targeted_poses[torch.isnan(targeted_poses)]       = 0
+        #         targeted_act_seqs[torch.isnan(targeted_act_seqs)] = 0
 
 
-                observed_pose_lst.append(observed_poses)
-                targeted_pose_lst.append(targeted_poses)
-                observed_act_seqs_lst.append(observed_act_seqs)
-                targeted_act_seqs_lst.append(targeted_act_seqs)   
+        #         observed_pose_lst.append(observed_poses)
+        #         targeted_pose_lst.append(targeted_poses)
+        #         observed_act_seqs_lst.append(observed_act_seqs)
+        #         targeted_act_seqs_lst.append(targeted_act_seqs)   
             
-            observed_pose_lst = torch.stack(observed_pose_lst, dim = 0) 
-            targeted_pose_lst = torch.stack(targeted_pose_lst, dim = 0) 
-            observed_act_seqs_lst = torch.stack(observed_act_seqs_lst, dim = 0) 
-            targeted_act_seqs_lst = torch.stack(targeted_act_seqs_lst, dim = 0)
+        #     observed_pose_lst = torch.stack(observed_pose_lst, dim = 0) 
+        #     targeted_pose_lst = torch.stack(targeted_pose_lst, dim = 0) 
+        #     observed_act_seqs_lst = torch.stack(observed_act_seqs_lst, dim = 0) 
+        #     targeted_act_seqs_lst = torch.stack(targeted_act_seqs_lst, dim = 0)
 
-            return observed_pose_lst, observed_act_seqs_lst, targeted_pose_lst, targeted_act_seqs_lst, start_index, name
+        #     return observed_pose_lst, observed_act_seqs_lst, targeted_pose_lst, targeted_act_seqs_lst, start_index, name

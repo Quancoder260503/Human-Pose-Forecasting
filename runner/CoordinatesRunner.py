@@ -166,7 +166,7 @@ class CoordinatesRunner(Runner):
             test_per_joint_rmse = []
             test_total_pck      = self.pck_dict_fn()
 
-            for _, (observed_poses, target_poses, _, _) in enumerate(self.test_dataset): 
+            for _, (observed_poses, target_poses, _, _) in enumerate(self.test_loader): 
                 observed_poses = observed_poses.to(self.args.device, dtype = torch.float32) 
                 target_poses   = target_poses.to(self.args.device, dtype   = torch.float32)
                 
@@ -207,14 +207,18 @@ class CoordinatesRunner(Runner):
                 
                 test_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
         
-            return np.mean(test_losses), test_total_pck, np.mean(test_per_joint_rmse) 
+            print(
+                f"Test Loss: {np.mean(test_losses):.4f} | "
+                f"PCK: {test_total_pck:.4f} | "
+                f"Per Joint RMSE: {np.mean(test_per_joint_rmse):.4f}"
+            )
 
 
     def inference(self):
         self.model.eval()
         with torch.no_grad():
         # Sample from validation dataset and visualize model prediction 
-            observed_poses, target_poses, start_index, name = self.test_dataset[random.randint(0, len(self.test_dataset))]
+            observed_poses, target_poses, start_index, name = self.test_dataset[random.randint(0, len(self.val_loader))]
             
             observed_poses  = observed_poses.to(self.args.device, dtype = torch.float32)[0].unsqueeze(0)
             target_poses    = target_poses.to(self.args.device,   dtype = torch.float32)[0].unsqueeze(0)

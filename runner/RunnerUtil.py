@@ -156,8 +156,9 @@ def calc_rmse(predicted_poses, target_poses, num_joints):
         target_poses    = target_poses.contiguous().view(target_poses.shape[0], target_poses.shape[1], num_joints, -1) 
 
     diff = predicted_poses[:, :, :, :2] - target_poses[:, :, :, :2] 
-    per_joint_rmse = torch.sqrt(torch.mean(torch.sum(diff ** 2, dim = -1), dim = (0, 1)))
-    return per_joint_rmse.mean().item()
+    # (batch, time, joints) -> mean over batch and joints, keep time
+    per_timestep_rmse = torch.sqrt(torch.mean(torch.sum(diff ** 2, dim=-1), dim=(0, 2)))  # (time,)
+    return per_timestep_rmse.cpu().numpy()  # shape (prediction_len,)
 
 
 

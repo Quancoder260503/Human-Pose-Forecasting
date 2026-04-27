@@ -41,7 +41,7 @@ class PosePredictionMLP(nn.Module):
             nn.Linear(self.hidden_layers[-1], self.predict_len * self.pose_dim)
         )
 
-    def forward(self, observed_poses, target_poses, prediction_len, teacher_forcing_rate = 0.5): 
+    def forward(self, observed_poses, prediction_len): 
         """
         :param observed_poses : tensor of shape (batch, train_len, pose_dim)
         :param target_poses   : tensor of shape (batch, test_len,  pose_dim)

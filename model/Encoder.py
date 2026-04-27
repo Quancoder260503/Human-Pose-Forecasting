@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 
 # Learn more meaningful mapping rather than just an MLP 
 
-
 class VanillaEncoderLayer(nn.Module):
     def __init__(self, 
                 num_heads, 
@@ -177,6 +176,7 @@ class ParallelDualEncoderLayer(nn.Module):
 
         self.layernorm1          = nn.LayerNorm(self.model_dim)
         self.layernorm2          = nn.LayerNorm(self.model_dim)
+        self.layernorm3          = nn.LayerNorm(self.model_dim)
 
         self.relu                = nn.ReLU(inplace = True)
         self.softmax             = nn.Softmax(dim = -1)
@@ -223,41 +223,43 @@ class ParallelDualEncoderLayer(nn.Module):
             attn_weights : a tensor of shape (batch_size, query_sequence_length, kv_sequence_length) 
         """
         batch_size, sequence_length, num_joints, model_dim = src_sequence.shape
-        temporal_inp = src_sequence.permute(0, 2, 1, 3).contiguous().view(batch_size * num_joints, sequence_length, model_dim).clone()
+       
+        position_inp = src_sequence.permute(0, 2, 1, 3).contiguous().view(batch_size * num_joints, sequence_length, model_dim).clone()
         spatial_inp  = src_sequence.contiguous().view(batch_size * sequence_length, num_joints, model_dim).clone()
         
         # Temporal attention
-
-        temporal_self_attn, temporal_weight = self.temporal_attention(
-            query = self.add_positional_embedding(temporal_inp, positional_embedding), 
-            key   = self.add_positional_embedding(temporal_inp, positional_embedding),  
-            value = temporal_inp, 
+        pos_attn, position_weight = self.temporal_attention(
+            query = self.add_positional_embedding(position_inp, positional_embedding), 
+            key   = self.add_positional_embedding(position_inp, positional_embedding),  
+            value = position_inp, 
             need_weights = True
-        ) # (B * J, T, D)
-        temporal_self_attn = self.dropout1(temporal_self_attn)
+        ) 
 
+        pos_attn = self.dropout1(pos_attn) 
+        pos_attn_out = self.layernorm1(pos_attn + position_inp)
+        pos_attn_out = pos_attn_out.contiguous().view(batch_size, num_joints, sequence_length, model_dim).permute(0, 2, 1, 3)
+
+
+    
         # Spatial attention
-        spatial_self_attn, spatial_weight  = self.spatial_attention(
+        spatial_attn, spatial_weight  = self.spatial_attention(
             query = self.add_spatial_embedding(spatial_inp, spatial_embedding), 
             key   = self.add_spatial_embedding(spatial_inp, spatial_embedding), 
             value = spatial_inp,
             need_weights = True
         )  # (B * T, J, D)
-        spatial_self_attn = self.dropout2(spatial_self_attn)
-      
 
-        temporal_self_attn = temporal_self_attn.contiguous().view(batch_size, num_joints, sequence_length, model_dim).permute(0, 2, 1, 3)
-        spatial_self_attn  = spatial_self_attn.contiguous().view(batch_size, sequence_length, num_joints, model_dim)
+        spatial_attn = self.dropout2(spatial_attn)
+        spatial_attn_out = self.layernorm2(spatial_attn + spatial_inp)
+        spatial_attn_out = spatial_attn_out.contiguous().view(batch_size, sequence_length, num_joints, model_dim)
 
         
-        stacked_self_attn  = torch.cat([temporal_self_attn, spatial_self_attn], dim = -1) # (B, T, J, 2 * D) 
+        stacked_self_attn  = torch.cat([pos_attn_out, spatial_attn_out], dim = -1) # (B, T, J, 2 * D) 
         stacked_self_attn  = self.proj_weight(stacked_self_attn) # (B, T, J, 2)
         combined_weight    = self.softmax(stacked_self_attn)     # (B, T, J, 2) 
         w_temporal, w_spatial = combined_weight[:, :, :, 0].unsqueeze(-1), combined_weight[:, :, :, 1].unsqueeze(-1) # (B, T, J, 1) 
 
-        combined_self_attn = w_temporal * temporal_self_attn + w_spatial * spatial_self_attn # (B, T, J, D)
-
-        attn_out = self.layernorm1(src_sequence + combined_self_attn)
+        attn_out = w_temporal * pos_attn_out + w_spatial * spatial_attn_out # (B, T, J, D)
 
         ffn_out = self.linear1(attn_out) 
         ffn_out = self.relu(ffn_out)
@@ -265,8 +267,10 @@ class ParallelDualEncoderLayer(nn.Module):
         
         ffn_out = self.linear2(ffn_out) 
         ffn_out = self.dropout4(ffn_out)
-        output        = self.layernorm2(attn_out + ffn_out)
-        return output, [temporal_weight, spatial_weight]
+        out     = self.layernorm3(attn_out + ffn_out)
+
+
+        return out, [position_weight, spatial_weight]
     
     def forward_pre_norm(self, src_sequence, positional_embedding, spatial_embedding):
         """
@@ -280,51 +284,55 @@ class ParallelDualEncoderLayer(nn.Module):
         src_sequence = self.layernorm1(src_sequence)
 
         batch_size, sequence_length, num_joints, model_dim = src_sequence.shape
-
-        temporal_inp = src_sequence.permute(0, 2, 1, 3).contiguous().view(batch_size * num_joints, sequence_length, model_dim).clone()
-        spatial_inp  = src_sequence.contiguous().view(batch_size * sequence_length, num_joints, model_dim).clone() 
+       
+        position_inp = src_sequence.permute(0, 2, 1, 3).contiguous().view(batch_size * num_joints, sequence_length, model_dim).clone()
+        spatial_inp  = src_sequence.contiguous().view(batch_size * sequence_length, num_joints, model_dim).clone()
         
         # Temporal attention
-
-        temporal_self_attn, temporal_weight = self.temporal_attention(
-            query = self.add_positional_embedding(temporal_inp, positional_embedding), 
-            key   = self.add_positional_embedding(temporal_inp, positional_embedding),  
-            value = temporal_inp, 
+        pos_attn, position_weight = self.temporal_attention(
+            query = self.add_positional_embedding(position_inp, positional_embedding), 
+            key   = self.add_positional_embedding(position_inp, positional_embedding),  
+            value = position_inp, 
             need_weights = True
-        ) # (B * J, T, D)
-        temporal_self_attn = self.dropout1(temporal_self_attn)
+        ) 
 
+        pos_attn = self.dropout1(pos_attn) 
+        pos_attn_out = self.layernorm2(pos_attn + position_inp)
+        pos_attn_out = pos_attn_out.contiguous().view(batch_size, num_joints, sequence_length, model_dim).permute(0, 2, 1, 3)
+
+
+    
         # Spatial attention
-        spatial_self_attn, spatial_weight  = self.spatial_attention(
+        spatial_attn, spatial_weight  = self.spatial_attention(
             query = self.add_spatial_embedding(spatial_inp, spatial_embedding), 
             key   = self.add_spatial_embedding(spatial_inp, spatial_embedding), 
             value = spatial_inp,
             need_weights = True
         )  # (B * T, J, D)
-        spatial_self_attn = self.dropout2(spatial_self_attn)
-      
 
-        temporal_self_attn = temporal_self_attn.contiguous().view(batch_size, num_joints, sequence_length, model_dim).permute(0, 2, 1, 3)
-        spatial_self_attn  = spatial_self_attn.contiguous().view(batch_size, sequence_length, num_joints, model_dim)
+        spatial_attn = self.dropout2(spatial_attn)
+        spatial_attn_out = self.layernorm3(spatial_attn + spatial_inp)
+        spatial_attn_out = spatial_attn_out.contiguous().view(batch_size, sequence_length, num_joints, model_dim)
+
         
-        stacked_self_attn  = torch.cat([temporal_self_attn, spatial_self_attn], dim = -1) # (B, T, J, 2 * D) 
+        stacked_self_attn  = torch.cat([pos_attn_out, spatial_attn_out], dim = -1) # (B, T, J, 2 * D) 
         stacked_self_attn  = self.proj_weight(stacked_self_attn) # (B, T, J, 2)
         combined_weight    = self.softmax(stacked_self_attn)     # (B, T, J, 2) 
         w_temporal, w_spatial = combined_weight[:, :, :, 0].unsqueeze(-1), combined_weight[:, :, :, 1].unsqueeze(-1) # (B, T, J, 1) 
 
-        combined_self_attn = w_temporal * temporal_self_attn + w_spatial * spatial_self_attn # (B, T, J, D)
+        attn_out = w_temporal * pos_attn_out + w_spatial * spatial_attn_out # (B, T, J, D)
 
+        ffn_out = self.linear1(attn_out) 
+        ffn_out = self.relu(ffn_out)
+        ffn_out = self.dropout3(ffn_out) 
+        
+        ffn_out = self.linear2(ffn_out) 
+        ffn_out = self.dropout4(ffn_out)
+        
+        out     = attn_out + ffn_out
 
-        attn_out = self.layernorm2(src_sequence + combined_self_attn)
+        return out, [position_weight, spatial_weight]
 
-        ffn_out  = self.linear1(attn_out)
-        ffn_out  = self.relu(ffn_out) 
-        ffn_out  = self.dropout3(ffn_out) 
-
-        ffn_out  = self.linear2(ffn_out)
-        ffn_out  = self.dropout4(ffn_out)
-        output   = attn_out + ffn_out
-        return output, [temporal_weight, spatial_weight]
     
     def forward(self, src_sequence, positional_embedding, spatial_embedding): 
         """
@@ -338,7 +346,7 @@ class ParallelDualEncoderLayer(nn.Module):
         if self.pre_normalization : 
             return self.forward_pre_norm(src_sequence, positional_embedding, spatial_embedding) 
         return self.forward_post_norm(src_sequence, positional_embedding, spatial_embedding)
-
+       
 class StackedDualEncoder(nn.Module):
     """
     Stacked dual attention layer, combining spatial and temporal attention. 
@@ -604,7 +612,7 @@ class Encoder(nn.Module):
         ])
     
     def make_encoder_layer(self): 
-        if self.attention_mode == 'parallel_dual' : 
+        if self.attention_mode == 'parallel' : 
             layer = ParallelDualEncoderLayer(
                 num_joints        = self.num_joints, 
                 num_heads         = self.num_heads, 
@@ -615,7 +623,7 @@ class Encoder(nn.Module):
                 pre_normalization = self.pre_normalization, 
             )
             return layer
-        elif self.attention_mode == 'stacked_dual': 
+        elif self.attention_mode == 'stack': 
             layer = StackedDualEncoder(
                 num_joints        = self.num_joints, 
                 num_heads         = self.num_heads, 
@@ -683,7 +691,7 @@ class Encoder(nn.Module):
         return out, attn_weight_lst
     
     def forward(self, src_sequence, positional_embedding = None, spatial_embedding = None):
-        if self.attention_mode in ['parallel_dual', 'stacked_dual']:
+        if self.attention_mode in ['parallel', 'stack']:
             return self.forward_with_spatial(src_sequence, positional_embedding, spatial_embedding)
         elif self.attention_mode == 'vanilla':
             return self.forward_single(src_sequence, positional_embedding)

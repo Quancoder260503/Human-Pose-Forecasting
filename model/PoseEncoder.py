@@ -80,6 +80,8 @@ class JointAttention(nn.Module):
         self.proj_model = nn.Linear(self.num_joints * self.embed_dim, self.model_dim) 
         self.relu       = nn.ReLU(inplace = True)
 
+        
+
     def add_pose_embedding(self, inp, embedding): 
         return inp if embedding is None else inp + embedding 
     
@@ -101,13 +103,15 @@ class JointAttention(nn.Module):
         attn_weights = []
  
         for i in range(self.num_layers): 
+            inp = out.clone()
+            inp = self.add_pose_embedding(inp, pose_embedding)
             attn_out, attn_weight = getattr(self, f'attention_{i + 1}')(
-              query = self.add_pose_embedding(out, pose_embedding), 
-              key   = self.add_pose_embedding(out, pose_embedding), 
-              value = self.add_pose_embedding(out, pose_embedding), 
+              query = inp, 
+              key   = inp, 
+              value = inp, 
             )
             attn_out = getattr(self, f'dropout_1_{i + 1}')(attn_out)
-            ffn_in   = getattr(self, f'layernorm_1_{i + 1}')(attn_out + out)
+            ffn_in   = getattr(self, f'layernorm_1_{i + 1}')(attn_out + inp)
 
             ffn_out  = getattr(self, f'ffn_1_{i + 1}')(ffn_in)
             ffn_out  = self.relu(ffn_out)
@@ -120,18 +124,4 @@ class JointAttention(nn.Module):
         out = out.contiguous().view(batch_size, seq_len, self.num_joints, self.embed_dim)
         out = out.contiguous().view(batch_size, seq_len, -1) 
         out = self.proj_model(out)
-
         return out
-  
-    
-if __name__ == '__main__':
-    dof = 3
-    output_channels = 512
-    n_joints = 17
-    seq_len = 49
-
-    model = JointAttention(num_joints = n_joints, joint_dim = dof, embed_dim = 64, model_dim = 256, num_layers = 2, num_heads = 4, dropout = 0.2, fc_hidden_dim = 1024)
-    inputs = torch.FloatTensor(10, seq_len, dof*n_joints)
-    embed  = torch.FloatTensor(1, n_joints, 64)
-    X, _ = model(inputs, embed)
-    print(X.size())

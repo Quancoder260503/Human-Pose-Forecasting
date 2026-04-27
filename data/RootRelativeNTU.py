@@ -56,7 +56,21 @@ class NTURootRelative(Dataset2D):
             dataset_name         = 'ntu', 
         )
         self.major_joint_inds = NTU_MAJOR_JOINTS_INDS_LST
-        self.compute_stats()
+        self.load_compute_norm_stats()
+
+    def load_compute_norm_stats(self):
+        mean_path = os.path.join(self.data_dir, 'mean.npy') # mean path 
+        std_path  = os.path.join(self.data_dir, 'std.npy') # std  path 
+
+        if os.path.exists(mean_path):
+            self.mean = np.load(mean_path) 
+            self.std  = np.load(std_path)
+        elif self.train == True : 
+            self.compute_stats() 
+            np.save(mean_path, self.mean)
+            np.save(std_path,   self.std)
+        else : 
+            raise ValueError('Cannot compute statistics in non-training mode') 
 
     def compute_stats(self):    
         root_distance = []

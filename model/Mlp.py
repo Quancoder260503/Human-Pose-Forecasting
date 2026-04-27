@@ -41,7 +41,7 @@ class PosePredictionMLP(nn.Module):
             nn.Linear(self.hidden_layers[-1], self.predict_len * self.pose_dim)
         )
 
-    def forward(self, observed_poses, target_poses, prediction_len, teacher_forcing_rate = 0.5): 
+    def forward(self, observed_poses, prediction_len): 
         """
         :param observed_poses : tensor of shape (batch, train_len, pose_dim)
         :param target_poses   : tensor of shape (batch, test_len,  pose_dim)
@@ -60,10 +60,6 @@ class PosePredictionMLP(nn.Module):
         out = out.contiguous().view(batch, self.predict_len, self.pose_dim)
         return out 
     
-
-def mlp_loss_function(pred_joints, gt_joints):
-    criterion = nn.SmoothL1Loss(reduction = 'mean')
-    return criterion(pred_joints, gt_joints)
 
 
 def get_mlp_model(pose_dim = 13, coordinates = True, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):

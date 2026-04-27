@@ -213,7 +213,10 @@ class VanillaTransformer(nn.Module):
         """
 
         batch_size, _, _ = src_sequences.shape
-        encoder_inp      = self.proj_model(src_sequences, self.encoder_joint_embedding.weight.unsqueeze(0))  
+        if isinstance(self.proj_model, JointAttention): 
+            encoder_inp      = self.proj_model(src_sequences, self.encoder_joint_embedding.weight.unsqueeze(0))  
+        else : 
+            encoder_inp      = self.proj_model(src_sequences)
 
         memory, encoder_attn_weight = self.encoder(
             src_sequence         = encoder_inp, 
@@ -228,8 +231,11 @@ class VanillaTransformer(nn.Module):
            tgt_sequences    = src_sequences[:, -1, :].clone().unsqueeze(1) # (B, 1, pose_dim)
            tgt_sequences    = tgt_sequences.repeat(1, self.decoding_length, 1) # (B, decoding_len, pose_dim)
         
-        decoder_inp      = self.proj_model(tgt_sequences, self.encoder_joint_embedding.weight.unsqueeze(0))
-        
+        if isinstance(self.proj_model, JointAttention): 
+            decoder_inp      = self.proj_model(tgt_sequences, self.encoder_joint_embedding.weight.unsqueeze(0))
+        else : 
+            decoder_inp      = self.proj_model(tgt_sequences)
+
         query_embedding  = self.decoder_query_embedding.weight.unsqueeze(0)
         
         dec_out_lst, decoder_attn_weight = self.decoder(

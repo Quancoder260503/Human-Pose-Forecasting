@@ -1,12 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from data.DatasetUtil         import *
 import torch 
+import math 
+from data.DatasetUtil         import *
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
-import os
-import shutil
-import math 
+from runner.CoordinatesRunner  import * 
+from runner.RootRelativeRunner import *
+from runner.VelocityRunner     import * 
+from runner.Losses             import *
 
 """
 MODEL UTILS 
@@ -14,17 +16,14 @@ MODEL UTILS
 
 PCK_ALPHA = 0.05
 
-def save_checkpoint(epoch, model, optimizer, scheduler, model_name, prefix_dir_name):
+def save_checkpoint(epoch, model, optimizer, scheduler, save_path):
     """
     Checkpoint saver. Each save overwrites the previous one.
     :param epoch: epoch number
     :param model: transformer model (handles DDP-wrapped models transparently)
     :param optimizer: optimizer state
     :param scheduler: lr scheduler state (pass None if not used)
-    :param model_name: model version name
-    :param prefix_dir_name: checkpoint directory path prefix
     """
-    os.makedirs(prefix_dir_name, exist_ok=True)
 
     state = {
         'epoch'     : epoch,
@@ -33,8 +32,7 @@ def save_checkpoint(epoch, model, optimizer, scheduler, model_name, prefix_dir_n
         'scheduler' : scheduler.state_dict() if scheduler is not None else None,
     }
 
-    filename = prefix_dir_name + f'{model_name}.pth.tar'
-    torch.save(state, filename)
+    torch.save(state, save_path)
     
 """
 Metrics calculation
@@ -179,3 +177,14 @@ def KL_annealing(epoch, total_epochs, schedule_type = 'linear', start_beta = 0.0
         return start_beta + (end_beta - start_beta) / (1 + math.exp(-10 * (progress - 0.5)))
     else:
         raise ValueError(f"Unknown schedule type: {schedule_type}")
+
+
+def get_runner(args):
+    if   args.model_input_type == 'coordinates' : 
+        return CoordinatesRunner
+    elif args.model_input_type == 'velocity' : 
+        return VelocityRunner 
+    elif args.model_input_type == 'root_relative' :
+        return RootRelativeRunner 
+    else : 
+        raise NotImplementedError('representation is not supported for dataset')

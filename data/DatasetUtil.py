@@ -415,3 +415,8 @@ def get_video_frames_pennaction(name, start_index, num_training_frame, num_testi
     target_img   = images[num_training_frame:]
 
     return observed_img, target_img
+
+VIDEO_FUNC = { 
+    'ntu'        : get_video_frames_ntu, 
+    'pennaction' : get_video_frames_pennaction, 
+}

@@ -50,13 +50,15 @@
 # plt.tight_layout()
 # plt.show() 
 
-from model.PoseEncoder import *
+from model.BERT import * 
 
-model = get_transformer_model(
-    transformer_type = 'joint', 
-).to('cuda')
+if __name__ == '__main__':
+    dof = 3
+    output_channels = 512
+    n_joints = 17
+    seq_len = 14
 
-dummy = torch.zeros((1, 14, 39)).to('cuda')
-out = model(dummy)
-#out = torch.cat(out, dim = 0)
-print(out[0].shape)
+    model = get_bert_model(num_joints = 17, coordinates = True)
+    inputs = torch.rand(10, seq_len, dof * n_joints)
+    X = model(inputs)
+    print(X.size())

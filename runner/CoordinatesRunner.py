@@ -15,9 +15,7 @@ class CoordinatesRunner(Runner):
             pck_dict_fn, 
             rmse_dict_fn, 
             model_checkpoint, 
-            std = None, 
-            mean = None, 
-        ):
+    ):
         super(CoordinatesRunner, self).__init__(
             pck_dict_fn      = pck_dict_fn , 
             rmse_dict_fn     = rmse_dict_fn,  

@@ -200,6 +200,22 @@ def plot_inference(metric_list, dataset, save_path = None):
     else : 
         plt.show()
 
+def plot_rmse_over_horizon(rmse_per_timestep, save_path = None):
+    """
+    rmse_per_timestep: np.array of shape (prediction_len, )
+    """
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, len(rmse_per_timestep) + 1), rmse_per_timestep, marker='o')
+    plt.xlabel("Prediction Time Step")
+    plt.ylabel("RMSE (pixels)")
+    plt.title("RMSE over Prediction Horizon")
+    plt.grid(True)
+    if save_path:
+        plt.savefig(save_path)
+        plt.close()
+    else:
+        plt.show()
+
 
 
 """

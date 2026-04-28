@@ -93,7 +93,8 @@ class CoordinatesRunner(Runner):
             )
 
 
-            train_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
+        
+            train_per_joint_rmse.append(calc_mpjpe(predicted_poses, targeted_poses, self.args.num_joints))
 
             for metric in predictions:
                 for key in predictions[metric]:
@@ -148,7 +149,7 @@ class CoordinatesRunner(Runner):
                 )
 
 
-                valid_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
+                valid_per_joint_rmse.append(calc_mpjpe(predicted_poses, targeted_poses, self.args.num_joints))
                 
                 for metric in predictions:
                     for key in predictions[metric]:
@@ -205,11 +206,17 @@ class CoordinatesRunner(Runner):
                 
                 test_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
         
+            test_per_joint_rmse = np.stack(test_per_joint_rmse, axis = 0).mean(axis = 0)  # (prediction_len,)
+            test_total_pck_acc  = get_acc(test_total_pck)  # assuming get_acc gives you total scalar
+
             print(
                 f"Test Loss: {np.mean(test_losses):.4f} | "
-                f"PCK: {test_total_pck:.4f} | "
-                f"Per Joint RMSE: {np.mean(test_per_joint_rmse):.4f}"
+                f"PCK: {test_total_pck_acc:.4f} | "
+                f"Per Joint RMSE: {test_per_joint_rmse.mean():.4f}"
             )
+            
+            plot_rmse_over_horizon(test_per_joint_rmse, save_path = 'coordinates_rmse_horizon.png')
+
 
 
     def inference(self):
@@ -253,8 +260,7 @@ class CoordinatesRunner(Runner):
             )
 
 
-            pck_acc = []
-            print(name)
+            accuracies = [] 
 
             for index in range(0, self.args.num_testing_frame): 
                 curr_target_pose                    = target_poses[:, index, :].squeeze(0)
@@ -304,9 +310,16 @@ class CoordinatesRunner(Runner):
                 videos_pred.append(target_prediction_image)
 
                 acc = get_acc(pck_prediction)
-                print(acc)
-            show_video(videos_pred, fps = 4, output_path = 'output_pred.mp4')
-            show_video(videos_real, fps = 4, output_path = 'output_real.mp4')
+                accuracies.append(acc)
+            
+
+            plot_inference(
+                metric_list = accuracies,  
+                dataset     = self.args.dataset,
+                save_path   = 'inference_root_relative.png',  
+            )
+
+            show_video(videos_pred, fps = 2, output_path = 'root_relative_pred.mp4')
+            show_video(videos_real, fps = 2, output_path = 'root_relative_real.mp4')
             plt.tight_layout()
             plt.show() 
-

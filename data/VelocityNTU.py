@@ -20,7 +20,7 @@ class NTUVelocity(Dataset2D):
         heatmap_size       = 64,  
         num_joints         = 25,
         gaussian_sigma     = 21, 
-        data_dir           =  'dataset/NanyangTechRGB/', 
+        data_dir           =  'dataset/NanyangTechRGB', 
         train              = True,
         on_debug_mode      = False, 
         require_action     = False, 

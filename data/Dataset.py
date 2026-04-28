@@ -58,9 +58,9 @@ class Dataset2D(Dataset, ABC):
         self.min_frame            = num_training_frame + num_testing_frame
 
         if self.train is True :
-            self.data_dir = data_dir + 'train/'
+            self.data_dir = os.path.join(data_dir, 'train')
         else :
-            self.data_dir = data_dir + 'test/'
+            self.data_dir = os.path.join(data_dir,'test')
 
         self.on_debug_mode       = on_debug_mode
         self.require_action      = require_action 

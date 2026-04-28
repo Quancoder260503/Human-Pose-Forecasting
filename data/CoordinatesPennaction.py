@@ -17,7 +17,7 @@ class PennActionCoordinates(Dataset2D):
         heatmap_size       = 64, 
         num_joints         = 13,
         gaussian_sigma     = 21,
-        data_dir           = 'dataset/PennAction/',
+        data_dir           = 'dataset/PennAction',
         train              = True,
         require_action     = False, 
         on_debug_mode      = False,

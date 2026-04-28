@@ -1,6 +1,9 @@
 import argparse
 import yaml
 from runner.RunnerUtil import *
+from runner.RootRelativeRunner import * 
+from runner.CoordinatesRunner  import * 
+from runner.VelocityRunner     import * 
 
 
 def get_runner(args):

@@ -150,16 +150,21 @@ def get_acc(predictions):
         acc[key] = predictions[key]['correct'] / predictions[key]['all']
     return acc
 
-def calc_rmse(predicted_poses, target_poses, num_joints):
+def calc_mpjpe(predicted_poses, target_poses, num_joints):
     if len(predicted_poses.shape) == 3:
         predicted_poses = predicted_poses.contiguous().view(predicted_poses.shape[0], predicted_poses.shape[1], num_joints, -1) 
         target_poses    = target_poses.contiguous().view(target_poses.shape[0], target_poses.shape[1], num_joints, -1) 
+    diff = predicted_poses[:, :, :, :2] - target_poses[:, :, :, :2]
+    per_joint_dist = torch.sqrt(torch.sum(diff ** 2, dim=-1))  # (B, T, J)
+    return per_joint_dist.mean().item()
 
-    diff = predicted_poses[:, :, :, :2] - target_poses[:, :, :, :2] 
-    per_joint_rmse = torch.sqrt(torch.mean(torch.sum(diff ** 2, dim = -1), dim = (0, 1)))
-    return per_joint_rmse.mean().item()
-
-
+def calc_mpjpe_per_timestep(predicted_poses, target_poses, num_joints):
+    if len(predicted_poses.shape) == 3:
+        predicted_poses = predicted_poses.contiguous().view(predicted_poses.shape[0], predicted_poses.shape[1], num_joints, -1) 
+        target_poses    = target_poses.contiguous().view(target_poses.shape[0], target_poses.shape[1], num_joints, -1) 
+    diff = predicted_poses[:, :, :, :2] - target_poses[:, :, :, :2]
+    per_joint_dist = torch.sqrt(torch.sum(diff ** 2, dim=-1))  # (B, T, J)
+    return per_joint_dist.mean(dim=(0, 2))  # (T,) — one value per future frame
 
 def KL_annealing(epoch, total_epochs, schedule_type = 'linear', start_beta = 0.0, end_beta = 1.0):
     progress = epoch / total_epochs

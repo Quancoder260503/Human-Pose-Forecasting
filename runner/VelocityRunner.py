@@ -93,7 +93,7 @@ class VelocityRunner(Runner):
                     alpha     = self.args.pck_alpha,  # Since this is not 0-1 anymore should be bigger constant
                 )
 
-                train_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
+                train_per_joint_rmse.append(calc_mpjpe(predicted_poses, targeted_poses, self.args.num_joints))
 
 
                 for dict in predictions:
@@ -152,7 +152,7 @@ class VelocityRunner(Runner):
                     alpha     = self.args.pck_alpha, 
                 )
                 
-                valid_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
+                valid_per_joint_rmse.append(calc_mpjpe(predicted_poses, targeted_poses, self.args.num_joints))
 
                 for dict in predictions:
                     for key in predictions[dict]:
@@ -208,17 +208,22 @@ class VelocityRunner(Runner):
                     alpha     = self.args.pck_alpha
                 )
                     
-                test_per_joint_rmse.append(calc_rmse(predicted_poses, target_poses, self.args.num_joints))
+                test_per_joint_rmse.append(calc_mpjpe(predicted_poses, target_poses, self.args.num_joints))
 
                 for dict in predictions:
                     for key in predictions[dict]:
                         test_total_pck[dict][key] += predictions[dict][key]
 
+            test_per_joint_rmse = np.stack(test_per_joint_rmse, axis = 0).mean(axis = 0)  # (prediction_len,)
+            test_total_pck_acc  = get_acc(test_total_pck)  # assuming get_acc gives you total scalar
+
             print(
                 f"Test Loss: {np.mean(test_losses):.4f} | "
-                f"PCK: {test_total_pck:.4f} | "
-                f"Per Joint RMSE: {np.mean(test_per_joint_rmse):.4f}"
+                f"PCK: {test_total_pck_acc:.4f} | "
+                f"Per Joint RMSE: {test_per_joint_rmse.mean():.4f}"
             )
+
+            plot_rmse_over_horizon(test_per_joint_rmse, save_path = 'velocity_rmse_horizon.png')
 
 
     def inference(self):
@@ -295,6 +300,13 @@ class VelocityRunner(Runner):
                 accuracies.append(acc)
                 print(acc)
 
-            show_video(videos_pred, fps = 5)
+            plot_inference(
+                metric_list = accuracies,  
+                dataset     = self.args.dataset,
+                save_path   = 'inference_velocity.png',  
+            )
+
+            show_video(videos_pred, fps = 2, output_path = 'root_relative_pred.mp4')
+            show_video(videos_real, fps = 2, output_path = 'root_relative_real.mp4')
             plt.tight_layout()
             plt.show() 

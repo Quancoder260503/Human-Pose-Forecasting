@@ -53,10 +53,10 @@ class Runner(ABC):
         torch.cuda.set_device(self.local_rank)
         self.args.device = torch.device(f'cuda:{self.local_rank}')
 
-        self.model  = self.get_model()
-        self.model  = self.model.to(self.args.device)
-        self.model  = DDP(self.model, device_ids=[self.local_rank])
-
+        self.model = self.get_model()
+        self.model = self.model.to(self.args.device)
+        self.model = DDP(self.model, device_ids=[self.local_rank], find_unused_parameters=True)
+        
         self.criterion = self.get_criterions()
         self.optimizer = self.get_optimizer(self.model.parameters())
         self.init_lr_scheduler()
@@ -374,7 +374,7 @@ class Runner(ABC):
 
         self.train_sampler = DistributedSampler(train_dataset)
         self.val_sampler   = DistributedSampler(val_dataset,   shuffle = False)
-        self.test_sampler  = DistributedSampler(self.test_dataset, shuffle = False)
+        self.test_sampler  = DistributedSampler(test_dataset, shuffle = False)
 
         self.train_loader = DataLoader(
             dataset     = train_dataset, 
@@ -393,7 +393,7 @@ class Runner(ABC):
         )
 
         self.test_loader = DataLoader(
-            dataset     = self.test_dataset,
+            dataset     = test_dataset,
             batch_size  = self.args.batch_size,
             num_workers = self.args.num_workers,
             pin_memory  = self.args.pin_memory,

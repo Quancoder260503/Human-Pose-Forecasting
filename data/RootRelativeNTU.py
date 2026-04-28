@@ -20,7 +20,7 @@ class NTURootRelative(Dataset2D):
         heatmap_size       = 64,  
         num_joints         = 25,
         gaussian_sigma     = 21, 
-        data_dir           = 'dataset/NanyangTechRGB/', 
+        data_dir           = 'dataset/NanyangTechRGB', 
         train              = True,
         on_debug_mode      = False, 
         require_action     = False, 
@@ -56,16 +56,16 @@ class NTURootRelative(Dataset2D):
             dataset_name         = 'ntu', 
         )
         self.major_joint_inds = NTU_MAJOR_JOINTS_INDS_LST
-        self.load_compute_norm_stats()
+        self.load_compute_norm_stats(data_dir)
 
-    def load_compute_norm_stats(self):
-        mean_path = os.path.join(self.data_dir, 'mean.npy') # mean path 
-        std_path  = os.path.join(self.data_dir, 'std.npy') # std  path 
+    def load_compute_norm_stats(self, data_dir):
+        mean_path = os.path.join(data_dir, 'mean.npy') # mean path 
+        std_path  = os.path.join(data_dir, 'std.npy') # std  path 
 
         if os.path.exists(mean_path):
             self.mean = np.load(mean_path) 
             self.std  = np.load(std_path)
-        elif self.train == True : 
+        elif self.train : 
             self.compute_stats() 
             np.save(mean_path, self.mean)
             np.save(std_path,   self.std)

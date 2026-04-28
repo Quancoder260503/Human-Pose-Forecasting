@@ -1,3 +1,5 @@
+# EXPERIMENT ON COORDINATES 
+
 tmux 0 : # Transformer with mlp pose encoder 
 python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29500 Train.py \
     --dataset ntu \
@@ -142,3 +144,153 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29505 Train.py
     --pck_alpha 0.02 \
     --loss_type naive \
     --lstm_residual_connection True \ 
+
+
+
+
+# EXPERIMENT ON ROOT_RELATIVES
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29500 Train.py \
+    --dataset ntu \
+    --num_joints 17 \
+    --model transformer \
+    --transformer_num_heads 4 \
+    --transformer_num_layers 4 \
+    --transformer_model_dim  512 \
+    --transformer_fc_hidden_dim 2048 \
+    --proj_model_type mlp \
+    --model_type deterministic \
+    --model_version v0_mlp_enc \
+    --model_input_type root_relative \
+    --mode main \
+    --lr_scheduler step \
+    --lr_step_size 4000 \
+    --lr_gamma 0.5 \
+    --num_training_frame 40 \
+    --num_testing_frame  20 \
+    --num_epochs 50 \
+    --step_per_epoch 400 \
+    --batch_size 32 \
+    --learning_rate 1e-4 \
+    --weight_decay  1e-4 \
+    --lr_eta_min 1e-6 \
+    --teacher_forcing_rate 0.0 \
+    --print_step 50 \
+    --pck_alpha 30 \
+    --loss_type penalize
+
+tmux 1 : # Transformer with conv1D pose encoder
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29501 Train.py \
+    --dataset ntu \
+    --num_joints 17 \
+    --model transformer \
+    --transformer_num_heads 4 \
+    --transformer_num_layers 4 \
+    --transformer_model_dim  512 \
+    --transformer_fc_hidden_dim 2048 \
+    --proj_model_type conv1d \
+    --model_type deterministic \
+    --model_version v0_conv1d_enc \
+    --model_input_type root_relative \
+    --mode main \
+    --lr_scheduler step \
+    --lr_step_size 4000 \
+    --lr_gamma 0.5 \
+    --num_training_frame 40 \
+    --num_testing_frame  20 \
+    --num_epochs 50 \
+    --step_per_epoch 400 \
+    --batch_size 32 \
+    --learning_rate 1e-4 \
+    --weight_decay  1e-4 \
+    --lr_eta_min 1e-6 \
+    --teacher_forcing_rate 0.0 \
+    --print_step 50 \
+    --pck_alpha 30 \
+    --loss_type penalize 
+ 
+tmux 2 : # transformer with Joint Attention pose encoder
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29503 Train.py \
+    --dataset ntu \
+    --num_joints 17 \
+    --model transformer \
+    --transformer_num_heads 4 \
+    --transformer_num_layers 4 \
+    --transformer_model_dim  512 \
+    --transformer_fc_hidden_dim 2048 \
+    --proj_model_type attn \
+    --joint_attn_embed_dim 256 \
+    --joint_attn_num_layers 2 \
+    --joint_attn_num_heads 4 \
+    --joint_attn_fc_hidden_dim 1024 \
+    --model_type deterministic  \
+    --model_version v0_joint_attn_enc \
+    --model_input_type root_relative  \
+    --mode main \
+    --lr_scheduler step \
+    --lr_step_size 4000 \
+    --lr_gamma 0.5 \
+    --num_training_frame 40 \
+    --num_testing_frame  20 \
+    --num_epochs 50 \
+    --step_per_epoch 400 \
+    --batch_size 32 \
+    --learning_rate 1e-4 \
+    --weight_decay  1e-4 \
+    --lr_eta_min 1e-6 \
+    --teacher_forcing_rate 0.0 \
+    --print_step 50 \
+    --pck_alpha 30 \
+    --loss_type penalize
+
+tmux 3 : #  Baseline MLP 
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29504 Train.py \
+    --dataset ntu \
+    --num_joints 17 \
+    --model mlp \
+    --model_type deterministic  \
+    --model_version v0 \
+    --model_input_type root_relative \
+    --mode main \
+    --lr_scheduler step \
+    --lr_step_size 4000 \
+    --lr_gamma 0.5 \
+    --num_training_frame 40 \
+    --num_testing_frame  20 \
+    --num_epochs 100 \
+    --step_per_epoch 400 \
+    --batch_size 32 \
+    --learning_rate 1e-3 \
+    --weight_decay  1e-3 \
+    --lr_eta_min 1e-6 \
+    --teacher_forcing_rate 0.0 \
+    --print_step 50 \
+    --pck_alpha 30 \
+    --loss_type penalize
+
+tmux 4 : # Baseline LSTM 
+python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29505 Train.py \
+    --dataset ntu \
+    --num_joints 17 \
+    --model lstm \
+    --model_type deterministic  \
+    --model_version v0 \
+    --model_input_type root_relative \
+    --mode main \
+    --lr_scheduler step \
+    --lr_step_size 4000 \
+    --lr_gamma 0.5 \
+    --num_training_frame 40 \
+    --num_testing_frame  20 \
+    --num_epochs 100 \
+    --step_per_epoch 400 \
+    --batch_size 32 \
+    --learning_rate 1e-3 \
+    --weight_decay  1e-3 \
+    --lr_eta_min 1e-6 \
+    --print_step 50 \
+    --teacher_forcing_rate 0.0 \
+    --pck_alpha 30 \
+    --loss_type penalize \
+    --lstm_residual_connection True 
+
+

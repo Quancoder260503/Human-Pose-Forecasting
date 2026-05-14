@@ -27,7 +27,7 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29500 Train.py
     --lr_eta_min 1e-6 \
     --teacher_forcing_rate 0.0 \
     --print_step 50 \
-    --pck_alpha 0.02 \
+    --pck_alpha 30 \
     --loss_type naive 
 
 tmux 1 : # Transformer with conv1D pose encoder
@@ -57,7 +57,7 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29501 Train.py
     --lr_eta_min 1e-6 \
     --teacher_forcing_rate 0.0 \
     --print_step 50 \
-    --pck_alpha 0.02 \
+    --pck_alpha 30 \
     --loss_type naive 
  
 tmux 2 : # transformer with Joint Attention pose encoder
@@ -91,7 +91,7 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29503 Train.py
     --lr_eta_min 1e-6 \
     --teacher_forcing_rate 0.0 \
     --print_step 100 \
-    --pck_alpha 0.02 \
+    --pck_alpha 30 \
     --loss_type naive
 
 tmux 3 : #  Baseline MLP 
@@ -116,7 +116,7 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29504 Train.py
     --lr_eta_min 1e-6 \
     --teacher_forcing_rate 0.0 \
     --print_step 50 \
-    --pck_alpha 0.02 \
+    --pck_alpha 30 \
     --loss_type naive
 
 tmux 4 : # Baseline LSTM 
@@ -141,7 +141,7 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29505 Train.py
     --lr_eta_min 1e-6 \
     --print_step 50 \
     --teacher_forcing_rate 0.0 \
-    --pck_alpha 0.02 \
+    --pck_alpha 30 \
     --loss_type naive \
     --lstm_residual_connection True \ 
 

@@ -7,14 +7,14 @@ python3 -m torch.distributed.run --nproc_per_node=2 --master_port=29505 Train.py
     --model_input_type root_relative \
     --mode main \
     --lr_scheduler step \
-    --lr_step_size 4000 \
-    --lr_gamma 0.5 \
+    --lr_step_size 8000 \
+    --lr_gamma 0.3 \
     --num_training_frame 40 \
     --num_testing_frame  20 \
     --num_epochs 100 \
     --step_per_epoch 400 \
     --batch_size 32 \
-    --learning_rate 1e-3 \
+    --learning_rate 1e-4 \
     --weight_decay  1e-3 \
     --lr_eta_min 1e-6 \
     --print_step 50 \

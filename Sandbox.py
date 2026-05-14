@@ -1,64 +1,47 @@
-# from data.DatasetUtil   import * 
-# from data.PreNTU        import * 
-# from data.Visualization import * 
-
-# NAME = 'S031C002P044R002A094.skeleton'
-
-# skeleton = get_raw_body_data(NTU_SKELETON_PATH, ske_name = NAME)
-# videos_real = []
-
-# name          = skeleton['name']
-# human_id_list = list(skeleton['data'].keys())
-
-# assert len(human_id_list), f"video {name} has no person in the video"
-
-# human_id_list.sort(key = lambda x : skeleton['data'][x]['colors'].shape[0], reverse = True) 
-# human_id    = human_id_list[0]
-
-# data        = skeleton['data'][human_id]
-# label       = data['colors'] # projected 2D locations
-# frame_num   = data['interval']
-
-# observed_images, _ = get_video_frames_ntu(
-#     start_index = 0, 
-#     name = NAME, 
-#     num_training_frame = len(frame_num), 
-#     num_testing_frame = 0, 
-#     frame_input_w = 1920, 
-#     frame_input_h = 1080,  
-# )
-
-
-# observed_images = observed_images[frame_num]
-
-# for index in range(0, observed_images.shape[0]): 
-#     curr_target_pose  = label[index]
-#     curr_target_image = observed_images[index, :, :, :]
-
-
-#     target_annotated_image  = draw_skeleton(
-#         image = curr_target_image, 
-#         poses = curr_target_pose,
-#         dataset       = 'ntu', 
-#         unnormalize   = False, 
-#         frame_input_w = 1920, 
-#         frame_input_h = 1080, 
-#     )
-#     videos_real.append(target_annotated_image)
-
-# show_video(videos_real, fps = 3, output_path = 'test_output.mp4')
-# plt.tight_layout()
-# plt.show() 
-
-from model.BERT import * 
+from data.NTU import NTU3D
+from data.Visualization import *
+from runner.RunnerUtil  import *
+from model.DiffusionTransformer import *
+import random 
 
 if __name__ == '__main__':
-    dof = 3
-    output_channels = 512
-    n_joints = 17
-    seq_len = 14
 
-    model = get_bert_model(num_joints = 17, coordinates = True)
-    inputs = torch.rand(10, seq_len, dof * n_joints)
-    X = model(inputs)
-    print(X.size())
+   #model = get_diffusion_transformer_model().to('cuda')
+
+   dataset = NTU3D(num_training_frame = 100, num_testing_frame = 50)
+   observed_act_seqs, targeted_act_seqs,  _, name = dataset[random.randint(0, 100)]
+
+
+   dct, idct = compute_dct_matrix(num = 100)
+   print(name)
+   
+   n_channels = 20
+
+   observed_poses = reconstruct_pose(
+      input_sequences = observed_act_seqs.unsqueeze(0),
+      mean = dataset.mean, 
+      std  = dataset.std, 
+      frame_input_h = 1080, 
+      frame_input_w = 1920, 
+      root_mean = dataset.root_mean, 
+      root_std  = dataset.root_std, 
+      joint_dim = 3, 
+   )
+   animate_single_poses3d(observed_poses.detach().cpu().numpy().reshape(-1, 17, 3), name[4:8], fps = 30, output_path = 'sandbox_vis_3d.gif')
+
+   observed_act_seqs = torch.matmul(dct[:n_channels], observed_act_seqs) # transform into frequency spaces 
+   observed_act_seqs = torch.matmul(idct[:,:n_channels], observed_act_seqs) # revert back 
+   observed_poses = reconstruct_pose(
+      input_sequences = observed_act_seqs.unsqueeze(0),
+      mean = dataset.mean, 
+      std  = dataset.std, 
+      frame_input_h = 1080, 
+      frame_input_w = 1920, 
+      root_mean = dataset.root_mean, 
+      root_std  = dataset.root_std, 
+      joint_dim = 3, 
+   )
+   animate_single_poses3d(observed_poses.detach().cpu().numpy().reshape(-1, 17, 3), name[4:8], fps = 30, output_path = 'sandbox_vis_3d_dct.gif')
+
+
+

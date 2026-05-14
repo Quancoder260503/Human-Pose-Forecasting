@@ -5,9 +5,42 @@ import numpy as np
 import math 
 import matplotlib.pyplot as plt
 
-class Pose1DEncoder(nn.Module): 
+
+class Pose1DFeedForwardEncoder(nn.Module):
+    def __init__(self, pose_dim, model_dim):
+        super(Pose1DFeedForwardEncoder, self).__init__()
+        self.pose_dim = pose_dim
+        self.model_dim = model_dim
+        self.model = nn.Sequential(
+            nn.Linear(pose_dim, 128),
+            nn.ReLU(inplace = True),
+            nn.Linear(128, 256),
+            nn.ReLU(inplace = True),
+            nn.Linear(256, model_dim)
+        )
+    
+    def forward(self, inp):
+      return self.model(inp)
+    
+class Pose1DFeedForwardDecoder(nn.Module):
+    def __init__(self, model_dim, pose_dim):
+        super(Pose1DFeedForwardDecoder, self).__init__()
+        self.model_dim = model_dim
+        self.pose_dim  = pose_dim 
+        self.model = nn.Sequential(
+            nn.Linear(model_dim, 256),
+            nn.ReLU(inplace = True),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace = True),
+            nn.Linear(128, pose_dim)
+        )
+    def forward(self, inp):
+        return self.model(inp)
+    
+
+class PoseConv1DCEncoder(nn.Module): 
     def __init__(self, in_channels, out_channels, num_joints): 
-        super(Pose1DEncoder, self).__init__()
+        super(PoseConv1DCEncoder, self).__init__()
         self.in_channels  = in_channels
         self.out_channels = out_channels 
         self.num_joints   = num_joints
@@ -31,26 +64,25 @@ class Pose1DEncoder(nn.Module):
     def forward(self, inp): 
         """
         :param : 
-          inp : a tensor of shape (batch_size, seq_len, pose_dim)
+          inp : a tensor of shape (batch_size, pose_dim)
         return : 
-          out : a tensor of shape (batch_size, seq_len, model_dim)
+          out : a tensor of shape (batch_size, model_dim)
         """
 
-        batch_size, seq_len, pose_dim = inp.shape
+        batch_size, pose_dim = inp.shape
         assert pose_dim % self.num_joints == 0, "pose dim is not divisble by joint dim" 
         joint_dim = pose_dim // self.num_joints 
         
-        inp = inp.contiguous().view(batch_size, seq_len, self.num_joints, joint_dim)
-        inp = inp.contiguous().view(batch_size * seq_len, self.num_joints, joint_dim)
-        inp = inp.permute(0, 2, 1) # (batch_size * seq_len, joint_dim, self.num_joints)
+        inp = inp.contiguous().view(batch_size, self.num_joints, joint_dim)
+        inp = inp.permute(0, 2, 1) # (batch_size , joint_dim, self.num_joints)
         out = self.model(inp)
-        out = out.contiguous().view(batch_size, seq_len, -1)
+        out = out.contiguous().view(batch_size, -1)
         return out 
     
 
-class JointAttention(nn.Module): 
+class JointAttentionEncoder(nn.Module):
     def __init__(self, num_joints, joint_dim, embed_dim, model_dim, num_layers, num_heads, dropout, fc_hidden_dim): 
-        super(JointAttention, self).__init__()
+        super(JointAttentionEncoder, self).__init__()
         self.num_joints     = num_joints
         self.joint_dim      = joint_dim 
         self.model_dim      = model_dim 
@@ -69,6 +101,7 @@ class JointAttention(nn.Module):
           ))
           setattr(self, f'layernorm_1_{i + 1}', nn.LayerNorm(embed_dim))
           setattr(self, f'layernorm_2_{i + 1}', nn.LayerNorm(embed_dim))
+          setattr(self, f'layernorm_3_{i + 1}', nn.LayerNorm(embed_dim))
           setattr(self, f'dropout_1_{i + 1}'  , nn.Dropout(dropout))
           setattr(self, f'dropout_2_{i + 1}'  , nn.Dropout(dropout))
           setattr(self, f'dropout_3_{i + 1}'  , nn.Dropout(dropout))
@@ -88,40 +121,53 @@ class JointAttention(nn.Module):
     def forward(self, inp, pose_embedding): 
         """
         :param : 
-          inp : a tensor of shape (batch_size, seq_len, pose_dim)
+          inp : a tensor of shape (batch_size, pose_dim)
         return : 
-          out : a tensor of shape (batch_size, seq_len, model_dim)
+          out : a tensor of shape (batch_size, model_dim)
         """
 
-        batch_size, seq_len, pose_dim = inp.shape
+        batch_size, pose_dim = inp.shape
         assert pose_dim % self.num_joints == 0, "pose dim is not divisble by joint dim" 
         joint_dim = pose_dim // self.num_joints 
         
-        inp = inp.contiguous().view(batch_size, seq_len, self.num_joints, joint_dim)
-        inp = inp.contiguous().view(batch_size * seq_len, self.num_joints, joint_dim)
+        inp = inp.contiguous().view(batch_size, self.num_joints, joint_dim)
+        pose_embedding = pose_embedding.unsqueeze(0).repeat(batch_size, 1, 1)
         out = self.proj_embed(inp)
         attn_weights = []
+
+        out = self.add_pose_embedding(out, pose_embedding)
  
         for i in range(self.num_layers): 
-            inp = out.clone()
-            inp = self.add_pose_embedding(inp, pose_embedding)
+            out = getattr(self, f'layernorm_1_{i + 1}')(out)
             attn_out, attn_weight = getattr(self, f'attention_{i + 1}')(
-              query = inp, 
-              key   = inp, 
-              value = inp, 
+              query = self.add_pose_embedding(out, pose_embedding), 
+              key   = self.add_pose_embedding(out, pose_embedding), 
+              value = out, 
             )
             attn_out = getattr(self, f'dropout_1_{i + 1}')(attn_out)
-            ffn_in   = getattr(self, f'layernorm_1_{i + 1}')(attn_out + inp)
+            ffn_in   = getattr(self, f'layernorm_2_{i + 1}')(attn_out + out)
 
             ffn_out  = getattr(self, f'ffn_1_{i + 1}')(ffn_in)
             ffn_out  = self.relu(ffn_out)
             ffn_out  = getattr(self, f'dropout_2_{i + 1}')(ffn_out)
             ffn_out  = getattr(self, f'ffn_2_{i + 1}')(ffn_out)
             ffn_out  = getattr(self, f'dropout_3_{i + 1}')(ffn_out)
-            out      = getattr(self, f'layernorm_2_{i + 1}')(ffn_out + ffn_in)
+            out      = getattr(self, f'layernorm_3_{i + 1}')(ffn_out + ffn_in)
             attn_weights.append(attn_weight)
         
-        out = out.contiguous().view(batch_size, seq_len, self.num_joints, self.embed_dim)
-        out = out.contiguous().view(batch_size, seq_len, -1) 
+        out = out.contiguous().view(batch_size, -1)
         out = self.proj_model(out)
+        return out
+
+
+
+class PoseAutoencoder(nn.Module):
+    def __init__(self, encoder, decoder):
+        super(PoseAutoencoder, self).__init__()
+        self.encoder = encoder 
+        self.decoder = decoder 
+
+    def forward(self, inp, pose_embedding = None): 
+        latent = self.encoder(inp, pose_embedding)
+        out    = self.decoder(latent)
         return out

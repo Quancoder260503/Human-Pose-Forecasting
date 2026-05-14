@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from data.ImgUtil import torch2numpy
 from data.DatasetUtil import *
-
+from matplotlib.animation import FuncAnimation
 
 
 """
@@ -241,25 +241,12 @@ def get_colors():
 
 
 def draw_skeleton(
-        image, 
-        poses, 
-        prob          = None, 
-        prob_draw     = 0.65, 
-        dataset       = 'ntu', 
-        shadow        = 0.3, 
-        eps           = 1.0, 
-        unnormalize   = False, 
-        frame_input_w = 1920, 
-        frame_input_h = 1080,
-    ):
-
-    if unnormalize : 
-        poses[:, 0] = poses[:, 0] * frame_input_w
-        poses[:, 1] = poses[:, 1] * frame_input_h
-        
-    if prob is None : 
-        prob  = np.ones(poses.shape[0])
-
+    image, 
+    poses, 
+    dataset       = 'ntu', 
+    shadow        = 0.3, 
+    eps           = 1.0, 
+):
     poses = np.array(poses, dtype=int)
 
     image = image.copy()
@@ -271,16 +258,15 @@ def draw_skeleton(
     skeleton = get_skeleton(dataset)
 
     for idx, pt in enumerate(poses):
-        if prob[idx] > prob_draw and pt[0] > eps and pt[1] > eps:
+        if pt[0] > eps and pt[1] > eps:
             cv2.circle(image, (pt[0], pt[1]), 4, pcolor, -1)
 
     for i, (j1, j2) in enumerate(skeleton):
-        if prob[j1] > prob_draw and prob[j2] > prob_draw and poses[j1, 0] > eps and poses[j1, 1] > eps and poses[j2, 0] > eps and poses[j2, 1] > eps:
+        if poses[j1, 0] > eps and poses[j1, 1] > eps and poses[j2, 0] > eps and poses[j2, 1] > eps:
             color = rcolor
             pt1 = tuple(poses[j1, :2])
             pt2 = tuple(poses[j2, :2])
             cv2.line(image, pt1, pt2, color, thickness = 2)
-
     return image
 
 def show_video(video, output_path = "output.mp4", fps = 25):
@@ -302,12 +288,6 @@ def show_video(video, output_path = "output.mp4", fps = 25):
     out.release()
     cv2.destroyAllWindows()
 
-
-"""
-Visualize Attention  
-"""
-import matplotlib.pyplot as plt
-import torch
 
 def visualize_attention(attn_weights, cmap='inferno'):
     if isinstance(attn_weights[0], list):
@@ -339,3 +319,253 @@ def visualize_attention(attn_weights, cmap='inferno'):
 
     plt.tight_layout()
     plt.show()
+
+_CAMERA_AZIM = {
+    "C001": -90 + 45,   # -45   left-45°  camera: orbit viewer right to match
+    "C002": -90,        # -90   front camera: straight on
+    "C003": -90 - 45,   # -135  right-45° camera: orbit viewer left to match
+}
+
+def animate_single_poses3d(sequence, camera_id, fps=30, output_path='pose_prediction_3d.gif'):
+    assert sequence.ndim == 3 and sequence.shape[1:] == (17, 3)
+
+    seq_mpl   = sequence[:, :, [0, 2, 1]]
+    T         = seq_mpl.shape[0]
+
+    mins      = seq_mpl.min(axis = (0, 1))
+    maxs      = seq_mpl.max(axis = (0, 1))
+    max_range = (maxs - mins).max() / 2.0
+    mids      = (mins + maxs) / 2.0
+
+    skeleton  = get_skeleton("ntu")
+
+    fig = plt.figure(figsize=(8, 8))
+    ax  = fig.add_subplot(111, projection="3d")
+
+    ax.set_xlim(mids[0] - max_range, mids[0] + max_range)
+    ax.set_ylim(mids[1] - max_range, mids[1] + max_range)
+    ax.set_zlim(mids[2] - max_range, mids[2] + max_range)
+    ax.set_box_aspect([1, 1, 1])
+    ax.set_xlabel("X (left/right)")
+    ax.set_ylabel("Z (depth, m)")
+    ax.set_zlabel("Y (up, m)")
+    ax.view_init(elev=15, azim=_CAMERA_AZIM[camera_id])
+
+    pose0   = seq_mpl[0]
+    scatter = ax.scatter(pose0[:, 0], pose0[:, 1], pose0[:, 2], s=40)
+
+    bone_lines = []
+    for i, j in skeleton:
+        (line,) = ax.plot(
+            [pose0[i, 0], pose0[j, 0]],
+            [pose0[i, 1], pose0[j, 1]],
+            [pose0[i, 2], pose0[j, 2]],
+            linewidth=2,
+        )
+        bone_lines.append((line, i, j))
+
+    title = fig.suptitle("Frame 0")
+
+    def update(frame):
+        pose = seq_mpl[frame]
+        scatter._offsets3d = (pose[:, 0], pose[:, 1], pose[:, 2])
+        for line, i, j in bone_lines:
+            line.set_data_3d(
+                [pose[i, 0], pose[j, 0]],
+                [pose[i, 1], pose[j, 1]],
+                [pose[i, 2], pose[j, 2]],
+            )
+        title.set_text(f"Frame {frame} / {T}")
+        return [scatter, *[ln for ln, _, _ in bone_lines]]
+
+    ani = FuncAnimation(fig, update, frames=T, interval=1000 // fps, blit=False)
+
+    ani.save(output_path, writer='pillow', fps=fps)
+    print(f"Saved GIF => {output_path}")
+    plt.tight_layout()
+    plt.show()
+    return ani
+
+def animate_ntu_pose_3d(observed_sequence, predicted_sequence, target_sequence, camera_id, fps=30, output_path='pose_prediction_3d.gif'):
+    """
+    observed_sequence  : (T_obs,  17, 3) — NTU RGB+D raw Kinect v2 camera-space coordinates
+    target_sequence    : (T_pred, 17, 3)
+    predicted_sequence : (T_pred, 17, 3)
+
+      col 0  X : horizontal, positive = camera-right (subject's left)
+      col 1  Y : vertical,   positive = up
+      col 2  Z : depth,      positive = away from sensor (always >= 0)
+
+    Kinect v2 Y is up-positive — no axis flip needed.
+    We map directly: mpl-X = Kinect-X, mpl-Y = Kinect-Z, mpl-Z = Kinect-Y
+    so that matplotlib's Z-up convention shows the skeleton upright, and
+    depth runs along matplotlib's Y axis (into the scene).
+    """
+
+    assert observed_sequence.ndim  == 3 and observed_sequence.shape[1:]  == (17, 3)
+    assert target_sequence.ndim    == 3 and target_sequence.shape[1:]    == (17, 3)
+    assert predicted_sequence.ndim == 3 and predicted_sequence.shape[1:] == (17, 3)
+
+    # Remap axes to match matplotlib Z-up convention (same as before)
+    obs_mpl  = observed_sequence[:, :, [0, 2, 1]]
+    tgt_mpl  = target_sequence[:, :, [0, 2, 1]]
+    pred_mpl = predicted_sequence[:, :, [0, 2, 1]]
+
+    # Concatenate for consistent axis limits across all frames
+    all_mpl = np.concatenate([obs_mpl, tgt_mpl, pred_mpl], axis=0)
+    T_obs   = obs_mpl.shape[0]
+    T_pred  = tgt_mpl.shape[0]
+    T_total = T_obs + T_pred
+
+    mins      = all_mpl.min(axis = (0, 1))
+    maxs      = all_mpl.max(axis = (0, 1))
+    max_range = (maxs - mins).max() / 2.0
+    mids      = (mins + maxs) / 2.0
+
+    skeleton = get_skeleton("ntu")
+
+    fig, (ax_tgt, ax_pred) = plt.subplots(1, 2, figsize = (16, 8), subplot_kw = {"projection": "3d"})
+
+    def setup_ax(ax, title_str):
+        ax.set_xlim(mids[0] - max_range, mids[0] + max_range)
+        ax.set_ylim(mids[1] - max_range, mids[1] + max_range)
+        ax.set_zlim(mids[2] - max_range, mids[2] + max_range)
+        ax.set_box_aspect([1, 1, 1])
+        ax.set_xlabel("X (left/right)")
+        ax.set_ylabel("Z (depth, m)")
+        ax.set_zlabel("Y (up, m)")
+        ax.view_init(elev = 15, azim = _CAMERA_AZIM[camera_id])
+        ax.set_title(title_str)
+
+    setup_ax(ax_tgt,  "Ground Truth")
+    setup_ax(ax_pred, "Prediction")
+
+    def make_artists(ax, pose0):
+        scatter = ax.scatter(pose0[:, 0], pose0[:, 1], pose0[:, 2], s = 40)
+        bone_lines = []
+        for i, j in skeleton:
+            (line,) = ax.plot(
+                [pose0[i, 0], pose0[j, 0]],
+                [pose0[i, 1], pose0[j, 1]],
+                [pose0[i, 2], pose0[j, 2]],
+                linewidth=2,
+            )
+            bone_lines.append((line, i, j))
+        return scatter, bone_lines
+
+    pose0_tgt  = obs_mpl[0]   # both start on first observed frame
+    pose0_pred = obs_mpl[0]
+
+    scatter_tgt,  bones_tgt  = make_artists(ax_tgt,  pose0_tgt)
+    scatter_pred, bones_pred = make_artists(ax_pred, pose0_pred)
+
+    title = fig.suptitle("Frame 0")
+
+    def get_pose(frame):
+        """Return (tgt_pose, pred_pose) for a given global frame index."""
+        if frame < T_obs:
+            # Observed window: both panels show the same observed pose
+            return obs_mpl[frame], obs_mpl[frame]
+        else:
+            pred_idx = frame - T_obs
+            return tgt_mpl[pred_idx], pred_mpl[pred_idx]
+
+    def update_artists(scatter, bone_lines, pose):
+        scatter._offsets3d = (pose[:, 0], pose[:, 1], pose[:, 2])
+        for line, i, j in bone_lines:
+            line.set_data_3d(
+                [pose[i, 0], pose[j, 0]],
+                [pose[i, 1], pose[j, 1]],
+                [pose[i, 2], pose[j, 2]],
+            )
+
+    def update(frame):
+        tgt_pose, pred_pose = get_pose(frame)
+        update_artists(scatter_tgt,  bones_tgt,  tgt_pose)
+        update_artists(scatter_pred, bones_pred, pred_pose)
+        label = "Observed" if frame < T_obs else f"Predicted {frame - T_obs} / {T_pred}"
+        title.set_text(f"Frame {frame} / {T_total}  [{label}]")
+        return [scatter_tgt, scatter_pred, *[ln for ln, _, _ in bones_tgt], *[ln for ln, _, _ in bones_pred]]
+
+    ani = FuncAnimation(fig, update, frames = T_total, interval = 1000 // fps, blit = False)
+
+    ani.save(output_path, writer = 'pillow', fps = fps)
+    print(f"Saved GIF => {output_path}")
+    plt.tight_layout()
+    plt.show()
+    return ani
+
+
+def animate_ntu_pose_2d(
+    observe_sequences, 
+    target_sequences,
+    predict_sequences, 
+    frame_input_w, 
+    frame_input_h, 
+    name, 
+    start_index, 
+    num_training_frame, 
+    num_testing_frame,
+    num_joints,
+    fps = 30,
+    output_path = 'pose_prediction.gif'
+):
+    observed_imgs, target_imgs = get_video_frames_ntu(
+        name               = name, 
+        start_index        = start_index, 
+        num_training_frame = num_training_frame, 
+        num_testing_frame  = num_testing_frame, 
+        frame_input_w      = frame_input_w,
+        frame_input_h      = frame_input_h, 
+    )
+
+    frames_real = []
+    frames_pred = []
+
+
+    for index in range(num_training_frame):
+        curr_observed_image = observed_imgs[index, :, :, :]
+        curr_observed_poses = observe_sequences[index]
+        curr_observed_poses = curr_observed_poses.contiguous().view(num_joints, -1)
+        frames_real.append(draw_skeleton(curr_observed_image, curr_observed_poses.detach().cpu().numpy()))
+        frames_pred.append(draw_skeleton(curr_observed_image, curr_observed_poses.detach().cpu().numpy()))
+
+
+    for index in range(num_testing_frame):
+        curr_target_image = target_imgs[index, :, :, :]
+
+        curr_target_pose = target_sequences[index]
+        curr_target_pose = curr_target_pose.contiguous().view(num_joints, -1)
+
+        curr_predict_pose = predict_sequences[index]
+        curr_predict_pose = curr_predict_pose.contiguous().view(num_joints, -1)
+
+        frames_real.append(draw_skeleton(curr_target_image, curr_target_pose.detach().cpu().numpy()))
+        frames_pred.append(draw_skeleton(curr_target_image, curr_predict_pose.detach().cpu().numpy()))
+
+
+    fig, (ax_real, ax_pred) = plt.subplots(1, 2, figsize = (10, 5))
+    
+    ax_real.set_title("Ground Truth")
+    ax_pred.set_title("Prediction")
+
+    for ax in (ax_real, ax_pred):
+        ax.axis('off')
+
+    im_real = ax_real.imshow(frames_real[0])
+    im_pred = ax_pred.imshow(frames_pred[0])
+    title   = fig.suptitle("Frame 0")
+
+    def update(frame):
+        im_real.set_data(frames_real[frame])
+        im_pred.set_data(frames_pred[frame])
+        title.set_text(f"Frame {frame} / {num_testing_frame}")
+        return [im_real, im_pred]
+
+    ani = FuncAnimation(fig, update, frames = num_testing_frame, interval = 1000 // fps, blit = False)
+
+    ani.save(output_path, writer = 'pillow', fps = fps)
+    print(f"Saved GIF => {output_path}")
+    plt.tight_layout()
+    plt.show()
+    return ani

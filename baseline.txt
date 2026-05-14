@@ -1,57 +1,9 @@
-Batch : 0/40 | PJMSE : 0.117 | PCK : 0.167
-Batch : 1/40 | PJMSE : 0.139 | PCK : 0.071
-Batch : 2/40 | PJMSE : 0.156 | PCK : 0.037
-Batch : 3/40 | PJMSE : 0.147 | PCK : 0.051
-Batch : 4/40 | PJMSE : 0.142 | PCK : 0.040
-Batch : 5/40 | PJMSE : 0.142 | PCK : 0.032
-Batch : 6/40 | PJMSE : 0.163 | PCK : 0.029
-Batch : 7/40 | PJMSE : 0.169 | PCK : 0.025
-Batch : 8/40 | PJMSE : 0.172 | PCK : 0.033
-Batch : 9/40 | PJMSE : 0.168 | PCK : 0.029
-Batch : 10/40 | PJMSE : 0.178 | PCK : 0.027
-Batch : 11/40 | PJMSE : 0.179 | PCK : 0.024
-Batch : 12/40 | PJMSE : 0.178 | PCK : 0.022
-Batch : 13/40 | PJMSE : 0.174 | PCK : 0.020
-Batch : 14/40 | PJMSE : 0.185 | PCK : 0.019
-Batch : 13/40 | PJMSE : 0.174 | PCK : 0.020
-Batch : 14/40 | PJMSE : 0.185 | PCK : 0.019
-Batch : 15/40 | PJMSE : 0.190 | PCK : 0.018
-Batch : 16/40 | PJMSE : 0.184 | PCK : 0.017
-Batch : 17/40 | PJMSE : 0.182 | PCK : 0.022
-Batch : 13/40 | PJMSE : 0.174 | PCK : 0.020
-Batch : 14/40 | PJMSE : 0.185 | PCK : 0.019
-Batch : 15/40 | PJMSE : 0.190 | PCK : 0.018
-Batch : 16/40 | PJMSE : 0.184 | PCK : 0.017
-Batch : 17/40 | PJMSE : 0.182 | PCK : 0.022
-Batch : 14/40 | PJMSE : 0.185 | PCK : 0.019
-Batch : 15/40 | PJMSE : 0.190 | PCK : 0.018
-Batch : 16/40 | PJMSE : 0.184 | PCK : 0.017
-Batch : 17/40 | PJMSE : 0.182 | PCK : 0.022
-Batch : 16/40 | PJMSE : 0.184 | PCK : 0.017
-Batch : 17/40 | PJMSE : 0.182 | PCK : 0.022
-Batch : 18/40 | PJMSE : 0.181 | PCK : 0.020
-Batch : 19/40 | PJMSE : 0.176 | PCK : 0.024
-Batch : 20/40 | PJMSE : 0.179 | PCK : 0.023
-Batch : 21/40 | PJMSE : 0.179 | PCK : 0.022
-Batch : 22/40 | PJMSE : 0.174 | PCK : 0.026
-Batch : 23/40 | PJMSE : 0.174 | PCK : 0.024
-Batch : 24/40 | PJMSE : 0.179 | PCK : 0.023
-Batch : 25/40 | PJMSE : 0.181 | PCK : 0.022
-Batch : 26/40 | PJMSE : 0.179 | PCK : 0.022
-Batch : 27/40 | PJMSE : 0.178 | PCK : 0.021
-Batch : 28/40 | PJMSE : 0.180 | PCK : 0.020
-Batch : 29/40 | PJMSE : 0.180 | PCK : 0.022
-Batch : 30/40 | PJMSE : 0.177 | PCK : 0.022
-Batch : 31/40 | PJMSE : 0.176 | PCK : 0.021
-Batch : 32/40 | PJMSE : 0.175 | PCK : 0.023
-Batch : 33/40 | PJMSE : 0.173 | PCK : 0.022
-Batch : 34/40 | PJMSE : 0.181 | PCK : 0.021
-Batch : 35/40 | PJMSE : 0.181 | PCK : 0.021
-Batch : 35/40 | PJMSE : 0.181 | PCK : 0.021
-Batch : 35/40 | PJMSE : 0.181 | PCK : 0.021
-Batch : 35/40 | PJMSE : 0.181 | PCK : 0.021
-Batch : 35/40 | PJMSE : 0.181 | PCK : 0.021
-Batch : 36/40 | PJMSE : 0.179 | PCK : 0.020
-Batch : 37/40 | PJMSE : 0.183 | PCK : 0.020
-Batch : 38/40 | PJMSE : 0.181 | PCK : 0.022
-Batch : 39/40 | PJMSE : 0.181 | PCK : 0.021
+PS C:\Users\minhq\Desktop\Human-Pose-Forecasting> python3 Eval.py --dataset ntu --num_joints 17 --model transformer --lr_scheduler step --model_type deterministic --model_version v0_mlp_enc --model_input_type coordinates --mode main --num_training_frame 40 --num_testing_frame 20 --transformer_type vanilla --transformer_residual_connection True --transformer_num_heads 4 --transformer_num_layers 4 --transformer_model_dim 512 --proj_model_type mlp --pck_alpha 30 --learning_rate 1e-4 --step_per_epoch 200 --loss_type penalize --batch_size 1 --num_testing_samples 10000
+----------------------------------------
+Number of train batches      = 200
+Number of validation batches = 2037
+Number of testing instances  = 18335
+Input represented as Coordinates
+cuda is available
+Test Loss: 0.0002 | PCK: 0.8111 | Per Joint RMSE: 20.6329
+{'total': 0.8111182999347124, 'SpineBase': 0.8632386761323868, 'SpineMid': 0.8616788321167883, 'Neck': 0.8328267173282672, 'Head': 0.8175632436756325, 'ShoulderLeft': 0.828037196280372, 'ElbowLeft': 0.7558294170582942, 'WristLeft': 0.6734676532346765, 'ShoulderRight': 0.8307419258074192, 'ElbowRight': 0.7364113588641136, 'WristRight': 0.6432956704329567, 'HipLeft': 0.8592140785921408, 'KneeLeft': 0.8422657734226577, 'AnkleLeft': 0.8545545445455455, 'HipRight': 0.86005899410059, 'KneeRight': 0.8397060293970603, 'AnkleRight': 0.8487901209879012, 'SpineShoulder': 0.8413308669133087}

@@ -62,10 +62,10 @@ class PosePredictionMLP(nn.Module):
     
 
 
-def get_mlp_model(pose_dim = 13, coordinates = True, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):
+def get_mlp_model(pose_dim = 13, joint_dim = 3, train_len = 15, predict_len = 15, hidden_layers = [1024, 2048, 1024], dropout = 0.2, device = 'cuda'):
     model = PosePredictionMLP( 
         pose_dim      = pose_dim,
-        coordinates   = coordinates, 
+        coordinates   = joint_dim, 
         train_len     = train_len, 
         predict_len   = predict_len, 
         hidden_layers = hidden_layers, 

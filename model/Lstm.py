@@ -47,7 +47,7 @@ class PosePredictionLSTM(nn.Module):
 
         self.output_fc = nn.Linear(self.hidden_dim, self.pose_dim)
 
-    def forward(self, observed_poses, target_poses, prediction_len, teacher_forcing_rate = 0.5):
+    def forward(self, observed_poses, prediction_len):
         """
         :param observed_poses      : (batch, observed_len, pose_dim)
         :param target_poses        : (batch, target_len, pose_dim) or None at inference
@@ -71,9 +71,6 @@ class PosePredictionLSTM(nn.Module):
         predicted_poses = []
 
         for t in range(prediction_len):
-            if t > 0 and target_poses is not None and random.random() < teacher_forcing_rate:
-                last_observed = target_poses[:, t - 1, :].unsqueeze(1)
-
             embedded_last = self.embedding_fc(last_observed)              # (B, 1, embed_dim)
             output, lstm_state = self.decoder(embedded_last, lstm_state)  # (B, 1, hidden_dim)
             curr_hidden = output.squeeze(1)                               # (B, hidden_dim)
@@ -91,7 +88,7 @@ class PosePredictionLSTM(nn.Module):
 
 def get_lstm_model(
     pose_dim      = 13,
-    coordinates   = True,
+    joint_dim     = 3, 
     embedding_dim = 2048,
     hidden_dim    = 256,
     num_layers    = 2,
@@ -101,7 +98,7 @@ def get_lstm_model(
 ):
     return PosePredictionLSTM(
         pose_dim            = pose_dim,
-        coordinates         = 3 if coordinates else 2,
+        coordinates         = joint_dim, 
         embedding_dim       = embedding_dim,
         hidden_dim          = hidden_dim,
         num_layers          = num_layers,

@@ -4,27 +4,8 @@
 # Read more about Latent Diffusion Model 
 # Loading MPII-Cooking for extra dataset
 
-# Plot data in different frames, use frame X to predict frame at X + 1, X + 2, X + 3, ...., X + N (Done) 
 
-# Train a simple MLP on the observed poses and predict the sequences of future frame, in autoregressive fashion, can feed it again
-into the network to train (Done) 
-
-# Try 3D motion  
-
-# Becareful about adding noise. 
-
-# Pivoting a joint, then find the relation of other key points to the pivot (Done but only for NTU) 
-
-# For missing data, put (0.5, 0.5) and embedde the visibility into the input (Done) 
-
-# Make the model larger and train for longer, train on a (single instance, single batches)
-
-# Keep track of literatures 
-
-# Use HRNet to get the joint heat maps to get the joint for non-annotated video 
-# 
-# Prepare : Model architecture + slides 
-
-# Setup a benchmark and comparison, ready for report, including image and poses 
-
-
+# Process 3D 
+# Train Autoencoder 
+# Try VAE LSTM (mix and match) and Transformer  
+# Filling up implementation for Diffusion Model 

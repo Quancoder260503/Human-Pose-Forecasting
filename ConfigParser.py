@@ -1,19 +1,9 @@
 import argparse
 import yaml
 from runner.RunnerUtil import *
-from runner.RootRelativeRunner import * 
-from runner.CoordinatesRunner  import * 
-from runner.VelocityRunner     import * 
+from runner.NeuralNetworkRunner import * 
 
-def get_runner(args):
-    if   args.model_input_type == 'coordinates' : 
-        return CoordinatesRunner
-    elif args.model_input_type == 'velocity' : 
-        return VelocityRunner 
-    elif args.model_input_type == 'root_relative' :
-        return RootRelativeRunner 
-    else : 
-        raise NotImplementedError('representation is not supported for dataset')
+
 
 def str2bool(value):
     if isinstance(value, bool):
@@ -66,11 +56,12 @@ def flatten_dict(cfg, parent_key="", sep="_"):
 
 def get_parser():
     parser = argparse.ArgumentParser()
+    # TRAINING INFO
     parser.add_argument("--config",   default = None, type = str, help = "Path to YAML config file")
-
-    parser.add_argument('--dataset', default = 'ntu', type = str)
-    parser.add_argument('--model_version', type = str)
-    parser.add_argument('--model_type', default = 'deterministic', type=str)
+    parser.add_argument('--dataset', default = 'ntu', type = str, required = True)
+    parser.add_argument('--train_autoencoder', default = False, type = str2bool, required = True, help = 'Training Autoencoder or not?')
+    parser.add_argument('--joint_dim', required = True, type = int, help = 'Methods on 2D or 3D?')
+    parser.add_argument('--method_version', type = str)    
     parser.add_argument('--num_joints', default = 17, type=int)
     parser.add_argument('--num_training_frame', default = 14, type = int)
     parser.add_argument('--num_testing_frame', default = 14, type = int)
@@ -79,59 +70,92 @@ def get_parser():
     parser.add_argument('--step_per_epoch', default = 200, type = int)
     parser.add_argument('--num_workers', default = 8, type = int)
     parser.add_argument('--pin_memory', default = True, type = str2bool)
-    parser.add_argument('--decoupled_rep', default = False, type = str2bool)
+    parser.add_argument('--save_snapshot', default = 4, type = int)
 
-    parser.add_argument('--device', default = 'cuda', type = str)
-    parser.add_argument('--model', default = 'lstm', type = str)
-    parser.add_argument('--model_input_type', default = None, type = str)
-    parser.add_argument('--print_step', default = 50, type = int)
-    parser.add_argument('--mode', default = 'baseline', type = str)
-    parser.add_argument('--dropout', default = 0.2, type = float)
-    parser.add_argument('--pck_alpha', default = 30, type = float) # 30 pixels for 2D images
-
-    parser.add_argument('--frame_input_h', default = 1080, type = int)
-    parser.add_argument('--frame_input_w', default = 1920, type = int)
-    parser.add_argument('--boxsize', default = 640, type = int)
-
+    # Optimizer 
+    parser.add_argument('--learning_rate', default = 1e-4, type = float)
     parser.add_argument('--optimizer', default = 'Adam', type = str)
     parser.add_argument('--betas', default = (0.9, 0.999), type = parse_sequence)
-    parser.add_argument('--temperature', default = 10000, type = float)
-    parser.add_argument('--alpha', default = 1, type = float)
-    parser.add_argument('--weight_decay', default = 1e-4, type = float)
-    parser.add_argument('--teacher_forcing_rate', default = 0.0, type = float)
-    parser.add_argument('--positional_encoding_temperature', default = 10000, type = float)
-    parser.add_argument('--positional_encoding_alpha', default = 1, type = float)
+    parser.add_argument('--weight_decay', default = 1e-5, type = float)
     parser.add_argument('--max_norm', default = 0.1, type = float)
 
-    parser.add_argument('--learning_rate', default = 1e-4, type = float)
+
+    # LRScheduler
+    parser.add_argument('--lr_scheduler_a', default = 'step', type = str)
+    parser.add_argument('--lr_scheduler_b', default = 'step', type = str)
+    parser.add_argument('--use_warm_up', default = True, type = str2bool)
     parser.add_argument('--warmup_learning_rate', default = 1e-6, type = float)
-    parser.add_argument('--warmup_steps', default = 4000, type = int)
-    parser.add_argument('--lr_scheduler', default = 'cosine', type = str)
-    parser.add_argument('--lr_step_size', default = 1000, type = int)
-    parser.add_argument('--lr_gamma', default = 0.2, type = float)
+    parser.add_argument('--warmup_steps', default = 2000, type = int)
+    parser.add_argument('--lr_step_size', default = 15000, type = int)
+    parser.add_argument('--lr_gamma', default = 0.3, type = float)
     parser.add_argument('--lr_eta_min', default = 1e-6, type = float)
     parser.add_argument('--lr_factor', default = 0.5, type = float)
     parser.add_argument('--lr_patience', default = 3, type = float)
 
-    parser.add_argument('--loss_type', default = 'penalize', type = str) # naive, penalize, decoupled
-    parser.add_argument('--lambda_norm', default = 2.0, type = float)
-    parser.add_argument('--lambda_specs', default = 1.5, type = float)
-    parser.add_argument('--lambda_root', default = 1.0, type = float)
-    parser.add_argument('--root_pos', default = 0, type = int)
-    parser.add_argument('--special_joints', default = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], type=parse_sequence)
 
+    # EXTRA INFO 
+    parser.add_argument('--device', default = 'cuda', type = str)
+    parser.add_argument('--print_step', default = 50, type = int)
+    parser.add_argument('--mode', default = 'baseline', type = str)
+    parser.add_argument('--pck_alpha', default = 30, type = float) # 30 pixels for 2D images, 10cm for 3D poses 
+    parser.add_argument('--frame_input_h', default = 1080, type = int) # FOR NTU 
+    parser.add_argument('--frame_input_w', default = 1920, type = int) # FOR NTU 
+    parser.add_argument('--boxsize', default = 640, type = int)        # FOR NTU
+
+    # POSITIONAL ENCODING 
+    parser.add_argument('--positional_encoding_temperature', default = 500, type = float)
+    parser.add_argument('--positional_encoding_alpha', default = 10, type = float)
+
+
+    # APPROACH
+    parser.add_argument('--pose_decoupling', default = False, type = str2bool)
+
+    parser.add_argument('--model_a', default = 'lstm', type = str)
+    parser.add_argument('--model_b', default = 'lstm', type = str)
+    parser.add_argument('--model_a_num_joints', type = int, required = True)
+    parser.add_argument('--model_b_num_joints', type = int, required = True)
+
+
+
+
+    parser.add_argument('--dropout', default = 0.2, type = float)
+
+    # LOSS FUNCTION INFORMATION
+    parser.add_argument('--model_a_loss_type',  default = 'penalize', type = str) # naive, penalize 
+    parser.add_argument('--model_b_loss_type',  default = 'naive', type = str)
+    parser.add_argument('--loss_fn_a', default = 'L1', type = str)
+    parser.add_argument('--loss_fn_b', default = 'L1', type = str)
+    parser.add_argument('--lambda_norm',               default = 2.0,  type = float)
+    parser.add_argument('--lambda_specs',              default = 1.5,  type = float)
+    parser.add_argument('--lambda_root',               default = 1.0,  type = float)
+    parser.add_argument('--root_position',             default = 0,    type = int)
+    parser.add_argument('--special_joints',            default = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], type=parse_sequence)
+    parser.add_argument('--layerwise_start_lambda',    default = 0.3, type = float, required = False)
+    parser.add_argument('--layerwise_end_lambda',      default = 1.0, type = float, required = False) 
+    parser.add_argument('--kl_annealing_schedule', default = 'linear', type = str, required = False)
+    parser.add_argument('--kl_start_beta', default = 0.0, type = float, required = False)
+    parser.add_argument('--kl_end_beta',   default = 1.0, type = float, required = False)
+
+
+
+    # TESTING_SAMPLES
+    parser.add_argument('--num_testing_samples', default = 5000, type = int, required = False)
+
+    # MLP
     parser.add_argument('--mlp_hidden_layers', default = [1024, 2048, 1024], type = parse_sequence)
 
+    # LSTM
     parser.add_argument('--lstm_embedding_dim', default = 2048, type = int)
     parser.add_argument('--lstm_hidden_dim', default = 256, type = int)
     parser.add_argument('--lstm_num_layers', default = 2, type = int)
     parser.add_argument('--lstm_residual_connection', default = True, type = str2bool)
 
+    # Transformer
     parser.add_argument('--transformer_num_heads', default = 4, type = int)
     parser.add_argument('--transformer_model_dim', default = 256, type = int)
     parser.add_argument('--transformer_fc_hidden_dim', default = 2048, type = int)
     parser.add_argument('--transformer_num_layers', default = 4, type = int)
-    parser.add_argument('--transformer_pre_normalization', default = False, type = str2bool)
+    parser.add_argument('--transformer_pre_normalization', default = True, type = str2bool)
     parser.add_argument('--transformer_residual_connection', default = True, type = str2bool)
     parser.add_argument('--transformer_type', default = 'vanilla', type = str)
     parser.add_argument('--get_attn_weight', default = False, type = str2bool)
@@ -139,8 +163,11 @@ def get_parser():
     parser.add_argument('--joint_attn_num_layers', default = 2, type = int)
     parser.add_argument('--joint_attn_num_heads', default = 4, type = int)
     parser.add_argument('--joint_attn_fc_hidden_dim', default = 512, type = int)
-    parser.add_argument('--proj_model_type', default = 'attn', type = str)
+    parser.add_argument('--proj_model_type', default = 'mlp', type = str)
+    parser.add_argument('--use_query_embedding', default = False, type = str2bool)
+    parser.add_argument('--transformer_intermediate', default = True, type = str2bool)
 
+    # BERT
     parser.add_argument('--bert_num_heads', default = 4, type = int)
     parser.add_argument('--bert_num_layers', default = 6, type = int)
     parser.add_argument('--bert_model_dim', default = 256, type = int)
@@ -149,7 +176,7 @@ def get_parser():
     parser.add_argument('--bert_attention_mode', default = 'parallel', type = str)
     parser.add_argument('--bert_pose_encoder_type', default = 'mlp', type = str)
     parser.add_argument('--bert_pose_decoder_type', default = 'mlp', type = str)
-
+    
     return parser
 
 

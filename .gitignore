@@ -3,6 +3,8 @@ __pycache__/
 *.pt
 *.pth
 *.tar
+*.mp4
+*.png
 .env
 .DS_Store
 dataset

@@ -84,7 +84,7 @@ class Decoder(nn.Module):
         self.proj_hidden_dim  = nn.Linear(latent_dim, hidden_dim)
         self.proj_pose_dim    = nn.Linear(hidden_dim, pose_dim)
 
-    def forward(self, observed_poses, target_poses, latent_vector, predicted_len, teacher_forcing_rate): 
+    def forward(self, observed_poses, latent_vector, predicted_len): 
         '''
         :param : observed_poses : tensor of shape (B, T, pose_dim)
         :param : latent_vectors : tensor of shape (B, latent_dim) 
@@ -102,8 +102,6 @@ class Decoder(nn.Module):
         predicted_poses = [] 
     
         for t in range(predicted_len):
-           if target_poses is not None and random.random() < teacher_forcing_rate : 
-               last_observed = last_observed if t == 0 else target_poses[:, t - 1, :].unsqueeze(1)
            output, curr_state = self.decoder(last_observed, curr_state)          # output : (B, 1, hidden_dim) 
            curr_pose = self.proj_pose_dim(output.squeeze(1)) # (B, pose_dim) 
            predicted_poses.append(curr_pose) 
@@ -123,7 +121,7 @@ class RNNMotionVAE(nn.Module):
         var     = torch.exp(0.5 * log_var) # (B, latent_dim) 
         return epsilon * var + mean   
     
-    def forward(self, observed_sequences, target_sequences, prediction_len, teacher_forcing_rate = 0.5): 
+    def forward(self, observed_sequences, prediction_len): 
         '''
         :param : observed sequences (B, T, pose_dim)
         :predicted_len : prediction length 
@@ -132,7 +130,7 @@ class RNNMotionVAE(nn.Module):
         '''
         mean, log_var = self.encoder(observed_sequences)
         z = self.reparameterization(mean, log_var) 
-        out = self.decoder(observed_sequences, target_sequences, z, prediction_len, teacher_forcing_rate)
+        out = self.decoder(observed_sequences, z, prediction_len)
         return out, mean, log_var
     
 

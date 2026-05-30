@@ -163,7 +163,6 @@ class GaussianDiffusion(object):
         else:
             raise TypeError(f"Unsupported model_mean_type type: {type(model_mean_type)}")
 
-        # --- model_var_type ---
         if isinstance(model_var_type, ModelVarType):
             self.model_var_type = model_var_type
         elif isinstance(model_var_type, str):
@@ -251,7 +250,7 @@ class GaussianDiffusion(object):
         log_var = extract_into_tensor(self.log_one_minus_alphas_cumprod, timesteps, x_start.shape)
         return mean, var, log_var
 
-    def q_sample(self, x_start, timesteps, gaussian_noise=None):
+    def q_sample(self, x_start, timesteps, gaussian_noise = None):
         """
         Sample from q(x_t | x_0) using the reparameterization trick:
             x_t = x_0 * sqrt(alpha_bar_t) + sqrt(1 - alpha_bar_t) * eps

@@ -6,40 +6,33 @@ import math
 import matplotlib.pyplot as plt
 
 class PositionalEncoding1D(object):
-    """
-    Positional Encoding for 1D sequences 
-    """
-    def __init__(self, position_dim = 512, temperature = 10000, alpha = 1):
-        self.position_dim = position_dim 
-        self.temperature  = temperature 
-        self.alpha        = alpha 
-    
-    def get_angles(self, position, index): 
-        angle_rates = 1.0 / np.power(self.temperature, (2 * (index // 2)) / np.float32(self.position_dim))
-        return self.alpha * position * angle_rates
-    
-    def __call__(self, sequence_length):
-        angle_radians = self.get_angles(
-            np.arange(sequence_length)[:, np.newaxis], 
-            np.arange(self.position_dim)[np.newaxis, :]
-        ) # (sequence_length, position_dim)
+    def __init__(self, model_dim = 512, temperature=10000, alpha=1):
+        self._model_dim = model_dim
+        self._temperature    = temperature
+        self._alpha          = alpha
 
-        angle_radians[:, 0::2] = np.sin(angle_radians[:, 0::2])
-        angle_radians[:, 1::2] = np.cos(angle_radians[:, 1::2])
-        
-        position_encoding = angle_radians[np.newaxis, ...] # (1, sequence_length, pos_dim) 
-        position_encoding = position_encoding.astype(np.float32)
+    def __call__(self, seq_length):
+        angle_rads = self.get_angles(np.arange(seq_length)[:, np.newaxis], np.arange(self._model_dim)[np.newaxis, :])
 
-        return torch.from_numpy(position_encoding)
-    
-    @staticmethod
-    def visualize_1d_encoding(num_visualized):
-        position_encoder = PositionalEncoding1D()
-        pos_encoding = position_encoder(num_visualized).numpy()
+        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+        pos_encoding = angle_rads[np.newaxis, ...]
+        pos_encoding = pos_encoding.astype(np.float32)
 
-        plt.pcolormesh(pos_encoding[0], cmap = 'RdBu')
+        return torch.from_numpy(pos_encoding)
+
+    def get_angles(self, pos, i):
+        angle_rates = 1 / np.power(self._temperature, (2 *  (i//2)) / np.float32(self._model_dim))
+        return self._alpha*pos * angle_rates
+
+    def visualize(self, num_visualized):
+        pos_encoding = self(num_visualized).numpy()[0]
+        plt.figure(figsize=(10, 6))
+        plt.pcolormesh(pos_encoding, cmap='RdBu')
         plt.xlabel('Depth')
-        plt.xlim((0, 512)) # Position dim 
-        plt.ylabel('Positiom in Sequence')
-        plt.colorbar() 
+        plt.xlim((0, self.d_model))
+        plt.ylabel('Position in Sequence')
+        plt.title('1D Positional Encoding')
+        plt.colorbar()
+        plt.tight_layout()
         plt.show()

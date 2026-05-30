@@ -4,8 +4,12 @@ import numpy as np
 from matplotlib import pyplot as plt
 from data.ImgUtil import torch2numpy
 from data.DatasetUtil import *
+from data import Forward_kinematics
 from matplotlib.animation import FuncAnimation
-
+import data.Dataset3DUtils
+import numpy as np
+import os
+from mpl_toolkits.mplot3d import Axes3D
 
 """
 Train time visualization 
@@ -79,9 +83,6 @@ def plot_metric_pennaction(ax1, ax2, metric_list, plot_training = True):
         ax2.set_xlabel("Time horizon (Num Frames)", fontsize = 10)
         ax2.legend(prop={'size': 10})
 
-'''
-NTU PLOT
-'''
 def plot_metric_ntu(ax1, ax2, metric_list, plot_training = True): 
     if plot_training : 
     # Training plots
@@ -565,6 +566,237 @@ def animate_ntu_pose_2d(
     ani = FuncAnimation(fig, update, frames = num_testing_frame, interval = 1000 // fps, blit = False)
 
     ani.save(output_path, writer = 'pillow', fps = fps)
+    print(f"Saved GIF => {output_path}")
+    plt.tight_layout()
+    plt.show()
+    return ani
+
+
+def animate_cmu_pose_3d(
+    observed_sequence,
+    predicted_sequence,
+    target_sequence,
+    fps=30,
+    output_path='pose_prediction_cmu_3d.gif'
+):
+    """
+    Animate CMU MoCap 3D pose predictions vs ground truth.
+
+    observed_sequence  : (T_obs,  38, 3)
+    target_sequence    : (T_pred, 38, 3)
+    predicted_sequence : (T_pred, 38, 3)
+
+    Skeleton uses 1-indexed I/J arrays (converted to 0-indexed internally).
+    Left/right colouring is preserved from the original Ax3DPoseCMU definition.
+    """
+    assert observed_sequence.ndim  == 3 and observed_sequence.shape[1:]  == (38, 3)
+    assert target_sequence.ndim    == 3 and target_sequence.shape[1:]    == (38, 3)
+    assert predicted_sequence.ndim == 3 and predicted_sequence.shape[1:] == (38, 3)
+
+    # ── Skeleton definition (from Ax3DPoseCMU, converted to 0-indexed) ──────
+    I = np.array([1,2,3,4,5,6,1,8,9,10,11,12,1,14,15,16,17,18,19,16,
+                  21,22,23,25,26,24,28,16,30,31,32,33,34,35,33,37]) - 1
+    J = np.array([2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,
+                  22,23,24,26,27,28,29,30,31,32,33,34,35,36,37,38]) - 1
+    LR = np.array([1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,
+                   1,1,1,0,0,0,0,0,0,0,0,0], dtype=bool)
+
+    LCOLOR = "#3498db"
+    RCOLOR = "#e74c3c"
+
+    all_data  = np.concatenate([observed_sequence, target_sequence, predicted_sequence], axis=0)
+    T_obs     = observed_sequence.shape[0]
+    T_pred    = target_sequence.shape[0]
+    T_total   = T_obs + T_pred
+
+    mins      = all_data.min(axis=(0, 1))
+    maxs      = all_data.max(axis=(0, 1))
+    max_range = (maxs - mins).max() / 2.0
+    mids      = (mins + maxs) / 2.0
+
+    fig, (ax_tgt, ax_pred) = plt.subplots(
+        1, 2, figsize=(16, 8), subplot_kw={"projection": "3d"}
+    )
+
+    def setup_ax(ax, title_str):
+        ax.set_xlim(mids[0] - max_range, mids[0] + max_range)
+        ax.set_ylim(mids[1] - max_range, mids[1] + max_range)
+        ax.set_zlim(mids[2] - max_range, mids[2] + max_range)
+        ax.set_box_aspect([1, 1, 1])
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_title(title_str)
+
+    setup_ax(ax_tgt,  "Ground Truth")
+    setup_ax(ax_pred, "Prediction")
+
+    def make_artists(ax, pose0):
+        scatter = ax.scatter(pose0[:, 0], pose0[:, 1], pose0[:, 2], s=40)
+        bone_lines = []
+        for idx in range(len(I)):
+            i, j = I[idx], J[idx]
+            color = LCOLOR if LR[idx] else RCOLOR
+            (line,) = ax.plot(
+                [pose0[i, 0], pose0[j, 0]],
+                [pose0[i, 1], pose0[j, 1]],
+                [pose0[i, 2], pose0[j, 2]],
+                linewidth=2, color=color,
+            )
+            bone_lines.append((line, i, j, color))
+        return scatter, bone_lines
+
+    scatter_tgt,  bones_tgt  = make_artists(ax_tgt,  observed_sequence[0])
+    scatter_pred, bones_pred = make_artists(ax_pred, observed_sequence[0])
+
+    title = fig.suptitle("Frame 0")
+
+    def get_pose(frame):
+        if frame < T_obs:
+            return observed_sequence[frame], observed_sequence[frame]
+        pred_idx = frame - T_obs
+        return target_sequence[pred_idx], predicted_sequence[pred_idx]
+
+    def update_artists(scatter, bone_lines, pose):
+        scatter._offsets3d = (pose[:, 0], pose[:, 1], pose[:, 2])
+        for line, i, j, _ in bone_lines:
+            line.set_data_3d(
+                [pose[i, 0], pose[j, 0]],
+                [pose[i, 1], pose[j, 1]],
+                [pose[i, 2], pose[j, 2]],
+            )
+
+    def update(frame):
+        tgt_pose, pred_pose = get_pose(frame)
+        update_artists(scatter_tgt,  bones_tgt,  tgt_pose)
+        update_artists(scatter_pred, bones_pred, pred_pose)
+        label = "Observed" if frame < T_obs else f"Predicted {frame - T_obs} / {T_pred}"
+        title.set_text(f"Frame {frame} / {T_total}  [{label}]")
+        return [
+            scatter_tgt, scatter_pred,
+            *[ln for ln, _, _, _ in bones_tgt],
+            *[ln for ln, _, _, _ in bones_pred],
+        ]
+
+    ani = FuncAnimation(fig, update, frames=T_total, interval=1000 // fps, blit=False)
+
+    ani.save(output_path, writer='pillow', fps=fps)
+    print(f"Saved GIF => {output_path}")
+    plt.tight_layout()
+    plt.show()
+    return ani
+
+
+def animate_h36m_pose_3d(
+    observed_sequence,
+    predicted_sequence,
+    target_sequence,
+    fps = 30,
+    output_path='pose_prediction_h36m_3d.gif'
+):
+    """
+    Animate Human3.6M 3D pose predictions vs ground truth.
+
+    observed_sequence  : (T_obs,  17, 3)
+    target_sequence    : (T_pred, 17, 3)
+    predicted_sequence : (T_pred, 17, 3)
+
+    Skeleton uses 1-indexed I/J arrays (converted to 0-indexed internally).
+    Left/right colouring is preserved from the original Ax3DPoseH36M definition.
+    """
+    assert observed_sequence.ndim  == 3 and observed_sequence.shape[1:]  == (17, 3)
+    assert target_sequence.ndim    == 3 and target_sequence.shape[1:]    == (17, 3)
+    assert predicted_sequence.ndim == 3 and predicted_sequence.shape[1:] == (17, 3)
+
+    # 
+    I = np.array([0, 1, 2, 0, 4, 5, 0, 7, 8, 9, 8, 11, 12, 8, 14, 15])
+    J = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+
+    LR = np.array([1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1], dtype = bool)
+
+    LCOLOR = "#3498db"
+    RCOLOR = "#e74c3c"
+
+    all_data  = np.concatenate([observed_sequence, target_sequence, predicted_sequence], axis=0)
+    T_obs     = observed_sequence.shape[0]
+    T_pred    = target_sequence.shape[0]
+    T_total   = T_obs + T_pred
+
+    mins      = all_data.min(axis=(0, 1))
+    maxs      = all_data.max(axis=(0, 1))
+    max_range = (maxs - mins).max() / 2.0
+    mids      = (mins + maxs) / 2.0
+
+    fig, (ax_tgt, ax_pred) = plt.subplots(
+        1, 2, figsize=(16, 8), subplot_kw={"projection": "3d"}
+    )
+
+    def setup_ax(ax, title_str):
+        ax.set_xlim(mids[0] - max_range, mids[0] + max_range)
+        ax.set_ylim(mids[1] - max_range, mids[1] + max_range)
+        ax.set_zlim(mids[2] - max_range, mids[2] + max_range)
+        ax.set_box_aspect([1, 1, 1])
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.view_init(elev = 120, azim = -90) 
+        ax.set_title(title_str) 
+
+
+    setup_ax(ax_tgt,  "Ground Truth")
+    setup_ax(ax_pred, "Prediction")
+
+    def make_artists(ax, pose0):
+        scatter = ax.scatter(pose0[:, 0], pose0[:, 1], pose0[:, 2], s = 40, marker = '.', zorder = 5)
+        bone_lines = []
+        for idx in range(len(I)):
+            i, j = I[idx], J[idx]
+            color = LCOLOR if LR[idx] else RCOLOR
+            (line, ) = ax.plot(
+                [pose0[i, 0], pose0[j, 0]],
+                [pose0[i, 1], pose0[j, 1]],
+                [pose0[i, 2], pose0[j, 2]],
+                linewidth=3, marker='.', markersize=10, color=color,
+            )
+            bone_lines.append((line, i, j, color))
+        return scatter, bone_lines
+
+    scatter_tgt,  bones_tgt  = make_artists(ax_tgt,  observed_sequence[0])
+    scatter_pred, bones_pred = make_artists(ax_pred, observed_sequence[0])
+
+    title = fig.suptitle("Frame 0")
+
+
+    def get_pose(frame):
+        if frame < T_obs:
+            return observed_sequence[frame], observed_sequence[frame]
+        pred_idx = frame - T_obs
+        return target_sequence[pred_idx], predicted_sequence[pred_idx]
+
+    def update_artists(scatter, bone_lines, pose):
+        scatter._offsets3d = (pose[:, 0], pose[:, 1], pose[:, 2])
+        for line, i, j, _ in bone_lines:
+            line.set_data_3d(
+                [pose[i, 0], pose[j, 0]],
+                [pose[i, 1], pose[j, 1]],
+                [pose[i, 2], pose[j, 2]],
+            )
+
+    def update(frame):
+        tgt_pose, pred_pose = get_pose(frame)
+        update_artists(scatter_tgt,  bones_tgt,  tgt_pose)
+        update_artists(scatter_pred, bones_pred, pred_pose)
+        label = "Observed" if frame < T_obs else f"Predicted {frame - T_obs} / {T_pred}"
+        title.set_text(f"Frame {frame} / {T_total}  [{label}]")
+        return [
+            scatter_tgt, scatter_pred,
+            *[ln for ln, _, _, _ in bones_tgt],
+            *[ln for ln, _, _, _ in bones_pred],
+        ]
+
+    ani = FuncAnimation(fig, update, frames=T_total, interval=1000 // fps, blit=False)
+
+    ani.save(output_path, writer='pillow', fps=fps)
     print(f"Saved GIF => {output_path}")
     plt.tight_layout()
     plt.show()

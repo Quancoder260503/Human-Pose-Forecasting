@@ -34,7 +34,7 @@ def dataset_factory(params):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_prefix', type = str, default = '')
-    parser.add_argument('--batch_size', type = int, default = 16)
+    parser.add_argument('--batch_size', type = int, default = 64)
     parser.add_argument('--data_path', type = str)
     parser.add_argument('--learning_rate', type = float, default = 1e-5)
     parser.add_argument('--max_epochs', type = int, default = 500)
@@ -89,6 +89,8 @@ if __name__ == '__main__':
     parser.add_argument('--include_last_obs', action = 'store_true')
     parser.add_argument('--zero_out_decoder', action = 'store_true')
     parser.add_argument('--log_frequency', default = 50, type = int)
+
+    parser.add_argument('--mod_train', default = 0.8, type = float)
 
     
     parser.add_argument('--num_workers', type = int, default = 0)

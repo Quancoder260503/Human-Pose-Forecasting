@@ -27,11 +27,11 @@ def normal_init_(layer, mean_, sd_, bias, norm_bias=True):
 
 def weight_init(
     module, 
-    mean_=0, 
-    sd_=0.004, 
-    bias=0.0, 
-    norm_bias=False, 
-    init_fn_=normal_init_):
+    mean_ = 0, 
+    sd_ = 0.004, 
+    bias = 0.0, 
+    norm_bias = False, 
+    init_fn_ = normal_init_):
   """Initialization of layers with normal distribution"""
   moduleclass = module.__class__.__name__
   try:

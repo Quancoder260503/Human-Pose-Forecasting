@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import runner.EncoderDecoderRunner as encoder_decoder_runner
-import model.Transformer           as PoseTransformer
+import model.Deterministic.Transformer as PoseTransformer
 import model.PoseEncoderDecoder    as PoseEncoderDecoder
 import data.H36M as H36M
 import data.Dataset3DUtils
@@ -60,9 +60,9 @@ def visualize_h36mdataset():
   actions = [('walking', 12),  ('eating', 2),  ('smoking', 9), ('discussion', 1), ('directions', 0)]
 
   model = PoseTransformer.get_transformer_model(
-      params, 
-      pose_encoder_fn, 
-      pose_decoder_fn
+    params, 
+    pose_encoder_fn, 
+    pose_decoder_fn
   )
 
   model.load_state_dict(torch.load(args.model_file, weights_only = False, map_location = params['device'])['model'])
@@ -89,25 +89,25 @@ def visualize_h36mdataset():
       dec_inputs = torch.squeeze(dec_inputs)
 
       prediction, attn_weights, memory = model(
-          enc_inputs, 
-          dec_inputs, 
-          get_attn_weights = True
+        enc_inputs, 
+        dec_inputs, 
+        get_attn_weights = True
       )
 
-      prediction = prediction[-1][8*acidx:8*acidx+8].cpu().numpy()[0:1]
+      prediction = prediction[-1][8 * acidx : 8 * acidx + 8].cpu().numpy()[0:1]
 
       #print(dec_inputs[0:1].detach().cpu().numpy())
     
-      print(np.std(prediction, axis = 1).mean()) 
       preds = eval_dataset_fn.dataset.unnormalize_pad_data_to_expmap(prediction)
       print(np.std(preds, axis = 1).mean()) 
+      print(np.std(gts[0:1], axis = 1).mean()) 
       H36M.animate_h36m_pose_3d(
         src_sequence  = ins[0:1], 
         tgt_sequence  = gts[0:1], 
         pred_sequence = preds, 
-        colors        = ['red', 'red'],
-        data_path     = params['data_path'], 
-        fps           = 5, 
+        colors  = ['red', 'red'],
+        data_path = params['data_path'], 
+        fps = 5, 
       )
 
 
@@ -263,9 +263,9 @@ def visualize_attn_weights():
       PoseEncoderDecoder.select_pose_encoder_decoder_fn(params)
 
   model = PoseTransformer.get_transformer_model(
-      params, 
-      pose_encoder_fn, 
-      pose_decoder_fn
+    params, 
+    pose_encoder_fn, 
+    pose_decoder_fn
   )
 
   model.load_state_dict(torch.load(args.model_file, weights_only = False, map_location = params['device'])['model'])
@@ -295,73 +295,74 @@ def visualize_attn_weights():
           get_attn_weights=True
       )
 
-    attn_weights= attn_weights[-1][8*acidx:8*acidx+8].cpu().numpy()[0:1]
-    attn_weights = np.squeeze(attn_weights)
-    path = 'skeletons/%s'%action
-    in_imgs_ = [crop_image(cv2.imread(os.path.join(path, x)) )
-        for x in os.listdir(path) if 'gt_in' in x]
+      attn_weights= attn_weights[-1][8*acidx:8*acidx+8].cpu().numpy()[0:1]
+      attn_weights = np.squeeze(attn_weights)
+      # path = 'skeletons/%s'%action
+      # in_imgs_ = [crop_image(cv2.imread(os.path.join(path, x)) )
+      #     for x in os.listdir(path) if 'gt_in' in x]
 
-    in_imgs = [in_imgs_[i] for i in range(0, len(in_imgs_), 2)]
+      # in_imgs = [in_imgs_[i] for i in range(0, len(in_imgs_), 2)]
 
-    pred_imgs = [crop_image(cv2.imread(os.path.join(path, x)))
-        for x in os.listdir(path) if 'pred_0' in x]
+      # pred_imgs = [crop_image(cv2.imread(os.path.join(path, x)))
+      #     for x in os.listdir(path) if 'pred_0' in x]
 
-    the_shape = in_imgs[0].shape
-    cx = the_shape[1]//2
-    cy = the_shape[0]//2
+      # the_shape = in_imgs[0].shape
+      # cx = the_shape[1]//2
+      # cy = the_shape[0]//2
 
-    in_imgs = np.concatenate(in_imgs, axis=1)
-    pred_imgs = np.concatenate(pred_imgs, axis=1)
+      # in_imgs = np.concatenate(in_imgs, axis = 1)
+      # pred_imgs = np.concatenate(pred_imgs, axis = 1)
 
-    #cv2.imshow('In IMG', in_imgs)
-    #cv2.imshow('pred IMG', pred_imgs)
-    #cv2.waitKey()
+      # cv2.imshow('In IMG', in_imgs)
+      # cv2.imshow('pred IMG', pred_imgs)
+      # cv2.waitKey()
 
-    spaces_between = 5
-    print(in_imgs.shape, pred_imgs.shape, the_shape)
-    canvas = np.ones((in_imgs.shape[0]*spaces_between, in_imgs.shape[1], 3), dtype = in_imgs.dtype) * 255
+      # spaces_between = 5
 
-    canvas[0:the_shape[0], :] = in_imgs
-    canvas[the_shape[0]*(spaces_between-1):, 0:pred_imgs.shape[1]] = pred_imgs
+      # canvas = np.ones((in_imgs.shape[0]*spaces_between, in_imgs.shape[1], 3), dtype = in_imgs.dtype) * 255
 
-    #cx_pred = cx + the_shape[1]*(spaces_between-1) - cx//2
-    cy_pred = cy + the_shape[0]*(spaces_between-1) - cy // 3*2
-    print(attn_weights.min(), attn_weights.max())
+      # canvas[0:the_shape[0], :] = in_imgs
+      # canvas[the_shape[0]*(spaces_between-1):, 0:pred_imgs.shape[1]] = pred_imgs
 
-    mean = attn_weights.mean()
-    #plt.imshow(canvas, origin='lower')
-    pil_canvas = Image.fromarray(canvas)
-    d_canvas = ImageDraw.Draw(pil_canvas)
+      # #cx_pred = cx + the_shape[1]*(spaces_between-1) - cx//2
+      # cy_pred = cy + the_shape[0]*(spaces_between-1) - cy // 3*2
+      print(attn_weights.min(), attn_weights.max())
 
-    for pred_idx in range(attn_weights.shape[0]):
-    
-      cx_pred = cx + pred_idx*the_shape[1]
-    
-      for ii, in_idx in enumerate(range(0, attn_weights.shape[1], 2)):
-        cx_in = cx + ii * the_shape[1]
-        this_weight = attn_weights[pred_idx, in_idx]
-        if this_weight > mean:
-          d_canvas.line([(cx_in, cy+cy//3*2), (cx_pred, cy_pred)], fill = (255,0,0, 25), width = this_weight / mean)
+      mean = attn_weights.mean()
+      print(attn_weights.shape)
+      # #plt.imshow(canvas, origin='lower')
+      # pil_canvas = Image.fromarray(canvas)
+      # d_canvas = ImageDraw.Draw(pil_canvas)
 
-    name = 'the_canvas.png'
-    #cv2.imwrite('the_canvas.jpg', canvas)
-    # plt.show()
-    #plt.imsave(name, canvas)
-    pil_canvas.save(name)
-    print(pil_canvas.info)
+      # for pred_idx in range(attn_weights.shape[0]):
+      
+      #   cx_pred = cx + pred_idx*the_shape[1]
+      
+      #   for ii, in_idx in enumerate(range(0, attn_weights.shape[1], 2)):
+      #     cx_in = cx + ii * the_shape[1]
+      #     this_weight = attn_weights[pred_idx, in_idx]
+      #     if this_weight > mean:
+      #       d_canvas.line([(cx_in, cy+cy//3*2), (cx_pred, cy_pred)], fill = (255,0,0, 25), width = this_weight / mean)
 
-    fig, ax = plt.subplots(figsize=(20,10))
-    ax.matshow(attn_weights)
-    plt.ylabel("")
-    plt.xlabel("")
-    fig.tight_layout()
-    #plt.show()
-    name = 'attn_map.png'
-    plt.savefig(name)
-    plt.close()
+      name = 'the_canvas.png'
+      #cv2.imwrite('the_canvas.jpg', canvas)
+      # plt.show()
+      #plt.imsave(name, canvas)
+      # pil_canvas.save(name)
+      # print(pil_canvas.info)
+
+      fig, ax = plt.subplots(figsize=(20,10))
+      ax.matshow(attn_weights)
+      plt.ylabel("")
+      plt.xlabel("")
+      fig.tight_layout()
+      #plt.show()
+      name = f'attn_map_{action}.png'
+      plt.savefig(name)
+      plt.close()
 
 
 if __name__ == '__main__':
-  visualize_h36mdataset()
-  #visualize_attn_weights()
+  #visualize_h36mdataset()
+  visualize_attn_weights()
   #compute_test_mAP_nturgbd()

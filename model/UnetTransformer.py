@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from model.PositionalEncoding import * 
+import math 
 
 def zero_module(module):
   """
@@ -22,7 +22,7 @@ def timestep_embedding(timesteps, dim, max_period = 10000):
    """
    half = dim // 2
    freqs = torch.exp(-math.log(max_period) * torch.\
-                     arange(start=0, end=half, dtype=torch.float32) / half).to(device=timesteps.device)
+                     arange(start = 0, end = half, dtype=torch.float32) / half).to(device=timesteps.device)
    args = timesteps[:, None].float() * freqs[None]
    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
    if dim % 2:
@@ -31,9 +31,6 @@ def timestep_embedding(timesteps, dim, max_period = 10000):
 
 
 class AdaptiveNormalization(nn.Module):
-  """
-  Stylization block 
-  """
   def __init__(self, latent_dim, embedding_dim, dropout = 0.1):
     super(AdaptiveNormalization, self).__init__()
     
@@ -212,7 +209,7 @@ class MultiHeadCrossAttention(nn.Module):
         view(batch_size, src_seq_length, self.num_head, -1).permute(0, 2, 1, 3)
     key = key.contiguous().view(batch_size * self.num_head, src_seq_length, -1)
 
-    value = self.value_proj(memory).contigous().\
+    value = self.value_proj(memory).contiguous().\
         view(batch_size, src_seq_length,  self.num_head, -1).permute(0, 2, 1, 3)
     value = value.contiguous().view(batch_size * self.num_head, src_seq_length, -1)
 
@@ -275,7 +272,7 @@ class UnetTransformerLayer(nn.Module):
     out = self.attention_layer(input, embedding)
     if self.cross_attention is not None : 
       assert memory is not None, "Memory is none, cannot perform Cross Attention"
-      out = self.cross_attention(out, memory, embedding)
+      out = self.cross_attention(out, embedding, memory)
     out = self.ffn_layer(out, embedding)
     return out 
 
@@ -322,6 +319,7 @@ class UnetTransformer(nn.Module):
       self.time_embedding_dim
     )
 
+
     self.time_embedding = nn.Sequential(
       nn.Linear(self.model_dim, self.time_embedding_dim), 
       nn.SiLU(), 
@@ -352,7 +350,8 @@ class UnetTransformer(nn.Module):
     :param memory : if not None, can be the observed seqs information 
     """
 
-    batch_size, T, _ = input.shape[0]
+    batch_size, T, _ = input.shape
+  
 
     embedding = self.time_embedding(
       timestep_embedding(
@@ -364,8 +363,7 @@ class UnetTransformer(nn.Module):
 
     if memory is not None : 
       enc_memory = memory.contiguous().view(batch_size, -1)
-      embedding  = embedding + self.conditon_embedding(enc_memory)
-
+      embedding  = embedding + self.conditional_embedding(enc_memory)
 
     network_in = self.pose_encoder(input) # (B, T_{prediction}, model_dim)
     network_in = network_in + self.sequence_embedding.unsqueeze(0)[:, :T, :]
@@ -377,14 +375,13 @@ class UnetTransformer(nn.Module):
         enc_list.append(network_in) 
         network_in = module(network_in, embedding, memory)
       else : 
-        if self._model_version == 'v1': 
-          network_in = module(network_in, embedding, memory)
-          network_in += enc_list[-1]
-        
-        elif self._model_version == 'v2': 
-          network_in = module(network_in, embedding, enc_list[-1])
-        else : 
-          raise NotImplementedError('Method is not supported for now')
+      #  if self._model_version == 'v1': 
+        network_in = module(network_in, embedding, memory)
+        network_in += enc_list[-1]  
+        # elif self._model_version == 'v2': 
+        #   network_in = module(network_in, embedding, enc_list[-1])
+        # else : 
+        #   raise NotImplementedError('Method is not supported for now')
         
         enc_list.pop()
 
@@ -393,21 +390,21 @@ class UnetTransformer(nn.Module):
 
 
 def unet_transformer(params, pose_encoder, pose_decoder):
-    return UnetTransformer(
-      input_features = params['pose'], 
-      prediction_len = params['model'], 
-      model_dim  = params['model_dim'], 
-      ffn_dim    = params['ffn_dim'], 
-      num_layers = params['num_layers'],
-      num_heads  = params['num_heads'], 
-      dropout    = params['dropout'], 
-      activation = params['activation'], 
-      use_cross_attention  = params['use_cross_attention'], 
-      embedding_max_period = params['embedding_max_period'],
-      pose_encoder  = pose_encoder, 
-      pose_decoder  = pose_decoder,
-      model_version = params['model_version'],  
-    )
+  return UnetTransformer(
+    input_features = params['pose_dim'], 
+    prediction_len = params['num_dct_channels'], 
+    model_dim  = params['model_dim'], 
+    ffn_dim    = params['ffn_dim'], 
+    num_layers = params['num_layers'],
+    num_heads  = params['num_heads'], 
+    dropout    = params['dropout'], 
+    activation = params['activation'], 
+    use_cross_attention  = params['use_cross_attention'], 
+    embedding_max_period = params['embedding_max_period'],
+    pose_encoder  = pose_encoder, 
+    pose_decoder  = pose_decoder,
+    model_version = params['model_prefix'], 
+  )
 
 
 

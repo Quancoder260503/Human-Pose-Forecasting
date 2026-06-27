@@ -16,43 +16,39 @@ def zero_module(module):
 def pose_encoder_mlp(params):
   init_fn = normal_init_ if params['init_fn'] == 'normal_init' else xavier_init_
   pose_embedding = nn.Sequential(
-      nn.Linear(params['input_dim'], params['model_dim']),
-      nn.Dropout(0.1)
+    nn.Linear(params['pose_dim'], params['model_dim']),
+    nn.Dropout(0.1)
   )
   weight_init(pose_embedding, init_fn_ = init_fn)
   return pose_embedding
       
 
 def pose_decoder_mlp(params):
-  init_fn = normal_init_ if params['init_fn'] == 'normal_init' else xavier_init_
   pose_decoder = nn.Linear(params['model_dim'], params['pose_dim'])
-  if params['zero_out_decoder'] is True :
-    zero_module(pose_decoder)
-  else :  
-    weight_init(pose_decoder, init_fn_=init_fn)
+  zero_module(pose_decoder)
   return pose_decoder
 
 
 def pose_decoder_gcn(params):
-    decoder = PoseGCN(
-      input_features = params['model_dim'],
-      output_features = params['joint_dim'],
-      model_dim = params['model_dim'],
-      output_nodes = params['num_joints'],
-      p_dropout = params['dropout'],
-      num_stage = 1
-    )
-    
-    return decoder
+  decoder = PoseGCN(
+    input_features = params['model_dim'],
+    output_features = params['joint_dim'],
+    model_dim = params['model_dim'],
+    output_nodes = params['num_joints'],
+    p_dropout = params['dropout'],
+    num_stage = 1
+  )
+  
+  return decoder
 
 def pose_encoder_gcn(params):
-    encoder = SimpleEncoder(
-      n_nodes = params['num_joints'],
-      input_features = params['joint_dim'],
-      model_dim = params['model_dim'], 
-      p_dropout = params['dropout']
-    )
-    return encoder
+  encoder = SimpleEncoder(
+    n_nodes = params['num_joints'],
+    input_features = params['joint_dim'],
+    model_dim = params['model_dim'], 
+    p_dropout = params['dropout']
+  )
+  return encoder
 
 
 def select_pose_encoder_decoder_fn(params):

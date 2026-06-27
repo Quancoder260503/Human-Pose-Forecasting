@@ -15,26 +15,26 @@ from matplotlib.animation import FuncAnimation
 
 
 _ALL_ACTIONS = [
-    "directions", 
-    "discussion", 
-    "eating", 
-    "greeting", 
-    "phoning",
-    "posing", 
-    "purchases", 
-    "sitting", 
-    "sittingdown", 
-    "smoking",
-    "takingphoto", 
-    "waiting", 
-    "walking", 
-    "walkingdog", 
-    "walkingtogether"
+  "directions", 
+  "discussion", 
+  "eating", 
+  "greeting", 
+  "phoning",
+  "posing", 
+  "purchases", 
+  "sitting", 
+  "sittingdown", 
+  "smoking",
+  "takingphoto", 
+  "waiting", 
+  "walking", 
+  "walkingdog", 
+  "walkingtogether"
 ]
 
 # SOA consider only 21 major joints
 _MAJOR_JOINTS = [
-    0, 1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 24, 25, 26, 27
+  0, 1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 24, 25, 26, 27
 ]
 _NMAJOR_JOINTS = len(_MAJOR_JOINTS)
 _NH36M_JOINTS = 32
@@ -529,155 +529,154 @@ class H36MDataset(Dataset):
 
 
 
-def animate_h36m_pose_3d(src_sequence, tgt_sequence, pred_sequence, data_path,
-    fps = 30, output_path = 'pose_prediction_h36m_3d.gif', colors = None,
-):
-    if colors is None:
-        colors = ["#3498db", "#e74c3c"]
+def animate_h36m_pose_3d(src_sequence, tgt_sequence, pred_sequence, data_path, \
+                         fps = 30, output_path = 'pose_prediction_h36m_3d.gif', colors = None):
+  if colors is None:
+      colors = ["#3498db", "#e74c3c"]
 
-    LCOLOR, RCOLOR = colors
+  LCOLOR, RCOLOR = colors
 
-    parent, offset, rot_ind, exp_map_ind = load_constants(data_path)
+  parent, offset, rot_ind, exp_map_ind = load_constants(data_path)
 
-    src_seq, tgt_seq, pred_seq = src_sequence[0], tgt_sequence[0], pred_sequence[0]
+  src_seq, tgt_seq, pred_seq = src_sequence[0], tgt_sequence[0], pred_sequence[0]
 
-    src_expmap  = revert_coordinate_space(src_seq,  np.eye(3), np.zeros(3))
-    tgt_expmap  = revert_coordinate_space(tgt_seq,  np.eye(3), np.zeros(3))
-    pred_expmap = revert_coordinate_space(pred_seq, np.eye(3), np.zeros(3))
+  src_expmap  = revert_coordinate_space(src_seq,  np.eye(3), np.zeros(3))
+  tgt_expmap  = revert_coordinate_space(tgt_seq,  np.eye(3), np.zeros(3))
+  pred_expmap = revert_coordinate_space(pred_seq, np.eye(3), np.zeros(3))
 
-    xyz_src  = np.zeros((src_seq.shape[0],  96))
-    xyz_tgt  = np.zeros((tgt_seq.shape[0],  96))
-    xyz_pred = np.zeros((pred_seq.shape[0], 96))
+  xyz_src  = np.zeros((src_seq.shape[0],  96))
+  xyz_tgt  = np.zeros((tgt_seq.shape[0],  96))
+  xyz_pred = np.zeros((pred_seq.shape[0], 96))
 
-    for i in range(src_seq.shape[0]):
-        xyz_src[i, :]  = compute_forward_kinematics(
-            src_expmap[i, :],  parent, offset, rot_ind, exp_map_ind)
+  for i in range(src_seq.shape[0]):
+    xyz_src[i, :]  = compute_forward_kinematics(src_expmap[i, :],  parent, offset, rot_ind, exp_map_ind)
 
-    for i in range(tgt_seq.shape[0]):
-        xyz_tgt[i, :]  = compute_forward_kinematics(
-            tgt_expmap[i, :],  parent, offset, rot_ind, exp_map_ind)
-        xyz_pred[i, :] = compute_forward_kinematics(
-            pred_expmap[i, :], parent, offset, rot_ind, exp_map_ind)
+  for i in range(tgt_seq.shape[0]):
+    xyz_tgt[i, :]  = compute_forward_kinematics(tgt_expmap[i, :],  parent, offset, rot_ind, exp_map_ind)
+    xyz_pred[i, :] = compute_forward_kinematics(pred_expmap[i, :], parent, offset, rot_ind, exp_map_ind)
 
-    xyz_src  = xyz_src.reshape(-1, 32, 3)
-    xyz_tgt  = xyz_tgt.reshape(-1, 32, 3)
-    xyz_pred = xyz_pred.reshape(-1, 32, 3)
+  xyz_src  = xyz_src.reshape(-1, 32, 3)
+  xyz_tgt  = xyz_tgt.reshape(-1, 32, 3)
+  xyz_pred = xyz_pred.reshape(-1, 32, 3)
 
-    T_obs   = xyz_src.shape[0]
-    T_pred  = xyz_tgt.shape[0]
-    T_total = T_obs + T_pred
+  T_obs   = xyz_src.shape[0]
+  T_pred  = xyz_tgt.shape[0]
+  T_total = T_obs + T_pred
 
-    I  = np.array([1,2,3,1,7,8,1,13,14,15,14,18,19,14,26,27,18,19,19,26,27,27]) - 1
-    J  = np.array([2,3,4,7,8,9,13,14,15,16,18,19,20,26,27,28, 19,20,20,27,28,28]) - 1
-    LR = np.array([1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1], dtype=bool)
+  I  = np.array([1,2,3,1,7,8,1,13,14,15,14,18,19,14,26,27,18,19,19,26,27,27]) - 1
+  J  = np.array([2,3,4,7,8,9,13,14,15,16,18,19,20,26,27,28, 19,20,20,27,28,28]) - 1
+  LR = np.array([1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1], dtype = bool)
 
-    all_xyz   = np.concatenate([xyz_src, xyz_tgt, xyz_pred], axis=0)
-    mins      = all_xyz.min(axis=(0, 1))
-    maxs      = all_xyz.max(axis=(0, 1))
-    max_range = (maxs - mins).max() / 2.0
-    mids      = (mins + maxs) / 2.0
+  all_xyz = np.concatenate([xyz_src, xyz_tgt, xyz_pred], axis = 0)
+  mins = all_xyz.min(axis = (0, 1))
+  maxs = all_xyz.max(axis = (0, 1))
+  max_range = (maxs - mins).max() / 2.0
+  mids = (mins + maxs) / 2.0
 
-    fig, (ax_tgt, ax_pred) = plt.subplots(1, 2, figsize=(16, 8), subplot_kw={"projection": "3d"})
+  fig, (ax_tgt, ax_pred) = plt.subplots(1, 2, figsize = (16, 8), subplot_kw = {"projection": "3d"})
 
-    def setup_ax(ax, title_str):
-        ax.set_xlim(mids[0] - max_range, mids[0] + max_range)
-        ax.set_ylim(mids[1] - max_range, mids[1] + max_range)
-        ax.set_zlim(mids[2] - max_range, mids[2] + max_range)
-        ax.set_box_aspect([1, 1, 1])
-        ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
-        ax.view_init(elev = 0, azim = -90)
-        ax.set_title(title_str)
+  def setup_ax(ax, title_str):
+    ax.set_xlim(mids[0] - max_range, mids[0] + max_range)
+    ax.set_ylim(mids[1] - max_range, mids[1] + max_range)
+    ax.set_zlim(mids[2] - max_range, mids[2] + max_range)
+    ax.set_box_aspect([1, 1, 1])
+    ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
+    ax.view_init(elev = 0, azim = -90)
+    ax.set_title(title_str)
 
-    setup_ax(ax_tgt,  "Ground Truth")
-    setup_ax(ax_pred, "Prediction")
+  setup_ax(ax_tgt,  "Ground Truth")
+  setup_ax(ax_pred, "Prediction")
 
-    def make_artists(ax, pose0):
-        scatter = ax.scatter(pose0[:, 0], pose0[:, 1], pose0[:, 2], s = 40, marker = '.', zorder = 5)
-        bone_lines = []
-        for idx in range(len(I)):
-            i, j  = I[idx], J[idx]
-            color = LCOLOR if LR[idx] else RCOLOR
-            (line,) = ax.plot(
-                [pose0[i,0], pose0[j,0]],
-                [pose0[i,1], pose0[j,1]],
-                [pose0[i,2], pose0[j,2]],
-                linewidth=3, marker='.', markersize=10, color=color
-            )
-            bone_lines.append((line, i, j, color))
-        return scatter, bone_lines
+  def make_artists(ax, pose0):
+    scatter = ax.scatter(pose0[:, 0], pose0[:, 1], pose0[:, 2], s = 40, marker = '.', zorder = 5)
+    bone_lines = []
+    for idx in range(len(I)):
+      i, j  = I[idx], J[idx]
+      color = LCOLOR if LR[idx] else RCOLOR
+      (line,) = ax.plot(
+        [pose0[i,0], pose0[j,0]],
+        [pose0[i,1], pose0[j,1]],
+        [pose0[i,2], pose0[j,2]],
+        linewidth = 3, 
+        marker = '.', 
+        markersize = 10, 
+        color = color
+      )
+      bone_lines.append((line, i, j, color))
+    return scatter, bone_lines
 
-    scatter_tgt,  bones_tgt  = make_artists(ax_tgt,  xyz_src[0])
-    scatter_pred, bones_pred = make_artists(ax_pred, xyz_src[0])
-    title = fig.suptitle("Frame 0")
+  scatter_tgt,  bones_tgt  = make_artists(ax_tgt,  xyz_src[0])
+  scatter_pred, bones_pred = make_artists(ax_pred, xyz_src[0])
+  title = fig.suptitle("Frame 0")
 
-    def get_pose(frame):
-        if frame < T_obs:
-            return xyz_src[frame], xyz_src[frame]
-        idx = frame - T_obs
-        return xyz_tgt[idx], xyz_pred[idx]
+  def get_pose(frame):
+    if frame < T_obs:
+      return xyz_src[frame], xyz_src[frame]
+    idx = frame - T_obs
+    return xyz_tgt[idx], xyz_pred[idx]
 
-    def update_artists(scatter, bone_lines, pose):
-        scatter._offsets3d = (pose[:, 0], pose[:, 1], pose[:, 2])
-        for line, i, j, _ in bone_lines:
-            line.set_data_3d(
-                [pose[i,0], pose[j,0]],
-                [pose[i,1], pose[j,1]],
-                [pose[i,2], pose[j,2]],
-            )
+  def update_artists(scatter, bone_lines, pose):
+    scatter._offsets3d = (pose[:, 0], pose[:, 1], pose[:, 2])
+    for line, i, j, _ in bone_lines:
+      line.set_data_3d(
+        [pose[i,0], pose[j,0]],
+        [pose[i,1], pose[j,1]],
+        [pose[i,2], pose[j,2]],
+      )
 
-    def update(frame):
-        tgt_pose, pred_pose = get_pose(frame)
-        update_artists(scatter_tgt,  bones_tgt,  tgt_pose)
-        update_artists(scatter_pred, bones_pred, pred_pose)
-        label = "Observed" if frame < T_obs else f"Predicted {frame - T_obs}/{T_pred}"
-        title.set_text(f"Frame {frame}/{T_total}  [{label}]")
-        return [
-            scatter_tgt, scatter_pred,
-            *[ln for ln, _, _, _ in bones_tgt],
-            *[ln for ln, _, _, _ in bones_pred],
-        ]
+  def update(frame):
+    tgt_pose, pred_pose = get_pose(frame)
+    update_artists(scatter_tgt,  bones_tgt,  tgt_pose)
+    update_artists(scatter_pred, bones_pred, pred_pose)
+    label = "Observed" if frame < T_obs else f"Predicted {frame - T_obs}/{T_pred}"
+    title.set_text(f"Frame {frame}/{T_total}  [{label}]")
+    return [
+      scatter_tgt, scatter_pred,
+      *[ln for ln, _, _, _ in bones_tgt],
+      *[ln for ln, _, _, _ in bones_pred],
+    ]
 
-    ani = FuncAnimation(fig, update, frames=T_total, interval=1000 // fps, blit=False)
-    ani.save(output_path, writer='pillow', fps=fps)
-    print(f"Saved => {output_path}")
-    plt.tight_layout()
-    plt.show()
-    return ani
+  ani = FuncAnimation(fig, update, frames = T_total, interval = 1000 // fps, blit = False)
+  ani.save(output_path, writer = 'pillow', fps = fps)
+  print(f"Saved => {output_path}")
+  plt.tight_layout()
+  plt.show()
+  return ani
 
 def dataset_factory(params):
-    """Defines the datasets that will be used for training and validation."""
-    if 'all' in params['action']:
-      params['action_subset'] = _ALL_ACTIONS
-    else:
-      params['action_subset'] = params['action']
+  """Defines the datasets that will be used for training and validation."""
+  if 'all' in params['action']:
+    params['action_subset'] = _ALL_ACTIONS
+  else:
+    params['action_subset'] = params['action']
 
-    params['num_activities']       = len(params['action_subset'])
-    params['virtual_dataset_size'] = params['steps_per_epoch'] * params['batch_size']
+  params['num_activities']       = len(params['action_subset'])
+  params['virtual_dataset_size'] = params['steps_per_epoch'] * params['batch_size']
 
-    train_dataset = H36MDataset(params, mode = 'train')
-    train_dataset_fn = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size  = params['batch_size'],
-        shuffle     = True,
-        num_workers = params['num_workers'],
-        collate_fn  = collate_fn,
-        drop_last   = True, 
-    )
+  train_dataset = H36MDataset(params, mode = 'train')
+  train_dataset_fn = torch.utils.data.DataLoader(
+      train_dataset,
+      batch_size  = params['batch_size'],
+      shuffle     = True,
+      num_workers = params['num_workers'],
+      collate_fn  = collate_fn,
+      drop_last   = True, 
+  )
 
-    eval_dataset = H36MDataset(
-        params, 
-        mode = 'eval',
-        norm_stats = train_dataset._norm_stats
-    )
-    eval_dataset_fn = torch.utils.data.DataLoader(
-        eval_dataset,
-        batch_size  = 1,
-        shuffle     = True,
-        num_workers = 1,
-        drop_last   = True,
-    ) 
+  eval_dataset = H36MDataset(
+      params, 
+      mode = 'eval',
+      norm_stats = train_dataset._norm_stats
+  )
+  eval_dataset_fn = torch.utils.data.DataLoader(
+      eval_dataset,
+      batch_size  = 1,
+      shuffle     = True,
+      num_workers = 1,
+      drop_last   = True,
+  ) 
 
-    return train_dataset_fn, eval_dataset_fn
+  return train_dataset_fn, eval_dataset_fn
 
 
 

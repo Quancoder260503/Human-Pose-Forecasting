@@ -1,10 +1,10 @@
 {
     "model_prefix": "transformer_checkpoint",
-    "batch_size": 16,
+    "batch_size": 32,
     "data_path": "dataset\\h3.6m",
     "learning_rate": 0.0001,
     "max_epochs": 1000,
-    "steps_per_epoch": 200,
+    "steps_per_epoch": 400,
     "action": [
         "all"
     ],
@@ -19,7 +19,7 @@
     "source_seq_len": 50,
     "target_seq_len": 25,
     "max_gradient_norm": 0.1,
-    "lr_step_size": 100,
+    "lr_step_size": 150,
     "learning_rate_fn": "step",
     "step_gamma": 0.3,
     "exp_gamma": 0.95,
@@ -32,7 +32,7 @@
     "dataset": "h36m",
     "skip_rate": 5,
     "eval_num_seeds": 8,
-    "finetuning_ckpt": null,
+    "finetuning_ckpt": "transformer_checkpoint/models/ckpt_epoch_0499.pt",
     "pos_enc_alpha": 10.0,
     "pos_enc_beta": 500.0,
     "device": "cuda",
@@ -65,6 +65,6 @@
         "walkingtogether"
     ],
     "num_activities": 15,
-    "virtual_dataset_size": 3200,
+    "virtual_dataset_size": 12800,
     "pose_dim": 189
 }

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from data.Dataset import Dataset2D, Dataset3D
+from data.MultiDataset import Dataset2D, Dataset3D
 from data.DatasetUtil import *
 from data.Visualization import * 
 import os 

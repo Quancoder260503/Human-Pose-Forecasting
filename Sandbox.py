@@ -1,47 +1,36 @@
-from data.NTU import NTU3D
-from data.Visualization import *
-from runner.RunnerUtil  import *
-from model.DiffusionTransformer import *
 import random 
+import torch
+from data.MultiDataset import *
+from data.Visualization import *
+from runner.SamplingUtils import *
+from model.GraphConvNet import SimpleEncoder
 
 if __name__ == '__main__':
+   model = SimpleEncoder(
+      n_nodes = 16, 
+      input_features = 3, 
+      hidden_dim = 512, 
+      model_dim = 512, 
+   ).to('cuda')
+   inp = torch.randn((10, 20, 48)).cuda()
+   out = model(inp)
+   # dataset_class_ = DatasetH36M # temporary 
+   # dataset_train = dataset_class_(
+   #  mode = 'train', 
+   #  num_observed_frames = 25, 
+   #  num_predict_frames = 200, 
+   #  actions = ['walking'], 
+   #  dim_per_joints = 3, 
+   # )
+   # dct, idct = get_dct_matrix(225, False)
+   # trajectory_np = next(dataset_train.iter_generator())  
+   # trajectory_np = trajectory_np[0]                    
 
-   #model = get_diffusion_transformer_model().to('cuda')
+   # T, J, C = trajectory_np.shape
+   # traj_flat = trajectory_np.reshape(T, -1)              
+   # traj_dct  = np.matmul(dct[:20, :],  traj_flat)        
+   # traj_idct = np.matmul(idct[:, :20], traj_dct)        
+   # trajectory_np = traj_idct.reshape(T, J, C)      
+   # trajectory_np[:, 1:, :] += trajectory_np[:, :1, :]    
 
-   dataset = NTU3D(num_training_frame = 100, num_testing_frame = 50)
-   observed_act_seqs, targeted_act_seqs,  _, name = dataset[random.randint(0, 100)]
-
-
-   dct, idct = compute_dct_matrix(num = 100)
-   print(name)
-   
-   n_channels = 20
-
-   observed_poses = reconstruct_pose(
-      input_sequences = observed_act_seqs.unsqueeze(0),
-      mean = dataset.mean, 
-      std  = dataset.std, 
-      frame_input_h = 1080, 
-      frame_input_w = 1920, 
-      root_mean = dataset.root_mean, 
-      root_std  = dataset.root_std, 
-      joint_dim = 3, 
-   )
-   animate_single_poses3d(observed_poses.detach().cpu().numpy().reshape(-1, 17, 3), name[4:8], fps = 30, output_path = 'sandbox_vis_3d.gif')
-
-   observed_act_seqs = torch.matmul(dct[:n_channels], observed_act_seqs) # transform into frequency spaces 
-   observed_act_seqs = torch.matmul(idct[:,:n_channels], observed_act_seqs) # revert back 
-   observed_poses = reconstruct_pose(
-      input_sequences = observed_act_seqs.unsqueeze(0),
-      mean = dataset.mean, 
-      std  = dataset.std, 
-      frame_input_h = 1080, 
-      frame_input_w = 1920, 
-      root_mean = dataset.root_mean, 
-      root_std  = dataset.root_std, 
-      joint_dim = 3, 
-   )
-   animate_single_poses3d(observed_poses.detach().cpu().numpy().reshape(-1, 17, 3), name[4:8], fps = 30, output_path = 'sandbox_vis_3d_dct.gif')
-
-
-
+   # animate_h36m_pose_3d(trajectory_np, dataset_train.skeleton.parents)

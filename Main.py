@@ -76,7 +76,7 @@ if __name__ == '__main__':
   parser.add_argument('--exp_gamma', default = 0.95, type = float)
 
 
-  parser.add_argument('--warmup_epochs', type = int, default = 100)
+  parser.add_argument('--warmup_epochs', type = int, default = 30)
   
   parser.add_argument('--pose_embedding_type', type = str, default = 'simple')
 
@@ -90,7 +90,7 @@ if __name__ == '__main__':
   parser.add_argument('--betas', default = (0.9, 0.999), type = tuple)
   parser.add_argument('--weight_decay', default = 1e-5, type = float)
 
-  parser.add_argument('--snapshot_saving_steps', default = 50, type = int)
+  parser.add_argument('--snapshot_saving_steps', default = 10, type = int)
   parser.add_argument('--log_frequency', default = 50, type = int)
 
   parser.add_argument('--mod_train', default = 0.8, type = float)
@@ -107,7 +107,7 @@ if __name__ == '__main__':
 
   # Diffusion Processes
   parser.add_argument('--diffusion_num_timesteps', type = int, default = 1000)
-  parser.add_argument('--ddim_num_timesteps', type = int, default = 1000)
+  parser.add_argument('--ddim_num_timesteps', type = int, default = 100)
   parser.add_argument('--timesteps_sampling', type = str, default = 'uniform_time_sampling')
   parser.add_argument('--noise_scheduler', type = str, default = 'linear')
   parser.add_argument('--rescale_timesteps', type = bool, default = False) 
@@ -121,6 +121,7 @@ if __name__ == '__main__':
   parser.add_argument('--ffn_dim', type = int, default = 2048)
   parser.add_argument('--num_layers', type = int, default = 8) 
   parser.add_argument('--num_heads', type = int, default = 8) 
+  parser.add_argument('--use_gate', type = bool, default = False)
   parser.add_argument('--dropout', type = float, default = 0.2)
   parser.add_argument('--activation', type = str, default = 'GeLU')
   parser.add_argument('--use_cross_attention', type = bool, default = False)
@@ -155,10 +156,13 @@ if __name__ == '__main__':
   params['idx_pad'], params['zero_index'] = generate_pad(params['padding'], params['num_observed_frames'], params['num_predict_frames'])
 
   config_path = os.path.join(params['model_prefix'], 'config_dir', 'config.json')        
-  with open(config_path, 'w') as file_:
-    json.dump(params, file_, indent = 4)
-
-    
+  if os.path.exists(config_path):
+    with open(config_path, 'r') as file_:
+        params = json.load(file_)
+  else:
+      with open(config_path, 'w') as file_:
+        json.dump(params, file_, indent = 4)
+      
   dataset, dataset_multi_test = dataset_split(params)
   tb_logger = SummaryWriter(params['tb_dir'])
   logger = create_logger(os.path.join(params['log_dir'], 'log.txt'))
@@ -182,7 +186,7 @@ if __name__ == '__main__':
      pose_decoder_fn = pose_decoder_fn, 
      pose_encoder_fn = pose_encoder_fn, 
     )
-    runner.compute_train_stats()
+    runner.train()
 
   elif args.mode == 'eval':
     multimodal_dict = get_multimodal_dataset(

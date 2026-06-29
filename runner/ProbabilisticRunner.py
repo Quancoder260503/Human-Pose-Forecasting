@@ -215,8 +215,7 @@ class ProbabilisticRunner(object):
 
 
   def compute_train_stats(self): 
-    #if self.curr_epoch % self._params['save_gif_interval'] == 0: 
-      self.curr_epoch = 102
+    if self.curr_epoch % self._params['save_gif_interval'] == 0: 
       generated_pose = self.pose_generator(
         params = self._params, 
         dataset = self._dataset['train'], 
@@ -380,7 +379,6 @@ class ProbabilisticRunner(object):
 
     return diversity, ade, fde, mmade, mmfde
   
-
   def compute_stats(self, multimodal_dict): 
     ground_truth_group = multimodal_dict['gt_group']
     data_group = multimodal_dict['data_group'] 
@@ -566,6 +564,7 @@ class DiffusionRunner(ProbabilisticRunner):
         ground_truth[:, :1, :] = 0 
         data[:, :, :1, :] = 0
 
+
         if sampling_mode == 'switch': 
           poses = {} 
           trajectory_np = data[..., 1:, :].reshape([data.shape[0],\
@@ -593,6 +592,7 @@ class DiffusionRunner(ProbabilisticRunner):
           idct = self.idct, 
         )
 
+        self._ema_helper.ema(self._model)
         self._model.eval()
         with torch.no_grad():
           sampled_motion = self.gaussian_diffusion.ddim_sample_loop(
@@ -607,6 +607,7 @@ class DiffusionRunner(ProbabilisticRunner):
           )[0]
           sampled_motion = torch.matmul(self.idct[:, :self.num_dct_channels], sampled_motion)
         sampled_motion = post_process(sampled_motion.cpu().numpy(), params)
+  
         
         if k == 0:
           for j in range(sampled_motion.shape[0]):
@@ -636,6 +637,8 @@ class DiffusionRunner(ProbabilisticRunner):
     ) 
 
     with torch.no_grad():
+      self._ema_helper.ema(self._model)
+      self._model.eval()
       sampled_motion = self.gaussian_diffusion.ddim_sample_loop(
         model = self._model, 
         trajectory_dct = trajectory_dct, 
@@ -820,9 +823,11 @@ class FlowMatchingRunner(ProbabilisticRunner):
           idct = self.idct, 
         )
 
+        self._ema_helper.ema(self._model)
         self._model.eval()
         with torch.no_grad():
           sampled_motion = self.ode_sample_loop(
+            model = self._model, 
             trajectory_dct = trajectory_dct, 
             trajectory_dct_mod = trajectory_dct_mod, 
             masks = sampling_mode_dict['mask'], 
@@ -859,7 +864,10 @@ class FlowMatchingRunner(ProbabilisticRunner):
     ) 
 
     with torch.no_grad():
+      self._ema_helper.ema(self._model)
+      self._model.eval()
       sampled_motion = self.ode_sample_loop(
+        model = self._model, 
         trajectory_dct = trajectory_dct, 
         trajectory_dct_mod = trajectory_dct_mod, 
         masks = sampling_dict['mask'], 
@@ -870,10 +878,10 @@ class FlowMatchingRunner(ProbabilisticRunner):
     result_trajectory = result_trajectory[None, ...] 
     return result_trajectory 
   
-  def ode_sample_loop(self, trajectory_dct, trajectory_dct_mod, masks): 
+  def ode_sample_loop(self, model, trajectory_dct, trajectory_dct_mod, masks): 
     y_0 = torch.randn_like(trajectory_dct).to(trajectory_dct.device)
     ode_solver = self.solver_class(
-      velo_func = self._model, 
+      velo_func = model, 
       y_0 = y_0, 
     )
     timesteps = torch.linspace(0, 1.0, self._params['num_sampling_steps'] + 1).to(trajectory_dct.device)

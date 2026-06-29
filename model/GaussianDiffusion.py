@@ -86,6 +86,7 @@ class GaussianDiffusion(object):
 
     self.num_timesteps = int(self.betas.shape[0])
     self.num_sampling_steps = num_sampling_steps
+    self.sampling_indices = np.arange(0, self.num_timesteps, self.num_timesteps // self.num_sampling_steps) 
 
     self.alphas = 1.0 - self.betas
     self.alphas_cumprod = np.cumprod(self.alphas, axis = 0)
@@ -202,7 +203,7 @@ class GaussianDiffusion(object):
   def predict_eps_from_x0(self, x_t, timesteps, pred_x_start):
     """
     Reconstruct noise eps from x_t and the predicted x_0:
-        eps = (x_t / sqrt(alpha_bar_t) - x_0) / sqrt(1/alpha_bar_t - 1)
+        eps = (x_t / sqrt(alpha_bar_t) - x_0) / sqrt(1 / alpha_bar_t - 1)
 
     :param x_t          : noisy input at timestep t
     :param timesteps    : 1-D tensor of diffusion timestep indices
@@ -221,7 +222,7 @@ class GaussianDiffusion(object):
   def p_mean_variance(self, model, conditional_guide, input_x, timesteps):
     """
     Apply the model to get the estimated denoising distribution parameters
-    p(x_{t-1} | x_t), as well as a prediction of x_0.
+    p(x_{\pi({t-1})} | x_{\pi_t}), as well as a prediction of x_0.
 
     :param model             : denoising model — takes (x_t, t, conditional_guide)
     :param conditional_guide : conditioning signal
@@ -250,11 +251,11 @@ class GaussianDiffusion(object):
     return {"mean" : model_mean, "pred_x0" : pred_x0}
   
 
-  def ddim_sample(self, model, input_x, timesteps, conditional_guide):
+  def ddim_sample(self, model, input_x, curr_t, next_t, conditional_guide):
     """
     One DDIM denoising step.
     The posterior is:
-        q_sigma(x_{t-1} | x_t, x_0) = N(x_{t-1} | sqrt(alpha_{t-1}) * x_0 + sqrt(1 - alpha_{t-1}) * eps, 0)
+        q_sigma(x_{\pi_{t-1}} | x_{\pi_{t}}, x_0) = N(x_{\pi_{t-1}} | sqrt(alpha_{t-1}) * x_0 + sqrt(1 - alpha_{t-1}) * eps, 0)
     Variance is set to 0 (fully implicit / deterministic).
 
     :param model             : denoising model
@@ -267,15 +268,13 @@ class GaussianDiffusion(object):
       model = model,
       conditional_guide = conditional_guide,
       input_x = input_x,
-      timesteps = timesteps,
+      timesteps = next_t,
     )
 
     # Reconstruct eps from predicted x_0
-    eps = self.predict_eps_from_x0(input_x, timesteps, out['pred_x0'])
+    eps = self.predict_eps_from_x0(input_x, next_t, out['pred_x0'])
+    alpha_bar_prev = extract_into_tensor(self.alphas_cumprod_prev, curr_t, input_x.shape)
 
-    alpha_bar_prev = extract_into_tensor(self.alphas_cumprod_prev, timesteps, input_x.shape)
-
-    # Deterministic DDIM update (sigma = 0)
     mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev) * eps
 
     return {'sample' : mean_pred, 'pred_x0' : out['pred_x0'] }
@@ -283,7 +282,7 @@ class GaussianDiffusion(object):
   def inpainting_complete(
     self, 
     input_x, 
-    prev_t, 
+    curr_t, 
     trajectory_dct_mod, 
     masks, 
     dct_num_channels, 
@@ -305,16 +304,16 @@ class GaussianDiffusion(object):
     noise = torch.randn_like(trajectory_dct_mod).to(trajectory_dct_mod.device)
 
     # Forward-noise the observed frames to the current timestep
-    dct_x_prev_t_known = self.q_sample(
+    dct_x_curr_t_known = self.q_sample(
       x_start = trajectory_dct_mod,
-      timesteps = prev_t,
+      timesteps = curr_t,
       gaussian_noise = noise,
     )
 
-    x_prev_t_known = torch.matmul(idct[:, :dct_num_channels], dct_x_prev_t_known)
-    x_prev_t_unknown = torch.matmul(idct[:, :dct_num_channels], input_x)
+    x_curr_t_known = torch.matmul(idct[:, :dct_num_channels], dct_x_curr_t_known)
+    x_curr_t_unknown = torch.matmul(idct[:, :dct_num_channels], input_x)
 
-    x_t = x_prev_t_known * masks + x_prev_t_unknown * (1 - masks)
+    x_t = x_curr_t_known * masks + x_curr_t_unknown * (1 - masks)
     dct_x_t = torch.matmul(dct[:dct_num_channels], x_t)
     return dct_x_t
 
@@ -347,28 +346,31 @@ class GaussianDiffusion(object):
 
 
     inp = noise if noise is not None else torch.randn_like(trajectory_dct, device = device)
+    successive_indices = list(zip(self.sampling_indices[:-1], self.sampling_indices[1:])) 
+  
 
-    indices = list(range(self.num_sampling_steps))[::-1]
-
-    for i in indices:
-      timesteps = torch.tensor([i] * trajectory_dct.shape[0], device = device)
+    for curr_t, next_t in reversed(successive_indices):
+      curr_t = torch.tensor([curr_t] * trajectory_dct.shape[0], device = device)
+      next_t = torch.tensor([next_t] * trajectory_dct.shape[0], device = device)
       with torch.no_grad():
         out = self.ddim_sample(
           model = model,
           input_x = inp,
-          timesteps = timesteps,
+          curr_t = curr_t, 
+          next_t = next_t,  
           conditional_guide = trajectory_dct_mod,
         )
 
         dct_sample = self.inpainting_complete(
           input_x = out['sample'],
           trajectory_dct_mod = trajectory_dct_mod, 
-          prev_t = timesteps,
+          curr_t = curr_t,
           masks = masks, 
           dct_num_channels = dct_num_channels,
           dct = dct,
           idct = idct,
         )
+        # dct_sample = out['sample']
 
         yield dct_sample
         inp = dct_sample  

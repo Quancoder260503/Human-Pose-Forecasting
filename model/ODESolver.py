@@ -65,6 +65,8 @@ class FixedStepSizeODESolver(object):
     y_0 = self.y_0
 
     # Naive algorithm for now, still need refinement 
+    # Another idea is to use y_{t + \delta{t}} as a refinement for $y_t$, 
+    # use the estimate y_{t + \delta{t}} to estimate y_1 and use that $y_1$ to keep refining $y_t$
     for t_0, t_1 in zip(time_grid[:-1], time_grid[1:]):
       dt = (t_1 - t_0)
       ones = torch.ones((self.y_0.shape[0], self.y_0.shape[1] - 1)) 

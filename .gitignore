@@ -12,3 +12,4 @@ checkpoint
 log 
 transformer_checkpoint
 TransformerDiffusion
+TransformerCosineDiffusion

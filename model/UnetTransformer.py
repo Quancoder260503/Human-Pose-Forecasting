@@ -31,16 +31,18 @@ def timestep_embedding(timesteps, dim, max_period = 10000):
 
 
 class AdaptiveNormalization(nn.Module):
-  def __init__(self, latent_dim, embedding_dim, dropout = 0.1):
+  def __init__(self, latent_dim, embedding_dim, use_gate, dropout = 0.1):
     super(AdaptiveNormalization, self).__init__()
     
     self.latent_dim = latent_dim 
     self.embedding_dim = embedding_dim
     self.dropout = dropout 
+    self.use_gate = use_gate 
+    self.ratio = 3 if use_gate else 2
     
     self.embedding_proj = nn.Sequential(
       nn.SiLU(), 
-      nn.Linear(embedding_dim, 2 * latent_dim),
+      nn.Linear(embedding_dim, self.ratio * latent_dim),
     )
     self.layernorm = nn.LayerNorm(self.latent_dim)
     self.proj_out = nn.Sequential(
@@ -58,25 +60,30 @@ class AdaptiveNormalization(nn.Module):
     """
 
     embedding_out = self.embedding_proj(embedding_input).unsqueeze(1) # (B, 1, 2 * latent_dim) 
-    scale, shift  = torch.chunk(embedding_out, 2, dim = -1) # (B, 1, latent_dim), (B, 1, latent_dim) 
-
-    latent_out = self.layernorm(latent_input) * (1. + scale) + shift 
-    out = self.proj_out(latent_out)
-
-    return out 
+    if self.use_gate : 
+      scale, shift, gate = torch.chunk(embedding_out, self.ratio, dim = -1) 
+      latent_out = (self.layernorm(latent_input) * (1. + scale) + shift)
+      out = gate * self.proj_out(latent_out)
+      return out  
+    else : 
+      scale, shift = torch.chunk(embedding_out, self.ratio, dim = -1) # (B, 1, latent_dim), (B, 1, latent_dim) 
+      latent_out = self.layernorm(latent_input) * (1. + scale) + shift 
+      out = self.proj_out(latent_out)
+      return out 
 
 
 class FeedForwardNetwork(nn.Module): 
-  def __init__(self, model_dim, ffn_dim, embedding_dim, dropout = 0.1, activation = 'GeLU'):
+  def __init__(self, model_dim, ffn_dim, embedding_dim, use_gate, dropout = 0.1, activation = 'GeLU'):
     super(FeedForwardNetwork, self).__init__()
     self.model_dim = model_dim 
     self.ffn_dim = ffn_dim 
     self.embedding_dim = embedding_dim 
 
     self.adaptiveLN = AdaptiveNormalization(
-       latent_dim = model_dim, 
-       embedding_dim = embedding_dim, 
-       dropout = dropout
+      latent_dim = model_dim, 
+      embedding_dim = embedding_dim, 
+      dropout = dropout, 
+      use_gate = use_gate, 
     ) 
 
     self.linear_1 = nn.Linear(model_dim, ffn_dim)
@@ -108,7 +115,7 @@ class FeedForwardNetwork(nn.Module):
     return out 
     
 class MultiHeadAttention(nn.Module): 
-  def __init__(self, model_dim, embedding_dim, num_head, dropout):
+  def __init__(self, model_dim, embedding_dim, num_head, use_gate, dropout):
     super(MultiHeadAttention, self).__init__()
     self.model_dim = model_dim 
     self.embedding_dim = embedding_dim 
@@ -126,7 +133,8 @@ class MultiHeadAttention(nn.Module):
     self.adaptiveLN = AdaptiveNormalization(
        latent_dim = model_dim, 
        embedding_dim = embedding_dim, 
-       dropout = dropout
+       dropout = dropout, 
+       use_gate = use_gate, 
     )
 
   def forward(self, input, embedding): 
@@ -167,7 +175,7 @@ class MultiHeadAttention(nn.Module):
     
 # In the case I use the pretrained stuff for observed seqs.     
 class MultiHeadCrossAttention(nn.Module):
-  def __init__(self, model_dim, embedding_dim, num_head, dropout): 
+  def __init__(self, model_dim, embedding_dim, num_head, use_gate, dropout): 
     super(MultiHeadCrossAttention, self).__init__()
     self.model_dim = model_dim 
     self.embedding_dim = embedding_dim
@@ -183,7 +191,8 @@ class MultiHeadCrossAttention(nn.Module):
     self.adaptiveLN = AdaptiveNormalization(
       latent_dim = model_dim, 
       embedding_dim = embedding_dim, 
-      dropout = dropout
+      dropout = dropout, 
+      use_gate = use_gate, 
     )
 
   def forward(self, input, embedding, memory): 
@@ -228,7 +237,7 @@ class MultiHeadCrossAttention(nn.Module):
 
 
 class UnetTransformerLayer(nn.Module):
-  def __init__(self, model_dim, ffn_dim, embedding_dim, num_head, dropout, activation, use_cross_attention):
+  def __init__(self, model_dim, ffn_dim, embedding_dim, num_head, dropout, activation, use_cross_attention, use_gate):
     super(UnetTransformerLayer, self).__init__()
     self.model_dim = model_dim 
     self.ffn_dim = ffn_dim 
@@ -241,7 +250,8 @@ class UnetTransformerLayer(nn.Module):
       model_dim = model_dim, 
       num_head  = num_head, 
       embedding_dim = embedding_dim, 
-      dropout = dropout
+      dropout = dropout, 
+      use_gate = use_gate, 
     )
     
     self.ffn_layer = FeedForwardNetwork(
@@ -249,7 +259,8 @@ class UnetTransformerLayer(nn.Module):
       ffn_dim = ffn_dim, 
       embedding_dim = embedding_dim, 
       dropout = dropout, 
-      activation = activation, 
+      activation = activation,
+      use_gate = use_gate,  
     )
     
     self.cross_attention = None 
@@ -259,6 +270,7 @@ class UnetTransformerLayer(nn.Module):
         embedding_dim = embedding_dim, 
         num_head = num_head, 
         dropout = dropout, 
+        use_gate = use_gate, 
       ) 
 
   def forward(self, input, embedding, memory = None): 
@@ -293,6 +305,7 @@ class UnetTransformer(nn.Module):
     pose_encoder  = None, 
     pose_decoder  = None,
     model_version = 'v1',  
+    use_gate = False, 
   ):
     super(UnetTransformer, self).__init__()
     self.input_features          = input_features
@@ -306,7 +319,7 @@ class UnetTransformer(nn.Module):
     self.activation              = activation 
     self.time_embedding_dim      = model_dim
     self.embedding_max_period    = embedding_max_period
-
+    self.use_gate                = use_gate 
     
     self.pose_encoder = pose_encoder
     self.pose_decoder = pose_decoder
@@ -337,7 +350,8 @@ class UnetTransformer(nn.Module):
           num_head = self.num_heads, 
           dropout = dropout, 
           activation = activation, 
-          use_cross_attention = use_cross_attention
+          use_cross_attention = use_cross_attention, 
+          use_gate = use_gate, 
         )
       )
     
@@ -404,6 +418,7 @@ def unet_transformer(params, pose_encoder, pose_decoder):
     pose_encoder  = pose_encoder, 
     pose_decoder  = pose_decoder,
     model_version = params['model_prefix'], 
+    use_gate = params['use_gate'], 
   )
 
 

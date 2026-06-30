@@ -433,9 +433,9 @@ def render_animation(
 
   fig.canvas.mpl_connect('key_press_event', on_key)
   save() 
-  show_animation()
-  plt.show()
-  plt.close()
+  #show_animation()
+  #plt.show()
+  #plt.close()
 
 
 def generate_pad(padding, num_observed_frames, num_predict_frames):

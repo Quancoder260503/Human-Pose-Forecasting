@@ -12,6 +12,14 @@ import math
 import numpy as np
 from model.WeightInit import *
 
+def zero_module(module):
+  """
+  Zero out the parameters of a module and return it.
+  """
+  for p in module.parameters():
+    p.detach().zero_()
+  return module
+
 class GraphConvolution(nn.Module):
   """Implements graph convolutions."""
 
@@ -53,6 +61,7 @@ class GraphConvolution(nn.Module):
     if self.bias is not None:
       self.bias.data.uniform_(-stdv, stdv)
 
+
   def forward(self, x):
     """Forward pass.
 
@@ -83,7 +92,7 @@ class GC_Block(nn.Module):
   The implementation uses the same number of input features for outputs.
   """
 
-  def __init__(self, in_features, p_dropout, output_nodes = 48, bias=False):
+  def __init__(self, in_features, p_dropout, output_nodes = 48, bias = False):
     """Constructor.
 
     Args:
@@ -108,7 +117,7 @@ class GC_Block(nn.Module):
       output_nodes = output_nodes, 
       bias = bias
     )
-    self.bn2 = nn.BatchNorm1d(output_nodes * in_features)
+    self.bn2 = zero_module(nn.BatchNorm1d(output_nodes * in_features))
 
     self.do = nn.Dropout(p_dropout)
     self.act_f = nn.Tanh()
@@ -130,9 +139,7 @@ class GC_Block(nn.Module):
     return y + x
 
   def __repr__(self):
-    return self.__class__.__name__ + ' (' \
-           + str(self.in_features) + ' -> ' \
-             + str(self.out_features) + ')'
+    return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
   
 
 
@@ -155,16 +162,16 @@ class PoseGCN(nn.Module):
     self._hidden_dim = 512
 
     self._front = nn.Sequential(
-        nn.Linear(model_dim, output_nodes*self._hidden_dim),
-        nn.Dropout(p_dropout)
+      nn.Linear(model_dim, output_nodes * self._hidden_dim),
+      nn.Dropout(p_dropout)
     )
 
     weight_init(self._front, init_fn_= xavier_init_)                            
 
     self.gc1 = GraphConvolution(
-        self._hidden_dim, 
-        self._hidden_dim, 
-        output_nodes=output_nodes
+      self._hidden_dim, 
+      self._hidden_dim, 
+      output_nodes = output_nodes
     )
     self.bn1 = nn.BatchNorm1d(output_nodes * self._hidden_dim)
 
@@ -183,25 +190,10 @@ class PoseGCN(nn.Module):
     self.gc7 = GraphConvolution(
       self._hidden_dim, 
       output_features,
-      output_nodes=output_nodes
+      output_nodes = output_nodes
     )
     self.do = nn.Dropout(p_dropout)
     self.act_f = nn.Tanh() 
-
-
-
-  def preprocess(self, x):
-    if len(x.size()) < 3:
-      _, D = x.size()
-      # seq_len, batch_size, input_dim
-      x = x.view(self._seq_len, -1, D)
-      # [batch_size, seq_len, input_dim]
-      x = torch.transpose(x, 0, 1) 
-      # [batch_size, input_dim, seq_len]
-      x = torch.transpose(x, 1, 2)
-      return x
-
-    return x
 
   def postprocess(self, y):
     """Flattents the input tensor.
@@ -231,11 +223,7 @@ class PoseGCN(nn.Module):
     for i in range(self.num_stage):
       y = self.gcbs[i](y)
 
-    # [batch_size, n_joints, output_features]
     y = self.gc7(y)
-    # y = y + x
-
-    # [seq_len * batch_size, input_dim]
     y = self.postprocess(y)
     return y
 
@@ -303,7 +291,6 @@ class SimpleEncoder(nn.Module):
 
   def forward(self, x):
     """Forward pass of network.
-
     Args:
       x: [batch_size, n_poses, pose_dim/input_dim]. 
     """
@@ -321,10 +308,8 @@ class SimpleEncoder(nn.Module):
     # [batch_size, n_joints, model_dim]
     y = self.gc2(y)
 
-    # [batch_size, model_dim]
     y = self._back(y.view(-1, self._model_dim * self._output_nodes))
 
-    # [batch_size, n_poses, model_dim]
     y = y.view(B, S, self._model_dim)
 
     return y

@@ -82,13 +82,12 @@ if __name__ == '__main__':
 
   parser.add_argument('--dataset', type = str, default = 'h36m')
   parser.add_argument('--finetuning_ckpt', type = str, default = None)
-  parser.add_argument('--pos_enc_alpha',   type = float, default = 10)
-  parser.add_argument('--pos_enc_beta',    type = float, default = 500)
+  parser.add_argument('--pos_enc_alpha',   type = float, default = 1)
+  parser.add_argument('--pos_enc_beta',    type = float, default = 10000)
   parser.add_argument('--device', type = str, default = 'cuda')
 
   parser.add_argument('--optimizer', default = 'AdamW', type = str)
-  parser.add_argument('--betas', default = (0.9, 0.999), type = tuple)
-  parser.add_argument('--weight_decay', default = 1e-5, type = float)
+  parser.add_argument('--betas', default = (0.9, 0.99), type = tuple)
 
   parser.add_argument('--snapshot_saving_steps', default = 10, type = int)
   parser.add_argument('--log_frequency', default = 50, type = int)
@@ -103,7 +102,7 @@ if __name__ == '__main__':
   parser.add_argument('--num_val_data_samples', type = int, default = 10000)
 
   parser.add_argument('--save_gif_interval', type = int, default = 10)  
-  parser.add_argument('--save_metrics_interval', type = int, default = 100)
+  parser.add_argument('--save_metrics_interval', type = int, default = 500)
 
   # Diffusion Processes
   parser.add_argument('--diffusion_num_timesteps', type = int, default = 1000)
@@ -126,6 +125,8 @@ if __name__ == '__main__':
   parser.add_argument('--activation', type = str, default = 'GeLU')
   parser.add_argument('--use_cross_attention', type = bool, default = False)
   parser.add_argument('--embedding_max_period', type = int, default = 10000)
+  parser.add_argument('--flatten_arc', type = bool, default = False) 
+  parser.add_argument('--learnable_embedding', type = bool, default = True)
 
 
   # Multimodal 
@@ -156,12 +157,8 @@ if __name__ == '__main__':
   params['idx_pad'], params['zero_index'] = generate_pad(params['padding'], params['num_observed_frames'], params['num_predict_frames'])
 
   config_path = os.path.join(params['model_prefix'], 'config_dir', 'config.json')        
-  if os.path.exists(config_path):
-    with open(config_path, 'r') as file_:
-        params = json.load(file_)
-  else:
-      with open(config_path, 'w') as file_:
-        json.dump(params, file_, indent = 4)
+  with open(config_path, 'w') as file_:
+    json.dump(params, file_, indent = 4)
       
   dataset, dataset_multi_test = dataset_split(params)
   tb_logger = SummaryWriter(params['tb_dir'])

@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from runner.WarmupScheduler     import *
 from data.Dataset3DUtils        import * 
 from model.EMA                  import *
-from model.UnetTransformer      import * 
+from model.DiffusionTransformer      import * 
 from model.GaussianDiffusion    import *
 from runner.SamplingUtils       import *
 import pandas as pd 
@@ -314,7 +314,7 @@ class ProbabilisticRunner(object):
       self._params['learning_rate'] = self._lr_scheduler.get_last_lr()[0]
 
   def init_model(self, pose_encoder_fn = None, pose_decoder_fn = None):
-    self._model = unet_transformer(
+    self._model = diffusion_transformer(
       self._params, 
       pose_encoder_fn(self._params), 
       pose_decoder_fn(self._params), 
@@ -325,28 +325,24 @@ class ProbabilisticRunner(object):
       return torch.optim.AdamW(
         params = self._model.parameters(), 
         lr = self._params['learning_rate'], 
-        weight_decay = self._params['weight_decay'],
         betas = self._params['betas'], 
       )
     if self._params['optimizer'] == 'Adam':
       return torch.optim.Adam(
         params = self._model.parameters(), 
         lr = self._params['learning_rate'], 
-        weight_decay = self._params['weight_decay'],
         betas = self._params['betas'], 
       )
     elif self._params['optimizer'] == 'RMSProp': 
       return torch.optim.RMSprop(
         params = self._model.parameters(), 
         lr = self._params['learning_rate'], 
-        weight_decay = self._params['weight_decay'], 
       )
     
     elif self._params['optimizer'] == 'SGD': 
       return torch.optim.SGD(
         params = self._model.parameters(), 
         lr = self._params['learning_rate'], 
-        weight_decay = self._params['weight_decay'], 
       )
     else : 
       raise NotImplementedError(f'Optimizer {self._params['optimizer']} not supported')

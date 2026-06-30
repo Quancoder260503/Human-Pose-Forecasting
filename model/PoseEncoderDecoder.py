@@ -38,7 +38,7 @@ def pose_decoder_gcn(params):
     p_dropout = params['dropout'],
     num_stage = 1
   )
-  
+  zero_module(decoder)
   return decoder
 
 def pose_encoder_gcn(params):

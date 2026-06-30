@@ -319,8 +319,8 @@ class FinalTransformerLayer(nn.Module):
     :return : 
         a tensor of shape (B, T, model_dim)
     """  
-
-    shift, scale = self.adaptiveLN(embedding).chunk(2, dim = -1)
+    embedding_out = self.adaptiveLN(embedding).unsqueeze(1)
+    shift, scale =  torch.chunk(embedding_out, 2, dim = -1) 
     norm_input = self.layernorm(input) * (scale + 1.) + shift
     out = self.linear(norm_input)
     return out 
@@ -380,7 +380,6 @@ class DiffusionTransformer(nn.Module):
       self.time_embedding_dim
     )
 
-
     self.time_embedding = nn.Sequential(
       nn.Linear(self.model_dim, self.time_embedding_dim), 
       nn.SiLU(), 
@@ -403,12 +402,12 @@ class DiffusionTransformer(nn.Module):
       )
     
     self._model_version = model_version
-    if self.flatten_arc : 
-      self.final_layer = FinalTransformerLayer(
-        model_dim = model_dim, 
-        output_dim = input_features, 
-        embedding_dim = self.time_embedding_dim, 
-      )
+    
+    self.final_layer = FinalTransformerLayer(
+      model_dim = model_dim, 
+      output_dim = input_features, 
+      embedding_dim = self.time_embedding_dim, 
+    )
     
   def forward(self, input, timesteps, memory = None):
     """
@@ -444,13 +443,12 @@ class DiffusionTransformer(nn.Module):
         else :  
           network_in = module(network_in, embedding, memory)
           network_in += enc_list[-1]  
-          enc_list.pop()
-      output = self.pose_decoder(network_in)
-
+          enc_list.pop() 
     else : 
       for index, module in enumerate(self.posterior_decoder_block): 
         network_in = module(network_in, embedding, memory)
-      output = self.final_layer(network_in, embedding)
+    
+    output = self.final_layer(network_in, embedding)
 
     return output 
 

@@ -126,13 +126,6 @@ class ProbabilisticRunner(object):
   def select_lr_fn(self):
     """Calls the selection of learning rate function."""
     self._lr_scheduler = self.get_lr_fn()
-    if self._params['warmup_epochs'] > 0:
-      self._lr_scheduler = GradualWarmupScheduler(
-        self._optimizer_fn, 
-        multiplier = 1, 
-        total_epoch = self._params['warmup_epochs'], 
-        after_scheduler = self._lr_scheduler
-      )
 
   def ema_helper_init(self):
     self._ema_helper = EMAHelper(mu = self._params['ema_rate'])
@@ -144,7 +137,7 @@ class ProbabilisticRunner(object):
       return torch.optim.lr_scheduler.StepLR(
         self._optimizer_fn, 
         step_size = self._params['lr_step_size'], 
-        gamma     = self._params['step_gamma'], 
+        gamma = self._params['step_gamma'], 
       )
     elif self._params['learning_rate_fn'] == 'exponential':
       return torch.optim.lr_scheduler.ExponentialLR(
@@ -160,6 +153,19 @@ class ProbabilisticRunner(object):
         self._optimizer_fn, 
         lr_lambda = lambda_fn
       )
+    elif self._params['learning_rate_fn'] == 'decay':
+      return torch.optim.lr_scheduler.LinearLR(
+        optimizer = self._optimizer_fn,
+        total_iters = self._params['max_epochs'],
+        start_factor = 1.0,
+        end_factor = 1e-8 / self._params['learning_rate'],
+      )
+    elif self._params['learning_rate_fn'] == 'multistep':
+      return torch.optim.lr_scheduler.MultiStepLR(
+        optimizer = self._optimizer_fn, 
+        milestones = self._params['milestones'],
+        gamma = self._params['milestone_gamma']
+      ) 
     else:
       raise ValueError('Unknown learning rate function: {}'.format(
         self._params['learning_rate_fn']))
@@ -227,7 +233,7 @@ class ProbabilisticRunner(object):
         algos = ['Diffusion'], 
         num_observed_frames = self._params['num_observed_frames'], 
         num_cols = self._params['vis_col'], 
-        output = os.path.join(self._params['gif_dir'], f'training_{self.curr_epoch}.gif')
+        output = os.path.join(self._params['gif_dir'], f"training_{self.curr_epoch}.gif")
       )
   
 
@@ -244,7 +250,7 @@ class ProbabilisticRunner(object):
         algos = ['Diffusion'], 
         num_observed_frames = self._params['num_observed_frames'], 
         num_cols = 4, 
-        output = os.path.join(self._params['gif_dir'], f'val_{self.curr_epoch}.gif')
+        output = os.path.join(self._params['gif_dir'], f"val_{self.curr_epoch}.gif")
       )
     
     if self.curr_epoch % self._params['save_metrics_interval'] == 0 and self.curr_epoch > 0: 
@@ -345,7 +351,7 @@ class ProbabilisticRunner(object):
         lr = self._params['learning_rate'], 
       )
     else : 
-      raise NotImplementedError(f'Optimizer {self._params['optimizer']} not supported')
+      raise NotImplementedError(f"Optimizer {self._params['optimizer']} not supported")
 
   def compute_all_metrics(self, pred, gt, gt_multi):
     if pred.shape[0] == 1 : 
@@ -417,8 +423,8 @@ class ProbabilisticRunner(object):
           )
           self.logger.info(str_stats)
 
-    file_latest = f'{self._params['result_dir']}/stats_latest.csv'
-    file_stat = f'{self._params['result_dir']}/stats.csv'
+    file_latest = f"{self._params['result_dir']}/stats_latest.csv"
+    file_stat = f"{self._params['result_dir']}/stats.csv"
     with open(file_latest, 'w') as csv_file:
       writer = csv.DictWriter(csv_file, fieldnames = ['Metric'] + [self._params['algo']])
       writer.writeheader()

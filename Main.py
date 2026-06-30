@@ -74,9 +74,8 @@ if __name__ == '__main__':
   parser.add_argument('--learning_rate_fn', type = str, default = 'step')
   parser.add_argument('--step_gamma', default = 0.1, type = float)
   parser.add_argument('--exp_gamma', default = 0.95, type = float)
-
-
-  parser.add_argument('--warmup_epochs', type = int, default = 30)
+  parser.add_argument('--milestones', type = list, default = [75, 150, 225, 275, 350, 450])
+  parser.add_argument('--milestone_gamma', default = 0.9, type = float)
   
   parser.add_argument('--pose_embedding_type', type = str, default = 'simple')
 

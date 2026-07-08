@@ -175,6 +175,21 @@ class Dataset:
     samples = np.concatenate(samples, axis = 0) 
     return samples 
   
+  def sample_iter_action(self, action_category):
+    # subject = np.random.choice(self.subjects)
+    dict_s = self.data[self.test_subject]
+    sample = [] 
+    action = action_category
+    seq = dict_s[action]
+    frame_start = np.random.randint(seq.shape[0] - self.total_frames)
+    frame_end = frame_start + self.total_frames
+    traj = seq[frame_start: frame_end]
+    sample.append(traj[None, ...])
+    sample = np.concatenate(sample, axis = 0)
+    return sample
+  
+
+
   def prepare_iter_action(self):
     dict_s = self.data[self.test_subject]
     action_list = [] 
@@ -488,6 +503,7 @@ class DatasetHumanEva(Dataset):
       joints_right = [5, 6, 7, 11, 12, 13]
     )
     self.major_joints = np.arange(15)
+    self.test_subject = 'Validate/S2'
     self.process_data()
 
   def process_data(self): 

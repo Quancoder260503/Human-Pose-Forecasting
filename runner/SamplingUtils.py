@@ -30,107 +30,170 @@ def post_process(predictions, params):
 
 
 
-def sample_preprocessing(trajectory, params, sampling_mode, dct, idct):
-  def _make_history_mask(num_samples, traj):
-    """Mask that is 1 only for historical frames."""
-    mask = torch.zeros([num_samples, params['num_observed_frames'] + params['num_predict_frames'], \
-                        traj.shape[-1]]).to(params['device'])
-    mask[:, : params['num_observed_frames'], :] = 1
-    return mask
-
-  def _compute_dct(traj):
-    trajectory_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
-    trajectory_dct = torch.matmul(dct[: params['num_dct_channels']], trajectory_pad)
-    trajectory_dct_mod = copy.deepcopy(trajectory_dct)
-    if np.random.random() > params['mod_test']:
-        trajectory_dct_mod = None
-    return trajectory_dct, trajectory_dct_mod
-  
-
-  if sampling_mode in {'gif', 'pred', 'zero_shot'}:
-    num_samples = params['vis_col']
-    trajectory = trajectory.repeat(num_samples, 1, 1)
-    mask = _make_history_mask(num_samples, trajectory)
-    traj_dct, traj_dct_mod = _compute_dct(trajectory)
-    return {
-       'mask': mask, 
-       'sample_num': num_samples, 
-       'mode': sampling_mode
-    }, traj_dct, traj_dct_mod
-
-  elif sampling_mode == 'metrics':
-    num_samples = trajectory.shape[0]        
-    mask = _make_history_mask(num_samples, trajectory)
-    traj_dct, traj_dct_mod = _compute_dct(trajectory)
-    return {
-      'mask': mask, 
-      'sample_num': num_samples, 
-      'mode': sampling_mode
-    }, traj_dct, traj_dct_mod
-
-  elif sampling_mode.split('_')[0] == 'fix':
+def sample_preprocessing(traj, params, sampling_mode, dct):
+  if sampling_mode.split('_')[0] == 'fix':
     fix_list = [
-      [0, 1, 2],
+      [0, 1, 2],  #
       [3, 4, 5],
       [6, 7, 8, 9],
       [10, 11, 12],
       [13, 14, 15],
       [0, 1, 2, 3, 4, 5],
-      [6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      [6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     ]
+
     index = int(sampling_mode.split('_')[1])
+
+      # [ ['right_leg'], ['left_leg'], ['torso'], [‘left_arm’], ['right_arm'] ]
     joint_fix_lb = fix_list[index][0] * 3
     joint_fix_ub = fix_list[index][-1] * 3 + 3
 
-    trajectory_fix = trajectory[:, params['idx_pad'], :]
-    trajectory_fix[:, :, joint_fix_lb: joint_fix_ub] = trajectory[:, :, joint_fix_lb: joint_fix_ub]
+    traj_fix = traj[:, params['idx_pad'], :]
+    traj_fix[:, :, joint_fix_lb:joint_fix_ub] = traj[:, :, joint_fix_lb : joint_fix_ub]
 
-    num_samples = params['vis_col']
-    trajectory = trajectory.repeat(num_samples, 1, 1)
+    n = params['vis_col']
+    traj = traj.repeat(n, 1, 1)
 
-    mask = _make_history_mask(num_samples, trajectory)
+    mask = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'],\
+         traj.shape[-1]]).to(params['device'])
+    for i in range(0, params['num_observed_frames']):
+      mask[:, i, :] = 1
+
     mask_fix = copy.deepcopy(mask)
     mask_fix[:, :, joint_fix_lb:joint_fix_ub] = 1
 
-    traj_dct, traj_dct_mod = _compute_dct(trajectory)
-    return {'trajectory_fix': trajectory_fix, 
-       'mask': mask_fix, 
-       'sample_num': num_samples, 
-       'mode': 'control'
+    traj_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
+
+    traj_dct = torch.matmul(dct[:params['num_dct_channels']], traj_pad)
+    traj_dct_mod = copy.deepcopy(traj_dct)
+    if np.random.random() > params['mod_test']:
+      traj_dct_mod = None
+
+    return {
+      'traj_fix': traj_fix,
+      'mask': mask_fix,
+      'sample_num': n,
+      'mode': 'control'
     }, traj_dct, traj_dct_mod
 
   elif sampling_mode == 'switch':
-    num_samples = trajectory.shape[0]
-    traj_switch = trajectory[:, (params['num_testing_frames'] - params['num_observed_frames']) : \
-                             (params['num_observed_frames'] + params['num_testing_frames']), :]
-    direct_current = trajectory[:, (params['num_testing_frames'] - \
-                params['num_observed_frames']), :].unsqueeze(1).repeat(1, \
-                (params['num_testing_frames'] - params['num_observed_frames']), 1)
-    
+    n = traj.shape[0]
+    traj_switch = traj[:, (params['num_predict_frames'] - params['num_observed_frames']):(params['num_predict_frames'] + params['num_observed_frames']), :]
+    direct_current = traj[:, (params['num_predict_frames'] - params['num_observed_frames']), :].unsqueeze(1).\
+      repeat(1, params['num_predict_frames'] - params['num_observed_frames'], 1)
+    traj_switch = torch.cat([direct_current, traj_switch], dim=1)
 
-    traj_switch = torch.cat([direct_current, traj_switch], dim = 1)
-    traj_switch = traj_switch[0].unsqueeze(0).repeat(num_samples, 1, 1)
+    traj_switch = traj_switch[0].unsqueeze(0).repeat(n, 1, 1)
+    # traj_switch = torch.roll(traj_switch, 1, 0) # make the target traj be various
 
-    mask = _make_history_mask(num_samples, trajectory)
+    mask = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'], traj.shape[-1]]).to(params['device'])
+    for i in range(0, params['num_observed_frames']):
+      mask[:, i, :] = 1
 
-    mask_end = torch.zeros([num_samples, (params['num_observed_frames'] + params['num_testing_frames']),\
-             trajectory.shape[-1]]).to(params['device'])
-    mask_end[:, (params['num_testing_frames'] - params['num_observed_frames']):, :] = 1
+    mask_end = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'], traj.shape[-1]]).to(params['device'])
+    for i in range(params['num_predict_frames'] - params['num_observed_frames'], params['num_observed_frames'] + params['num_predict_frames']):
+      mask_end[:, i, :] = 1
 
-    traj_dct, traj_dct_mod = _compute_dct(trajectory)
+    traj_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
+
+    traj_dct = torch.matmul(dct[:params['num_dct_channels']], traj_pad)
+    traj_dct_mod = copy.deepcopy(traj_dct)
+    if np.random.random() > params['mod_test']:
+        traj_dct_mod = None
+
     return {
-     'traj_switch': traj_switch, 
-     'mask_end': mask_end, 
-     'mask': mask,
-     'sample_num': num_samples, 
-     'mode': 'switch'
-    }, traj_dct, traj_dct_mod,
+      'traj_switch': traj_switch,
+      'mask_end': mask_end,
+      'mask': mask,
+      'sample_num': n,
+      'mode': 'switch'
+    }, traj_dct, traj_dct_mod
 
+  elif sampling_mode == 'gif':
+    n = params['vis_col']
+    traj = traj.repeat(n, 1, 1)
 
+    mask = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'], traj.shape[-1]]).to(params['device'])
+    for i in range(0, params['num_observed_frames']):
+      mask[:, i, :] = 1
+
+    traj_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
+
+    traj_dct = torch.matmul(dct[:params['num_dct_channels']], traj_pad)
+    traj_dct_mod = copy.deepcopy(traj_dct)
+    if np.random.random() > params['mod_test']:
+        traj_dct_mod = None
+
+    return {
+      'mask': mask,
+      'sample_num': n,
+      'mode': 'gif'
+    }, traj_dct, traj_dct_mod
+
+  elif sampling_mode == 'pred':
+    n = params['vis_col']
+    traj = traj.repeat(n, 1, 1)
+
+    mask = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'], traj.shape[-1]]).to(params['device'])
+    for i in range(0, params['num_observed_frames']):
+      mask[:, i, :] = 1
+
+    traj_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
+
+    traj_dct = torch.matmul(dct[:params['num_dct_channels']], traj_pad)
+    traj_dct_mod = copy.deepcopy(traj_dct)
+    if np.random.random() > params['mod_test']:
+        traj_dct_mod = None
+
+    return {
+      'mask': mask,
+      'sample_num': n,
+      'mode': 'pred'
+    }, traj_dct, traj_dct_mod
+
+  elif sampling_mode == 'zero_shot':
+    n = params['vis_col']
+    traj = traj.repeat(n, 1, 1)
+
+    mask = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'], traj.shape[-1]]).to(params['device'])
+    for i in range(0, params['num_observed_frames']):
+      mask[:, i, :] = 1
+
+    traj_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
+
+    traj_dct = torch.matmul(dct[:params['num_dct_channels']], traj_pad)
+    traj_dct_mod = copy.deepcopy(traj_dct)
+    if np.random.random() > params['mod_test']:
+      traj_dct_mod = None
+
+    return {
+      'mask': mask,
+      'sample_num': n,
+      'mode': 'zero_shot'
+    }, traj_dct, traj_dct_mod
+
+  elif sampling_mode == 'metrics':
+    n = traj.shape[0]
+    mask = torch.zeros([n, params['num_observed_frames'] + params['num_predict_frames'], traj.shape[-1]]).to(params['device'])
+    for i in range(0, params['num_observed_frames']):
+      mask[:, i, :] = 1
+
+    traj_pad = padding_trajectory(traj, params['padding'], params['idx_pad'], params['zero_index'])
+
+    traj_dct = torch.matmul(dct[:params['num_dct_channels']], traj_pad)
+    traj_dct_mod = copy.deepcopy(traj_dct)
+    if np.random.random() > params['mod_test']:
+      traj_dct_mod = None
+
+    return {
+      'mask': mask,
+      'sample_num': n,
+      'mode': 'metrics'
+    }, traj_dct, traj_dct_mod
   else:
     raise NotImplementedError(f"unknown purpose for sampling: {sampling_mode}")
   
-
+   
 def get_multimodal_dataset(logger, dataset_multi_test, params):
   logger.info('=> preparing evaluation dataset ...')
   data_groups = []
@@ -163,12 +226,15 @@ def get_multimodal_dataset(logger, dataset_multi_test, params):
   logger.info('done...')
   logger.info('=' * 80)
 
+
   return { 
     'trajectory_gt_array' : trajectory_gt_arr, 
     'data_group' : data_groups, 
     'gt_group' : gt_groups, 
     'num_samples' : num_samples, 
   }
+
+
 
 
 def get_dct_matrix(N, is_torch = True): 
@@ -185,6 +251,9 @@ def get_dct_matrix(N, is_torch = True):
     idct_m = torch.from_numpy(idct_m)
   return dct_m, idct_m 
       
+
+
+
 
 def render_animation(
   skeleton, 
@@ -221,7 +290,7 @@ def render_animation(
   algo = algos[0] if len(algos) > 0 else next(iter(all_poses.keys()))
   
   time_total = next(iter(all_poses.values())).shape[0]
-  poses = dict(filter(lambda x: x[0] in {'ground_truth', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
+  poses = dict(filter(lambda x: x[0] in {'gt', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
 
 
   plt.ioff()
@@ -275,7 +344,7 @@ def render_animation(
     if sampling_mode == 'switch':
       if index < num_observed_frames:
         lcol, mcol, rcol = hist_lcol, hist_mcol, hist_rcol
-      elif num_observed_frames > 75:
+      elif index > 75:
         lcol, mcol, rcol = tran_lcol, pred_mcol, tran_rcol
       else:
         lcol, mcol, rcol = pred_lcol, tran_mcol, pred_rcol
@@ -361,7 +430,7 @@ def render_animation(
   
   def reload_poses():
     nonlocal poses
-    poses = dict(filter(lambda x: x[0] in {'ground_truth', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
+    poses = dict(filter(lambda x: x[0] in {'gt', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
     for ax, title in zip(axes_3d, poses.keys()):
       ax.set_title(title, y = 1.2)
     poses = list(poses.values())

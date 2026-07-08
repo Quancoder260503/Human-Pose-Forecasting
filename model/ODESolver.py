@@ -15,19 +15,21 @@ class FixedStepSizeODESolver(object):
   def __init__(
     self, 
     velo_func, 
-    y_0, 
     step_size = None, 
     grid_constructor = None, 
     interpolation = 'linear', 
-    perturb = False
+    path_refiniment_steps = 1, 
+    perturb_scale = 0.02, 
   ):
     self.velo_func = velo_func
-    self.y_0 = y_0 
-    self.dtype = y_0.dtype 
-    self.device = y_0.device 
     self.step_size = step_size
     self.interpolation = interpolation
-    self.perturb = perturb 
+    self.path_refiniment_steps = path_refiniment_steps 
+    self.perturb_scale = perturb_scale
+    
+    print(f">>> Sampling flow matching path using {self.__class__.__name__}")
+
+    assert self.path_refiniment_steps >= 1, "Refinement step cannot be zero"
 
     if step_size is None : 
       if grid_constructor is None : 
@@ -57,46 +59,60 @@ class FixedStepSizeODESolver(object):
     pass
 
   def integrate(self, t, cond, mask, dct, idct, num_dct_channels, probability_path : ProbabilityPath):
-    time_grid = self.grid_constructor(self.velo_func, self.y_0, t)
-    results = torch.empty(len(t), *self.y_0.shape, dtype = self.dtype, device = self.device)
-    results[0] = self.y_0 
+    y_0 = torch.randn(cond.shape, dtype = cond.dtype).to(cond.device)
+    time_grid = self.grid_constructor(self.velo_func, y_0, t)
+    results = torch.empty(len(t), * y_0.shape, dtype = y_0.dtype, device = y_0.device)
+    results[0] = y_0 
 
     j = 1 
-    y_0 = self.y_0
+    # Right now can fuse a bit noise to increase the diversity if use refinement step 
 
-    # Naive algorithm for now, still need refinement 
-    # Another idea is to use y_{t + \delta{t}} as a refinement for $y_t$, 
-    # use the estimate y_{t + \delta{t}} to estimate y_1 and use that $y_1$ to keep refining $y_t$
     for t_0, t_1 in zip(time_grid[:-1], time_grid[1:]):
-      dt = (t_1 - t_0)
-      ones = torch.ones((self.y_0.shape[0], self.y_0.shape[1] - 1)) 
+      ones = torch.ones(y_0.shape[0], device = y_0.device, dtype = y_0.dtype)
       gauss_noise = torch.randn_like(cond).to(cond.device)
-      y_curr = y_0
-      y_t = probability_path.sample(x_0 = gauss_noise, x_1 = cond)
-      y_unknown = torch.matmul(idct[:, : num_dct_channels], y_curr) 
+      y_t = probability_path.sample(x_0 = gauss_noise, x_1 = cond, t = ones * t_0).x_t
       y_known = torch.matmul(idct[:, : num_dct_channels], y_t)
+      for k in range(self.path_refiniment_steps):
+       # run some refininement steps to fit the trajectory onto data manifold
+        y_unknown = torch.matmul(idct[:, : num_dct_channels], y_0) 
+        y_combine = y_known * mask + y_unknown * (1. - mask)
+        y_0 = torch.matmul(dct[: num_dct_channels, :], y_combine)
+        dy, f_0 = self.step_func(
+          func = self.velo_func, 
+          t_0 = ones * t_0, 
+          dt  = ones * (t_1 - t_0),  
+          t_1 = ones * t_1, 
+          y_0 = y_0, 
+          cond = cond, 
+        )
+        y_1 = y_0 + dy
 
-      y_combine = y_known * mask + y_unknown * (1. - mask)
-      y_0 = torch.matmul(dct[: num_dct_channels, :], y_combine)
+        if t_1 < time_grid[-1] and k + 1 < self.path_refiniment_steps:
+          dy, _ = self.step_func(
+            func = self.velo_func, 
+            t_0 = ones * t_1, 
+            t_1 = ones * time_grid[-1], 
+            dt = ones * (time_grid[-1] - t_1), 
+            cond = cond, 
+            y_0 = y_1, 
+          )
+          y_data = y_1 + dy 
+          eps = torch.randn(cond.shape).to(cond.device) 
+          tilde_y_t = probability_path.sample(x_0 = eps, x_1 = y_data, t = ones * t_0).x_t
+          y_unknown_ = torch.matmul(idct[:, : num_dct_channels], tilde_y_t)
+          y_combine_ = y_known * mask + y_unknown_ * (1. - mask)
+    
+          y_0 = torch.matmul(dct[:num_dct_channels, :], y_combine_)
 
-      dy, f_0 = self.step_func(
-        func = self.velo_func, 
-        t_0 = ones * t_0, 
-        dt  = ones * dt, 
-        t_1 = ones * t_1, 
-        y_0 = y_0, 
-        cond = cond, 
-      )
-      y_1 = y_0 + dy
 
       while j < len(t) and t[j] <= t_1 : 
         if self.interpolation == 'linear':
           results[j] = self.linear_interpolation(t_0, t_1, y_0, y_1, t[j])
         elif self.interpolation == 'cubic': 
-          f_1 = self.velo_func(t_1, y_1)
+          f_1 = self.velo_func(y_1, ones * t_1, cond)
           results[j] = self.cubic_interpolation(t_0, y_0, f_0, t_1, y_1, f_1, t[j])
         else:
-          raise ValueError(f"Unknown interpolation method {self.interp}")
+          raise ValueError(f"Unknown interpolation method {self.interpolation}")
         j += 1
 
       y_0 = y_1
@@ -124,18 +140,18 @@ class FixedStepSizeODESolver(object):
 class EulerSolver(FixedStepSizeODESolver):
   def step_func(self, func, t_0, dt, t_1, y_0, cond):
     v_0 = func(y_0, t_0, cond)
-    return dt * v_0, v_0
+    return dt[..., None, None] * v_0, v_0
   
 class MidPointSolver(FixedStepSizeODESolver):
   def step_func(self, func, t_0, dt, t_1, y_0, cond):
     half_dt = dt / 2
     v_0 = func(y_0, t_0, cond) 
     mid_point = y_0 + half_dt * v_0 
-    return dt * func(t_0 + half_dt, mid_point), v_0
+    return dt[..., None, None] * func(mid_point, t_0 + half_dt, cond), v_0
   
 class Heun2Solver(FixedStepSizeODESolver):
   def step_func(self, func, t_0, dt, t_1, y_0, cond):
-    v_0 = func(t_0, y_0)
+    v_0 = func(y_0, t_0, cond)
     # from butcher books
     butcher_tableu = [
       [0.0, 0.0, 0.0],
@@ -144,12 +160,12 @@ class Heun2Solver(FixedStepSizeODESolver):
     ]
 
     k_1 = v_0
-    k_2 = func(y_0 + dt * butcher_tableu[1][1] * k_1, t_0 + dt * butcher_tableu[1][0], cond)
-    return dt * (butcher_tableu[2][1] * k_1 + butcher_tableu[2][2] * k_2), v_0
+    k_2 = func(y_0 + dt[..., None, None] * butcher_tableu[1][1] * k_1, t_0 + dt * butcher_tableu[1][0], cond)
+    return dt[..., None, None] * (butcher_tableu[2][1] * k_1 + butcher_tableu[2][2] * k_2), v_0
 
 class Heun3Solver(FixedStepSizeODESolver):
   def step_func(self, func, t_0, dt, t_1, y_0, cond):
-    v_0 = func(t_0, y_0)
+    v_0 = func(y_0, t_0, cond)
     # from butcher books
     butcher_tableu = [
       [0.0, 0.0, 0.0, 0.0],
@@ -157,21 +173,19 @@ class Heun3Solver(FixedStepSizeODESolver):
       [2/3, 0.0, 2/3, 0.0],
       [0.0, 1/4, 0.0, 3/4],
     ]
-
-
     k_1 = v_0
-    k_2 = func(y_0 + dt * butcher_tableu[1][1] * k_1, t_0 + dt * butcher_tableu[1][0], cond)
-    k_3 = func(y_0 + dt * (butcher_tableu[2][1] * k_1 + butcher_tableu[2][2] * k_2), t_0 + dt * butcher_tableu[2][0], cond)
-    return dt * (butcher_tableu[3][1] * k_1 + butcher_tableu[3][2] * k_2 + butcher_tableu[3][3] * k_3), v_0
+    k_2 = func(y_0 + dt[..., None, None] * butcher_tableu[1][1] * k_1, t_0 + dt * butcher_tableu[1][0], cond)
+    k_3 = func(y_0 + dt[..., None, None] * (butcher_tableu[2][1] * k_1 + butcher_tableu[2][2] * k_2), t_0 + dt * butcher_tableu[2][0], cond)
+    return dt[..., None, None] * (butcher_tableu[3][1] * k_1 + butcher_tableu[3][2] * k_2 + butcher_tableu[3][3] * k_3), v_0
 
 
 class RungeKutta4Solver(FixedStepSizeODESolver):
   def step_func(self, func, t_0, dt, t_1, y_0, cond):
-    v_0 = func(t_0, y_0)
+    v_0 = func(y_0, t_0, cond)
     # sampling the trajectory field
     k_1 = v_0 
-    k_2 = func(y_0 + dt / 3 * k_1, t_0 + dt / 3, cond)
-    k_3 = func(y_0 + dt * (k_2 - k_1 / 3), t_0 + dt * 2 / 3, cond)
-    k_4 = func(y_0 + dt * (k_1 - k_2 + k_3), t_1, cond)
-    return (k_1 + 3 * (k_2 + k_3) + k_4) * dt * 0.125, v_0
+    k_2 = func(y_0 + dt[..., None, None] / 3 * k_1, t_0 + dt / 3, cond)
+    k_3 = func(y_0 + dt[..., None, None] * (k_2 - k_1 / 3), t_0 + dt * 2 / 3, cond)
+    k_4 = func(y_0 + dt[..., None, None] * (k_1 - k_2 + k_3), t_1, cond)
+    return (k_1 + 3 * (k_2 + k_3) + k_4) * dt[..., None, None] * 0.125, v_0
 

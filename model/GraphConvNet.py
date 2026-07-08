@@ -117,7 +117,8 @@ class GC_Block(nn.Module):
       output_nodes = output_nodes, 
       bias = bias
     )
-    self.bn2 = zero_module(nn.BatchNorm1d(output_nodes * in_features))
+    self.bn2 = nn.BatchNorm1d(output_nodes * in_features)
+    self.proj_out = zero_module(nn.Linear(self.in_features, self.output_features)) 
 
     self.do = nn.Dropout(p_dropout)
     self.act_f = nn.Tanh()
@@ -135,7 +136,7 @@ class GC_Block(nn.Module):
     y = self.bn2(y.view(b, -1)).view(b, n, f)
     y = self.act_f(y)
     y = self.do(y)
-
+    y = self.proj_out(y)
     return y + x
 
   def __repr__(self):
@@ -316,3 +317,6 @@ class SimpleEncoder(nn.Module):
 
 
 
+"""
+Diffusion Graph Conv Net ? 
+"""

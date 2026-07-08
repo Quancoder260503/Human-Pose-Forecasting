@@ -13,3 +13,5 @@ log
 transformer_checkpoint
 TransformerDiffusion
 TransformerCosineDiffusion
+TransformerCosineFMatching 
+TransformerCosineFMatchingv1

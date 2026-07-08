@@ -1,47 +1,27 @@
 import torch.nn as nn 
 
 class EMAHelper(object):
- def __init__(self, mu = 0.999): 
-   self.mu = mu 
-   self.shadow = {}
+  def __init__(self, mu = 0.999): 
+   self.mu = mu
+   self.curr_step = 0
 
- def register(self, module): 
-   if isinstance(module, nn.DataParallel):
-      module = module.module 
-   for name, param in module.named_parameters(): 
-    if param.requires_grad : 
-      self.shadow[name] = param.data.clone() 
-    
- def update(self, module): 
-   if isinstance(module, nn.DataParallel):
-      module = module.module 
-   for name, param in module.named_parameters(): 
-    if param.requires_grad : 
-      self.shadow[name] = self.mu * self.shadow[name] + (1. - self.mu) * param.data 
-    
+  def update_model_average(self, ema_model, model):
+    for current_params, ema_params in zip(model.parameters(), ema_model.parameters()): 
+      old_weight, up_weight = ema_params.data, current_params.data
+      ema_params.data = self.update_average(old_weight, up_weight)
 
- def ema(self, module):
-  if isinstance(module, nn.DataParallel):
-    module = module.module 
-  for name, param in module.named_parameters(): 
-   if param.requires_grad : 
-    param.data.copy_(self.shadow[name].data)
+  def update_average(self, curr_model, new_model): 
+    if curr_model is None :
+      return new_model
+    return curr_model * self.mu + (1 - self.mu) * new_model
 
- def ema_copy(self, module):
-  if isinstance(module, nn.DataParallel):
-    inner_module = module.module 
-    module_copy  = type(inner_module)(inner_module.config).to(inner_module.config.device)
-    module_copy.load_state_dict(inner_module.state_dict())
-    module_copy = nn.DataParallel(module_copy)
-  else :
-    module_copy  = type(module)(module.config).to(module.config.device)
-    module_copy.load_state_dict(module.state_dict())
-
-  self.ema(module_copy)
-  return module_copy 
-    
- def state_dict(self):
-   return self.shadow 
-    
- def load_state_dict(self, state_dict): 
-   self.shadow = state_dict 
+  def update_ema(self, ema_model, model, step_start_ema = 20000): 
+    if self.curr_step < step_start_ema: 
+      self.curr_step += 1
+      self.reset_parameters(ema_model, model) 
+      return  
+    self.curr_step += 1 
+    self.update_model_average(ema_model, model) 
+  
+  def reset_parameters(self, ema_model, model): 
+    ema_model.load_state_dict(model.state_dict())

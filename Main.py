@@ -12,7 +12,8 @@ from data.MultiDataset import DatasetH36M,  DatasetH36M_Multi
 #import data.NTURGDDataset as NTURGDDataset
 from model.PoseEncoderDecoder import select_pose_encoder_decoder_fn
 from runner.SamplingUtils import *
-from runner.ProbabilisticRunner import *
+from runner.DiffusionRunner import *
+from runner.FlowMatchingRunner import *
 
 def create_dir_tree(base_dir, params):
   dir_tree = ['result_dir', 'tb_dir', 'gif_dir', 'config_dir', 'log_dir', 'models']
@@ -51,16 +52,23 @@ def dataset_split(params):
     'test' : dataset_test, 
    }, dataset_multi_test 
 
+def seed_set(seed):
+  random.seed(seed)
+  os.environ['PYTHONHASHSEED'] = str(seed)
+  np.random.seed(seed)
+  torch.manual_seed(seed)
+  torch.cuda.manual_seed(seed)
+
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--model_prefix', type = str, default = '', required = True)
-  parser.add_argument('--mode', type = str, default = 'train', required = True) 
+  parser.add_argument('--mode', default = 'train', type = str) 
+  parser.add_argument('--sampling_mode', default = 'pred', type = str) # pred / switch/ control/ zero_shot')
   parser.add_argument('--algo', type = str, default = 'diffusion', required = True)
   parser.add_argument('--batch_size', type = int, default = 64)
-  parser.add_argument('--learning_rate', type = float, default = 1e-4)
+  parser.add_argument('--learning_rate', type = float, default = 3e-4)
   parser.add_argument('--max_epochs', type = int, default = 1000)
-  parser.add_argument('--steps_per_epoch', type = int, default = 200)
   parser.add_argument('--action', nargs = '*', type = str, default = None)
 
   parser.add_argument('--init_fn', type = str, default = 'xavier_init_')
@@ -71,11 +79,12 @@ if __name__ == '__main__':
 
   parser.add_argument('--max_gradient_norm', type = float, default = 1.)
   parser.add_argument('--lr_step_size', type = int, default = 400)
-  parser.add_argument('--learning_rate_fn', type = str, default = 'step')
+  parser.add_argument('--learning_rate_fn', type = str, default = 'milestones')
   parser.add_argument('--step_gamma', default = 0.1, type = float)
   parser.add_argument('--exp_gamma', default = 0.95, type = float)
-  parser.add_argument('--milestones', type = list, default = [75, 150, 225, 275, 350, 450])
-  parser.add_argument('--milestone_gamma', default = 0.9, type = float)
+  parser.add_argument('--milestones', type = list, default = [150, 225, 275, 350, 450, 650, 850])
+  parser.add_argument('--milestone_gamma', type = float, default = 0.9)
+  parser.add_argument('--end_learning_rate', type = float, default = 1e-6)
   
   parser.add_argument('--pose_embedding_type', type = str, default = 'simple')
 
@@ -85,8 +94,8 @@ if __name__ == '__main__':
   parser.add_argument('--pos_enc_beta',    type = float, default = 10000)
   parser.add_argument('--device', type = str, default = 'cuda')
 
-  parser.add_argument('--optimizer', default = 'AdamW', type = str)
-  parser.add_argument('--betas', default = (0.9, 0.99), type = tuple)
+  parser.add_argument('--optimizer', default = 'Adam', type = str)
+  parser.add_argument('--betas', default = (0.9, 0.999), type = tuple)
 
   parser.add_argument('--snapshot_saving_steps', default = 10, type = int)
   parser.add_argument('--log_frequency', default = 50, type = int)
@@ -126,10 +135,22 @@ if __name__ == '__main__':
   parser.add_argument('--embedding_max_period', type = int, default = 10000)
   parser.add_argument('--flatten_arc', type = bool, default = False) 
   parser.add_argument('--learnable_embedding', type = bool, default = True)
+  parser.add_argument('--se_ratio', type = int, default = 4)
+  parser.add_argument('--use_excitation', type = bool, default = False) 
+  parser.add_argument('--use_max_pooling', type = bool, default = False) 
+  parser.add_argument('--use_adaptive', type = bool, default = True)
+
+
+  # Flow Matching ODE
+  parser.add_argument('--path_scheduler', type = str, default = 'cosine')
+  parser.add_argument('--ode_solver', type = str, default = 'rk4')
+  parser.add_argument('--num_sampling_steps', type = int, default = 10)
+  parser.add_argument('--path_refinement_steps', type = int, default = 1) 
+  parser.add_argument('--interpolation', type = str, default = 'linear')
 
 
   # Multimodal 
-  parser.add_argument('--multimodal_threshold', type = float, default = 0.1)
+  parser.add_argument('--multimodal_threshold', type = float, default = 0.5)
 
   parser.add_argument('--padding', type = str, default = 'last_frame')
 
@@ -138,13 +159,19 @@ if __name__ == '__main__':
   parser.add_argument('--data_candi_path', type = str, \
     default = 'dataset/multimodal_set/data_multi_modal/data_candi_t_his25_t_pred100_skiprate20.npz')
   
-  parser.add_argument('--ema_rate', type = float, default = 0.95)
-
+  # EMA
+  parser.add_argument('--ema_rate', type = float, default = 0.999)
+  parser.add_argument('--step_start_ema', type = int, default = 2000)
+  
+  # visualization
+  parser.add_argument('--vis_switch_num', type = int, default = 10)
   parser.add_argument('--vis_col', type = int, default = 5)
-
+  parser.add_argument('--vis_row', type = int, default = 3)
 
 
   args = parser.parse_args()
+
+
     
   params = vars(args)
 
@@ -162,35 +189,34 @@ if __name__ == '__main__':
   dataset, dataset_multi_test = dataset_split(params)
   tb_logger = SummaryWriter(params['tb_dir'])
   logger = create_logger(os.path.join(params['log_dir'], 'log.txt'))
- 
+  
+  if args.mode == 'train':
+    seed_set(0)
+
   for k, v in params.items():
     logger.info('[INFO] (GenerativePose@main) {}: {}'.format(k, v))
 
-
+  multimodal_dict = get_multimodal_dataset(
+    logger = logger, 
+    dataset_multi_test = dataset_multi_test, 
+    params = params, 
+  )
+  runner = (DiffusionRunner if params['algo'] == 'diff' else FlowMatchingRunner)(
+    params = params, 
+    dataset = dataset, 
+    multimodal_dict = multimodal_dict, 
+    tblogger = tb_logger, 
+    logger = logger, 
+    pose_decoder_fn = pose_decoder_fn, 
+    pose_encoder_fn = pose_encoder_fn, 
+  )
   if args.mode == 'train':
-    multimodal_dict = get_multimodal_dataset(
-     logger = logger, 
-     dataset_multi_test = dataset_multi_test, 
-     params = params, 
-    )
-    runner = DiffusionRunner(
-     params = params, 
-     dataset = dataset, 
-     multimodal_dict = multimodal_dict, 
-     tblogger = tb_logger, 
-     logger = logger, 
-     pose_decoder_fn = pose_decoder_fn, 
-     pose_encoder_fn = pose_encoder_fn, 
-    )
+    seed_set(0)
     runner.train()
-
   elif args.mode == 'eval':
-    multimodal_dict = get_multimodal_dataset(
-     logger = logger, 
-     dataset_multi_test = dataset_multi_test, 
-     params = params, 
-    )
-    #compute_stats(diffusion, multimodal_dict, model, logger, cfg)
-  else:
-    pass # TODO : implement this
-    #demo_visualize(args.mode, cfg, model, diffusion, dataset)
+    runner.compute_stats(sampling_model = runner._ema_model, multimodal_dict = multimodal_dict) 
+  elif args.mode == 'demo_vis':
+    runner.demo_visualize(sampling_model = runner._ema_model, \
+      sampling_mode = params['sampling_mode'], dataset = dataset)
+  else : 
+    raise not NotImplementedError

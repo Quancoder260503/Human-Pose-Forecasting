@@ -193,7 +193,7 @@ def sample_preprocessing(traj, params, sampling_mode, dct):
   else:
     raise NotImplementedError(f"unknown purpose for sampling: {sampling_mode}")
   
-
+   
 def get_multimodal_dataset(logger, dataset_multi_test, params):
   logger.info('=> preparing evaluation dataset ...')
   data_groups = []
@@ -226,12 +226,15 @@ def get_multimodal_dataset(logger, dataset_multi_test, params):
   logger.info('done...')
   logger.info('=' * 80)
 
+
   return { 
     'trajectory_gt_array' : trajectory_gt_arr, 
     'data_group' : data_groups, 
     'gt_group' : gt_groups, 
     'num_samples' : num_samples, 
   }
+
+
 
 
 def get_dct_matrix(N, is_torch = True): 
@@ -248,6 +251,9 @@ def get_dct_matrix(N, is_torch = True):
     idct_m = torch.from_numpy(idct_m)
   return dct_m, idct_m 
       
+
+
+
 
 def render_animation(
   skeleton, 
@@ -284,7 +290,7 @@ def render_animation(
   algo = algos[0] if len(algos) > 0 else next(iter(all_poses.keys()))
   
   time_total = next(iter(all_poses.values())).shape[0]
-  poses = dict(filter(lambda x: x[0] in {'ground_truth', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
+  poses = dict(filter(lambda x: x[0] in {'gt', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
 
 
   plt.ioff()
@@ -338,7 +344,7 @@ def render_animation(
     if sampling_sampling_mode == 'switch':
       if index < num_observed_frames:
         lcol, mcol, rcol = hist_lcol, hist_mcol, hist_rcol
-      elif num_observed_frames > 75:
+      elif index > 75:
         lcol, mcol, rcol = tran_lcol, pred_mcol, tran_rcol
       else:
         lcol, mcol, rcol = pred_lcol, tran_mcol, pred_rcol
@@ -424,7 +430,7 @@ def render_animation(
   
   def reload_poses():
     nonlocal poses
-    poses = dict(filter(lambda x: x[0] in {'ground_truth', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
+    poses = dict(filter(lambda x: x[0] in {'gt', 'context'} or algo == x[0].split('_')[0] or x[0].startswith('ground_truth'), all_poses.items()))
     for ax, title in zip(axes_3d, poses.keys()):
       ax.set_title(title, y = 1.2)
     poses = list(poses.values())

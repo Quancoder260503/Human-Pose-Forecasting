@@ -1,0 +1,412 @@
+[2026-07-08 19:41:24,571] [INFO] (GenerativePose@main) model_prefix: TransformerCosineFMatchingv1
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) mode: train
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) sampling_mode: pred
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) algo: flow
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) batch_size: 64
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) learning_rate: 0.0003
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) max_epochs: 1000
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) action: None
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) init_fn: xavier_init_
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) num_observed_frames: 25
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) num_predict_frames: 100
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) max_gradient_norm: 1.0
+[2026-07-08 19:41:24,572] [INFO] (GenerativePose@main) lr_step_size: 400
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) learning_rate_fn: milestones
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) step_gamma: 0.1
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) exp_gamma: 0.95
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) milestones: [150, 225, 275, 350, 450, 650, 850]
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) milestone_gamma: 0.9
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) end_learning_rate: 1e-06
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) pose_embedding_type: simple
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) dataset: h36m
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) finetuning_ckpt: None
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) pos_enc_alpha: 1
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) pos_enc_beta: 10000
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) device: cuda
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) optimizer: AdamW
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) betas: (0.9, 0.999)
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) snapshot_saving_steps: 10
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) log_frequency: 50
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) mod_train: 0.8
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) mod_test: 1.0
+[2026-07-08 19:41:24,573] [INFO] (GenerativePose@main) num_workers: 0
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) num_train_data_samples: 50000
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) num_val_data_samples: 10000
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) save_gif_interval: 20
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) save_metrics_interval: 200
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) diffusion_num_timesteps: 1000
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) ddim_num_timesteps: 100
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) timesteps_sampling: skewed_time_sampling
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) noise_scheduler: linear
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) rescale_timesteps: False
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) num_dct_channels: 20
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) num_joints: 16
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) joint_dim: 3
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) model_dim: 512
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) ffn_dim: 2048
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) num_layers: 8
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) num_heads: 8
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) use_gate: False
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) dropout: 0.2
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) activation: GeLU
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) use_cross_attention: False
+[2026-07-08 19:41:24,574] [INFO] (GenerativePose@main) embedding_max_period: 10000
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) flatten_arc: False
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) learnable_embedding: True
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) se_ratio: 4
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) use_excitation: False
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) use_max_pooling: False
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) use_adaptive: True
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) path_scheduler: cosine
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) ode_solver: euler
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) num_sampling_steps: 100
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) path_refinement_steps: 1
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) interpolation: linear
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) multimodal_threshold: 0.5
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) padding: last_frame
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) multimodal_path: dataset/multimodal_set/data_multi_modal/t_his25_1_thre0.500_t_pred100_thre0.100_filtered_dlow.npz
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) data_candi_path: dataset/multimodal_set/data_multi_modal/data_candi_t_his25_t_pred100_skiprate20.npz
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) ema_rate: 0.999
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) step_start_ema: 2000
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) vis_switch_num: 10
+[2026-07-08 19:41:24,575] [INFO] (GenerativePose@main) vis_col: 10
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) vis_row: 3
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) result_dir: TransformerCosineFMatchingv1\result_dir
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) tb_dir: TransformerCosineFMatchingv1\tb_dir
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) gif_dir: TransformerCosineFMatchingv1\gif_dir
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) config_dir: TransformerCosineFMatchingv1\config_dir
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) log_dir: TransformerCosineFMatchingv1\log_dir
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) models: TransformerCosineFMatchingv1\models
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) pose_dim: 48
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) idx_pad: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24]
+[2026-07-08 19:41:24,576] [INFO] (GenerativePose@main) zero_index: None
+[2026-07-08 19:41:24,576] => preparing evaluation dataset ...
+[2026-07-08 19:42:19,936] ================================================================================
+[2026-07-08 19:42:19,936] #1 future: 73/5168
+[2026-07-08 19:42:19,936] #<10 future: 1011/5168
+[2026-07-08 19:42:19,937] done...
+[2026-07-08 19:42:19,937] ================================================================================
+[2026-07-08 19:42:23,421] [INFO] (FlowMatchingRunner) This module has 37316656 parameters!
+[2026-07-08 19:42:23,421] [INFO] (FlowMatchingRunner) Intializing ModelFn with params
+[2026-07-08 19:42:23,421] >>> Training using Flow Matching algorithm
+[2026-07-08 19:42:23,480] ==========================================================================================
+[2026-07-08 19:42:23,480] [INFO] FlowMatchingRunner | global step : 000001 | epoch : 000000 | Start training
+[2026-07-08 19:42:23,480] ==========================================================================================
+[2026-07-08 19:42:23,482] Starting training at epoch 0
+[2026-07-08 19:43:18,420] [INFO] (GenerativePose@main) model_prefix: TransformerCosineFMatchingv1
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) mode: train
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) sampling_mode: pred
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) algo: flow
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) batch_size: 64
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) learning_rate: 0.0003
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) max_epochs: 1000
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) action: None
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) init_fn: xavier_init_
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) num_observed_frames: 25
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) num_predict_frames: 100
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) max_gradient_norm: 1.0
+[2026-07-08 19:43:18,421] [INFO] (GenerativePose@main) lr_step_size: 400
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) learning_rate_fn: milestones
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) step_gamma: 0.1
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) exp_gamma: 0.95
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) milestones: [150, 225, 275, 350, 450, 650, 850]
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) milestone_gamma: 0.9
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) end_learning_rate: 1e-06
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) pose_embedding_type: simple
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) dataset: h36m
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) finetuning_ckpt: None
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) pos_enc_alpha: 1
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) pos_enc_beta: 10000
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) device: cuda
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) optimizer: AdamW
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) betas: (0.9, 0.999)
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) snapshot_saving_steps: 10
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) log_frequency: 50
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) mod_train: 0.8
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) mod_test: 1.0
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) num_workers: 0
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) num_train_data_samples: 50000
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) num_val_data_samples: 10000
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) save_gif_interval: 20
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) save_metrics_interval: 200
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) diffusion_num_timesteps: 1000
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) ddim_num_timesteps: 100
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) timesteps_sampling: skewed_time_sampling
+[2026-07-08 19:43:18,422] [INFO] (GenerativePose@main) noise_scheduler: linear
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) rescale_timesteps: False
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) num_dct_channels: 20
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) num_joints: 16
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) joint_dim: 3
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) model_dim: 512
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) ffn_dim: 2048
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) num_layers: 8
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) num_heads: 8
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) use_gate: False
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) dropout: 0.2
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) activation: GeLU
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) use_cross_attention: False
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) embedding_max_period: 10000
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) flatten_arc: False
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) learnable_embedding: True
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) se_ratio: 4
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) use_excitation: False
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) use_max_pooling: False
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) use_adaptive: True
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) path_scheduler: cosine
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) ode_solver: euler
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) num_sampling_steps: 100
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) path_refinement_steps: 1
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) interpolation: linear
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) multimodal_threshold: 0.5
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) padding: last_frame
+[2026-07-08 19:43:18,423] [INFO] (GenerativePose@main) multimodal_path: dataset/multimodal_set/data_multi_modal/t_his25_1_thre0.500_t_pred100_thre0.100_filtered_dlow.npz
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) data_candi_path: dataset/multimodal_set/data_multi_modal/data_candi_t_his25_t_pred100_skiprate20.npz
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) ema_rate: 0.999
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) step_start_ema: 2000
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) vis_switch_num: 10
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) vis_col: 10
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) vis_row: 3
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) result_dir: TransformerCosineFMatchingv1\result_dir
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) tb_dir: TransformerCosineFMatchingv1\tb_dir
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) gif_dir: TransformerCosineFMatchingv1\gif_dir
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) config_dir: TransformerCosineFMatchingv1\config_dir
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) log_dir: TransformerCosineFMatchingv1\log_dir
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) models: TransformerCosineFMatchingv1\models
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) pose_dim: 48
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) idx_pad: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24]
+[2026-07-08 19:43:18,424] [INFO] (GenerativePose@main) zero_index: None
+[2026-07-08 19:43:18,424] => preparing evaluation dataset ...
+[2026-07-08 19:44:10,789] ================================================================================
+[2026-07-08 19:44:10,789] #1 future: 73/5168
+[2026-07-08 19:44:10,789] #<10 future: 1011/5168
+[2026-07-08 19:44:10,790] done...
+[2026-07-08 19:44:10,790] ================================================================================
+[2026-07-08 19:44:13,732] [INFO] (FlowMatchingRunner) This module has 37316656 parameters!
+[2026-07-08 19:44:13,732] [INFO] (FlowMatchingRunner) Intializing ModelFn with params
+[2026-07-08 19:44:13,732] >>> Training using Flow Matching algorithm
+[2026-07-08 19:44:13,750] ==========================================================================================
+[2026-07-08 19:44:13,750] [INFO] FlowMatchingRunner | global step : 000001 | epoch : 000000 | Start training
+[2026-07-08 19:44:13,750] ==========================================================================================
+[2026-07-08 19:44:13,751] Starting training at epoch 0
+[2026-07-08 19:44:14,308] Train objective stats : epoch 0 | step 0 | avg_loss : 2.1697170734405518 | learning_rate : 0.0003
+[2026-07-08 19:44:19,932] Train objective stats : epoch 0 | step 100 | avg_loss : 1.161851466882347 | learning_rate : 0.0003
+[2026-07-08 19:44:25,663] Train objective stats : epoch 0 | step 200 | avg_loss : 0.8994505807238432 | learning_rate : 0.0003
+[2026-07-08 19:44:31,614] Train objective stats : epoch 0 | step 300 | avg_loss : 0.7707500154789896 | learning_rate : 0.0003
+[2026-07-08 19:44:37,549] Train objective stats : epoch 0 | step 400 | avg_loss : 0.689005795485361 | learning_rate : 0.0003
+[2026-07-08 19:44:43,541] Train objective stats : epoch 0 | step 500 | avg_loss : 0.6325110893644497 | learning_rate : 0.0003
+[2026-07-08 19:44:49,477] Train objective stats : epoch 0 | step 600 | avg_loss : 0.591127139805954 | learning_rate : 0.0003
+[2026-07-08 19:44:55,318] Train objective stats : epoch 0 | step 700 | avg_loss : 0.5579015357093022 | learning_rate : 0.0003
+[2026-07-08 19:44:59,996] >>> Epoch: 0 | Time: 46.24 | Train Loss: 0.5363788866889919 | Learning Rate : 0.00030
+[2026-07-08 19:47:45,960] [INFO] (GenerativePose@main) model_prefix: TransformerCosineFMatchingv1
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) mode: train
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) sampling_mode: pred
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) algo: flow
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) batch_size: 64
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) learning_rate: 0.0003
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) max_epochs: 1000
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) action: None
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) init_fn: xavier_init_
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) num_observed_frames: 25
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) num_predict_frames: 100
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) max_gradient_norm: 1.0
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) lr_step_size: 400
+[2026-07-08 19:47:45,961] [INFO] (GenerativePose@main) learning_rate_fn: milestones
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) step_gamma: 0.1
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) exp_gamma: 0.95
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) milestones: [150, 225, 275, 350, 450, 650, 850]
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) milestone_gamma: 0.9
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) end_learning_rate: 1e-06
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) pose_embedding_type: simple
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) dataset: h36m
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) finetuning_ckpt: None
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) pos_enc_alpha: 1
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) pos_enc_beta: 10000
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) device: cuda
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) optimizer: AdamW
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) betas: (0.9, 0.999)
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) snapshot_saving_steps: 10
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) log_frequency: 50
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) mod_train: 0.8
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) mod_test: 1.0
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) num_workers: 0
+[2026-07-08 19:47:45,962] [INFO] (GenerativePose@main) num_train_data_samples: 50000
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) num_val_data_samples: 10000
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) save_gif_interval: 20
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) save_metrics_interval: 200
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) diffusion_num_timesteps: 1000
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) ddim_num_timesteps: 100
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) timesteps_sampling: skewed_time_sampling
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) noise_scheduler: linear
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) rescale_timesteps: False
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) num_dct_channels: 20
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) num_joints: 16
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) joint_dim: 3
+[2026-07-08 19:47:45,963] [INFO] (GenerativePose@main) model_dim: 512
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) ffn_dim: 2048
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) num_layers: 8
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) num_heads: 8
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) use_gate: False
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) dropout: 0.2
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) activation: GeLU
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) use_cross_attention: False
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) embedding_max_period: 10000
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) flatten_arc: False
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) learnable_embedding: True
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) se_ratio: 4
+[2026-07-08 19:47:45,964] [INFO] (GenerativePose@main) use_excitation: False
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) use_max_pooling: False
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) use_adaptive: True
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) path_scheduler: cosine
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) ode_solver: euler
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) num_sampling_steps: 100
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) path_refinement_steps: 1
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) interpolation: linear
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) multimodal_threshold: 0.5
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) padding: last_frame
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) multimodal_path: dataset/multimodal_set/data_multi_modal/t_his25_1_thre0.500_t_pred100_thre0.100_filtered_dlow.npz
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) data_candi_path: dataset/multimodal_set/data_multi_modal/data_candi_t_his25_t_pred100_skiprate20.npz
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) ema_rate: 0.999
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) step_start_ema: 2000
+[2026-07-08 19:47:45,965] [INFO] (GenerativePose@main) vis_switch_num: 10
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) vis_col: 10
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) vis_row: 3
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) result_dir: TransformerCosineFMatchingv1\result_dir
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) tb_dir: TransformerCosineFMatchingv1\tb_dir
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) gif_dir: TransformerCosineFMatchingv1\gif_dir
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) config_dir: TransformerCosineFMatchingv1\config_dir
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) log_dir: TransformerCosineFMatchingv1\log_dir
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) models: TransformerCosineFMatchingv1\models
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) pose_dim: 48
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) idx_pad: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24]
+[2026-07-08 19:47:45,966] [INFO] (GenerativePose@main) zero_index: None
+[2026-07-08 19:47:45,966] => preparing evaluation dataset ...
+[2026-07-08 19:48:32,615] ================================================================================
+[2026-07-08 19:48:32,615] #1 future: 73/5168
+[2026-07-08 19:48:32,615] #<10 future: 1011/5168
+[2026-07-08 19:48:32,615] done...
+[2026-07-08 19:48:32,615] ================================================================================
+[2026-07-08 19:48:35,693] [INFO] (FlowMatchingRunner) This module has 37316656 parameters!
+[2026-07-08 19:48:35,693] [INFO] (FlowMatchingRunner) Intializing ModelFn with params
+[2026-07-08 19:48:35,693] >>> Training using Flow Matching algorithm
+[2026-07-08 19:48:35,716] ==========================================================================================
+[2026-07-08 19:48:35,716] [INFO] FlowMatchingRunner | global step : 000001 | epoch : 000000 | Start training
+[2026-07-08 19:48:35,716] ==========================================================================================
+[2026-07-08 19:48:35,717] Starting training at epoch 0
+[2026-07-08 19:48:36,055] Train objective stats : epoch 0 | step 0 | avg_loss : 2.1697170734405518 | learning_rate : 0.0003
+[2026-07-08 19:48:41,631] Train objective stats : epoch 0 | step 100 | avg_loss : 1.161851466882347 | learning_rate : 0.0003
+[2026-07-08 19:48:47,278] Train objective stats : epoch 0 | step 200 | avg_loss : 0.8994505807238432 | learning_rate : 0.0003
+[2026-07-08 19:48:53,138] Train objective stats : epoch 0 | step 300 | avg_loss : 0.7707500154789896 | learning_rate : 0.0003
+[2026-07-08 19:48:59,018] Train objective stats : epoch 0 | step 400 | avg_loss : 0.689005795485361 | learning_rate : 0.0003
+[2026-07-08 19:49:04,948] Train objective stats : epoch 0 | step 500 | avg_loss : 0.6325110893644497 | learning_rate : 0.0003
+[2026-07-08 19:49:10,816] Train objective stats : epoch 0 | step 600 | avg_loss : 0.591127139805954 | learning_rate : 0.0003
+[2026-07-08 19:49:16,684] Train objective stats : epoch 0 | step 700 | avg_loss : 0.5579015357093022 | learning_rate : 0.0003
+[2026-07-08 19:49:21,333] >>> Epoch: 0 | Time: 45.62 | Train Loss: 0.5363788866889919 | Learning Rate : 0.00030
+[2026-07-08 19:49:32,723] Starting evaluation at epoch 0
+[2026-07-08 19:49:36,060] >>> Epoch: 0 | Time: 3.34 | Val Loss: 0.3256000803831296
+[2026-07-08 19:49:47,334] Starting training at epoch 1
+[2026-07-08 19:49:47,565] Train objective stats : epoch 1 | step 0 | avg_loss : 0.33072441816329956 | learning_rate : 0.0003
+[2026-07-08 19:49:53,403] Train objective stats : epoch 1 | step 100 | avg_loss : 0.3374832352199177 | learning_rate : 0.0003
+[2026-07-08 19:49:59,285] Train objective stats : epoch 1 | step 200 | avg_loss : 0.3354934305693973 | learning_rate : 0.0003
+[2026-07-08 19:50:05,119] Train objective stats : epoch 1 | step 300 | avg_loss : 0.3324886740640152 | learning_rate : 0.0003
+[2026-07-08 19:50:11,045] Train objective stats : epoch 1 | step 400 | avg_loss : 0.329442547964039 | learning_rate : 0.0003
+[2026-07-08 19:50:16,930] Train objective stats : epoch 1 | step 500 | avg_loss : 0.3267823286399156 | learning_rate : 0.0003
+[2026-07-08 19:50:22,822] Train objective stats : epoch 1 | step 600 | avg_loss : 0.32249063114556614 | learning_rate : 0.0003
+[2026-07-08 19:50:28,687] Train objective stats : epoch 1 | step 700 | avg_loss : 0.3208174698490559 | learning_rate : 0.0003
+[2026-07-08 19:50:33,416] >>> Epoch: 1 | Time: 46.08 | Train Loss: 0.319112835196771 | Learning Rate : 0.00030
+[2026-07-08 19:50:33,416] Starting evaluation at epoch 1
+[2026-07-08 19:50:36,563] >>> Epoch: 1 | Time: 3.15 | Val Loss: 0.2903131247521975
+[2026-07-08 19:50:36,563] Starting training at epoch 2
+[2026-07-08 19:50:36,621] Train objective stats : epoch 2 | step 0 | avg_loss : 0.3234454095363617 | learning_rate : 0.0003
+[2026-07-08 19:50:42,445] Train objective stats : epoch 2 | step 100 | avg_loss : 0.2888590821830353 | learning_rate : 0.0003
+[2026-07-08 19:50:48,251] Train objective stats : epoch 2 | step 200 | avg_loss : 0.28908710937891435 | learning_rate : 0.0003
+[2026-07-08 19:50:54,130] Train objective stats : epoch 2 | step 300 | avg_loss : 0.2902266192574834 | learning_rate : 0.0003
+[2026-07-08 19:50:59,934] Train objective stats : epoch 2 | step 400 | avg_loss : 0.28892387189621344 | learning_rate : 0.0003
+[2026-07-08 19:51:05,922] Train objective stats : epoch 2 | step 500 | avg_loss : 0.2871344523753473 | learning_rate : 0.0003
+[2026-07-08 19:51:11,975] Train objective stats : epoch 2 | step 600 | avg_loss : 0.28569856918294495 | learning_rate : 0.0003
+[2026-07-08 19:51:18,008] Train objective stats : epoch 2 | step 700 | avg_loss : 0.2843688858431178 | learning_rate : 0.0003
+[2026-07-08 19:51:22,787] >>> Epoch: 2 | Time: 46.22 | Train Loss: 0.2828416463927331 | Learning Rate : 0.00030
+[2026-07-08 19:51:22,787] Starting evaluation at epoch 2
+[2026-07-08 19:51:25,951] >>> Epoch: 2 | Time: 3.16 | Val Loss: 0.2632715536806828
+[2026-07-08 19:51:25,952] Starting training at epoch 3
+[2026-07-08 19:51:26,012] Train objective stats : epoch 3 | step 0 | avg_loss : 0.24123278260231018 | learning_rate : 0.0003
+[2026-07-08 19:51:32,139] Train objective stats : epoch 3 | step 100 | avg_loss : 0.2704961084493316 | learning_rate : 0.0003
+[2026-07-08 19:51:38,238] Train objective stats : epoch 3 | step 200 | avg_loss : 0.2698977178157265 | learning_rate : 0.0003
+[2026-07-08 19:51:44,345] Train objective stats : epoch 3 | step 300 | avg_loss : 0.26915572920312913 | learning_rate : 0.0003
+[2026-07-08 19:51:50,462] Train objective stats : epoch 3 | step 400 | avg_loss : 0.26728134358910255 | learning_rate : 0.0003
+[2026-07-08 19:51:56,584] Train objective stats : epoch 3 | step 500 | avg_loss : 0.2659279255274527 | learning_rate : 0.0003
+[2026-07-08 19:52:02,712] Train objective stats : epoch 3 | step 600 | avg_loss : 0.2646134821775551 | learning_rate : 0.0003
+[2026-07-08 19:52:08,796] Train objective stats : epoch 3 | step 700 | avg_loss : 0.26335079011410345 | learning_rate : 0.0003
+[2026-07-08 19:52:13,695] >>> Epoch: 3 | Time: 47.74 | Train Loss: 0.2626746729989363 | Learning Rate : 0.00030
+[2026-07-08 19:52:13,696] Starting evaluation at epoch 3
+[2026-07-08 19:52:16,841] >>> Epoch: 3 | Time: 3.14 | Val Loss: 0.2505449397632709
+[2026-07-08 19:52:16,841] Starting training at epoch 4
+[2026-07-08 19:52:16,903] Train objective stats : epoch 4 | step 0 | avg_loss : 0.2412654012441635 | learning_rate : 0.0003
+[2026-07-08 19:52:22,997] Train objective stats : epoch 4 | step 100 | avg_loss : 0.2590686597741476 | learning_rate : 0.0003
+[2026-07-08 19:52:29,138] Train objective stats : epoch 4 | step 200 | avg_loss : 0.2539131400448766 | learning_rate : 0.0003
+[2026-07-08 19:52:35,149] Train objective stats : epoch 4 | step 300 | avg_loss : 0.25130214940669926 | learning_rate : 0.0003
+[2026-07-08 19:52:41,336] Train objective stats : epoch 4 | step 400 | avg_loss : 0.2507637069186665 | learning_rate : 0.0003
+[2026-07-08 19:52:47,454] Train objective stats : epoch 4 | step 500 | avg_loss : 0.25038168137658856 | learning_rate : 0.0003
+[2026-07-08 19:52:53,586] Train objective stats : epoch 4 | step 600 | avg_loss : 0.24971848508085864 | learning_rate : 0.0003
+[2026-07-08 19:52:59,658] Train objective stats : epoch 4 | step 700 | avg_loss : 0.2493564706513613 | learning_rate : 0.0003
+[2026-07-08 19:53:04,580] >>> Epoch: 4 | Time: 47.74 | Train Loss: 0.24936510822837088 | Learning Rate : 0.00030
+[2026-07-08 19:53:04,581] Starting evaluation at epoch 4
+[2026-07-08 19:53:07,723] >>> Epoch: 4 | Time: 3.14 | Val Loss: 0.23537484661508828
+[2026-07-08 19:53:07,724] Starting training at epoch 5
+[2026-07-08 19:53:07,786] Train objective stats : epoch 5 | step 0 | avg_loss : 0.20659829676151276 | learning_rate : 0.0003
+[2026-07-08 19:53:13,884] Train objective stats : epoch 5 | step 100 | avg_loss : 0.23931002749664948 | learning_rate : 0.0003
+[2026-07-08 19:53:20,028] Train objective stats : epoch 5 | step 200 | avg_loss : 0.23710543250859673 | learning_rate : 0.0003
+[2026-07-08 19:53:26,186] Train objective stats : epoch 5 | step 300 | avg_loss : 0.23725713819166355 | learning_rate : 0.0003
+[2026-07-08 19:53:32,286] Train objective stats : epoch 5 | step 400 | avg_loss : 0.23930241464825341 | learning_rate : 0.0003
+[2026-07-08 19:53:38,449] Train objective stats : epoch 5 | step 500 | avg_loss : 0.23975900600770275 | learning_rate : 0.0003
+[2026-07-08 19:53:44,594] Train objective stats : epoch 5 | step 600 | avg_loss : 0.23838683164456917 | learning_rate : 0.0003
+[2026-07-08 19:53:50,717] Train objective stats : epoch 5 | step 700 | avg_loss : 0.23767115930347743 | learning_rate : 0.0003
+[2026-07-08 19:53:55,605] >>> Epoch: 5 | Time: 47.88 | Train Loss: 0.23632722322217328 | Learning Rate : 0.00030
+[2026-07-08 19:53:55,606] Starting evaluation at epoch 5
+[2026-07-08 19:53:58,724] >>> Epoch: 5 | Time: 3.12 | Val Loss: 0.22790667166312537
+[2026-07-08 19:53:58,725] Starting training at epoch 6
+[2026-07-08 19:53:58,786] Train objective stats : epoch 6 | step 0 | avg_loss : 0.22426579892635345 | learning_rate : 0.0003
+[2026-07-08 19:54:04,782] Train objective stats : epoch 6 | step 100 | avg_loss : 0.23531510894841487 | learning_rate : 0.0003
+[2026-07-08 19:54:10,770] Train objective stats : epoch 6 | step 200 | avg_loss : 0.23287178412895299 | learning_rate : 0.0003
+[2026-07-08 19:54:16,790] Train objective stats : epoch 6 | step 300 | avg_loss : 0.23465365829855897 | learning_rate : 0.0003
+[2026-07-08 19:54:22,750] Train objective stats : epoch 6 | step 400 | avg_loss : 0.2334940405632195 | learning_rate : 0.0003
+[2026-07-08 19:54:28,798] Train objective stats : epoch 6 | step 500 | avg_loss : 0.23178384582439582 | learning_rate : 0.0003
+[2026-07-08 19:54:34,890] Train objective stats : epoch 6 | step 600 | avg_loss : 0.23167354069315454 | learning_rate : 0.0003
+[2026-07-08 19:54:41,046] Train objective stats : epoch 6 | step 700 | avg_loss : 0.23080039540898273 | learning_rate : 0.0003
+[2026-07-08 19:54:45,997] >>> Epoch: 6 | Time: 47.27 | Train Loss: 0.22991289768878384 | Learning Rate : 0.00030
+[2026-07-08 19:54:45,997] Starting evaluation at epoch 6
+[2026-07-08 19:54:49,189] >>> Epoch: 6 | Time: 3.19 | Val Loss: 0.2293415123071426
+[2026-07-08 19:54:49,190] Starting training at epoch 7
+[2026-07-08 19:54:49,250] Train objective stats : epoch 7 | step 0 | avg_loss : 0.18982280790805817 | learning_rate : 0.0003
+[2026-07-08 19:54:55,470] Train objective stats : epoch 7 | step 100 | avg_loss : 0.22576052688135959 | learning_rate : 0.0003
+[2026-07-08 19:55:01,586] Train objective stats : epoch 7 | step 200 | avg_loss : 0.22901254084276323 | learning_rate : 0.0003
+[2026-07-08 19:55:07,677] Train objective stats : epoch 7 | step 300 | avg_loss : 0.22850287871503355 | learning_rate : 0.0003
+[2026-07-08 19:55:13,740] Train objective stats : epoch 7 | step 400 | avg_loss : 0.22694023551786333 | learning_rate : 0.0003
+[2026-07-08 19:55:19,871] Train objective stats : epoch 7 | step 500 | avg_loss : 0.22567943981783595 | learning_rate : 0.0003
+[2026-07-08 19:55:26,048] Train objective stats : epoch 7 | step 600 | avg_loss : 0.2239306119585196 | learning_rate : 0.0003
+[2026-07-08 19:55:32,239] Train objective stats : epoch 7 | step 700 | avg_loss : 0.22365988771857617 | learning_rate : 0.0003
+[2026-07-08 19:55:37,222] >>> Epoch: 7 | Time: 48.03 | Train Loss: 0.22284996641201185 | Learning Rate : 0.00030
+[2026-07-08 19:55:37,222] Starting evaluation at epoch 7
+[2026-07-08 19:55:40,403] >>> Epoch: 7 | Time: 3.18 | Val Loss: 0.2181244723689862
+[2026-07-08 19:55:40,403] Starting training at epoch 8
+[2026-07-08 19:55:40,462] Train objective stats : epoch 8 | step 0 | avg_loss : 0.20878538489341736 | learning_rate : 0.0003
+[2026-07-08 19:55:46,608] Train objective stats : epoch 8 | step 100 | avg_loss : 0.21214712802136299 | learning_rate : 0.0003
+[2026-07-08 19:55:52,961] Train objective stats : epoch 8 | step 200 | avg_loss : 0.21380371500307055 | learning_rate : 0.0003
+[2026-07-08 19:55:59,075] Train objective stats : epoch 8 | step 300 | avg_loss : 0.21602638041062214 | learning_rate : 0.0003
+[2026-07-08 19:56:05,226] Train objective stats : epoch 8 | step 400 | avg_loss : 0.21666121806141148 | learning_rate : 0.0003
+[2026-07-08 19:56:11,370] Train objective stats : epoch 8 | step 500 | avg_loss : 0.21738693311423837 | learning_rate : 0.0003
+[2026-07-08 19:56:17,580] Train objective stats : epoch 8 | step 600 | avg_loss : 0.21759229670348462 | learning_rate : 0.0003
+[2026-07-08 19:56:24,446] Train objective stats : epoch 8 | step 700 | avg_loss : 0.21792801991423935 | learning_rate : 0.0003
+[2026-07-08 19:56:29,694] >>> Epoch: 8 | Time: 49.29 | Train Loss: 0.21868284622853607 | Learning Rate : 0.00030
+[2026-07-08 19:56:29,694] Starting evaluation at epoch 8
+[2026-07-08 19:56:33,335] >>> Epoch: 8 | Time: 3.64 | Val Loss: 0.2152710612385701
+[2026-07-08 19:56:33,336] Starting training at epoch 9
+[2026-07-08 19:56:33,397] Train objective stats : epoch 9 | step 0 | avg_loss : 0.2689322829246521 | learning_rate : 0.0003
+[2026-07-08 19:56:40,042] Train objective stats : epoch 9 | step 100 | avg_loss : 0.2189590311286473 | learning_rate : 0.0003
+[2026-07-08 19:56:46,453] Train objective stats : epoch 9 | step 200 | avg_loss : 0.21878792071223852 | learning_rate : 0.0003
+[2026-07-08 19:56:53,337] Train objective stats : epoch 9 | step 300 | avg_loss : 0.2162190705438785 | learning_rate : 0.0003
+[2026-07-08 19:57:00,076] Train objective stats : epoch 9 | step 400 | avg_loss : 0.2154525138270528 | learning_rate : 0.0003
+[2026-07-08 19:57:06,601] Train objective stats : epoch 9 | step 500 | avg_loss : 0.2147451246272542 | learning_rate : 0.0003
+[2026-07-08 19:57:12,894] Train objective stats : epoch 9 | step 600 | avg_loss : 0.2148895028873212 | learning_rate : 0.0003
+[2026-07-08 19:57:18,931] Train objective stats : epoch 9 | step 700 | avg_loss : 0.21433393023748712 | learning_rate : 0.0003
+[2026-07-08 19:57:23,764] >>> Epoch: 9 | Time: 50.43 | Train Loss: 0.2136391390987914 | Learning Rate : 0.00030
+[2026-07-08 19:57:23,765] Starting evaluation at epoch 9

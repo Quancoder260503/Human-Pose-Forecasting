@@ -10,13 +10,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-
-def mean_flat(tensor):
-  """
-  Take the mean over all non-batch dimensions
-  """
-  return tensor.mean(dim = list(range(1, len(tensor.shape))))
-
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
   if schedule_name == "linear":
    scale = 1000 / num_diffusion_timesteps
@@ -32,7 +25,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
   elif schedule_name == "sqrt": 
     return betas_for_alpha_bar(
       num_diffusion_timesteps, 
-      lambda t : 1. - torch.sqrt(t + 0.0001)
+      lambda t : 1. - math.sqrt(t + 0.0001)
     )
   elif schedule_name == "sigmoid":
     start, end, tau = -3.0, 3.0, 0.7  
@@ -51,9 +44,8 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta = 0.999):
   for i in range(num_diffusion_timesteps):
     t1 = i / num_diffusion_timesteps
     t2 = (i + 1) / num_diffusion_timesteps
-    betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
-  return np.array(betas).clip(0, 0.999)
-
+    betas.append(1 - alpha_bar(t2) / alpha_bar(t1))
+  return np.array(betas).clip(0, max_beta)
 
 def extract_into_tensor(arr, timesteps, broadcast_shape):
   """
@@ -111,8 +103,8 @@ class GaussianDiffusion(object):
     self.posterior_log_variance_clipped = np.log(np.append(\
        self.posterior_variance[1], self.posterior_variance[1:]))
 
-    self.posterior_mean_coef1 = self.betas * np.sqrt(self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
-    self.posterior_mean_coef2 = (1.0 - self.alphas_cumprod_prev) * np.sqrt(1.0 - self.betas) / (1.0 - self.alphas_cumprod)
+    self.posterior_mean_coef1 = self.betas * np.sqrt(self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod) # x_0
+    self.posterior_mean_coef2 = (1.0 - self.alphas_cumprod_prev) * np.sqrt(1.0 - self.betas) / (1.0 - self.alphas_cumprod) # x_t 
 
 
   def q_mean_variance(self, x_start, timesteps):
@@ -121,14 +113,13 @@ class GaussianDiffusion(object):
 
     :param x_start   : [N x C x ...] tensor of completely denoised inputs
     :param timesteps : 1-D tensor of diffusion timestep indices
-    :return          : (mean, variance, log_variance) each of x_start.shape
+    :return          : (mean, variance) each of x_start.shape
     """
     mean = extract_into_tensor(self.sqrt_alphas_cumprod, timesteps, x_start.shape) * x_start
     var = extract_into_tensor(1.0 - self.alphas_cumprod, timesteps, x_start.shape)
-    log_var = extract_into_tensor(self.log_one_minus_alphas_cumprod, timesteps, x_start.shape)
-    return mean, var, log_var
+    return mean, var
 
-  def q_sample(self, x_start, timesteps, gaussian_noise = None):
+  def q_sample(self, x_start, timesteps, gaussian_noise):
     """
     Sample from q(x_t | x_0) using the reparameterization trick:
         x_t = x_0 * sqrt(alpha_bar_t) + sqrt(1 - alpha_bar_t) * eps
@@ -138,9 +129,6 @@ class GaussianDiffusion(object):
     :param gaussian_noise : optional pre-sampled noise of the same shape as x_start
     :return               : noisy x_t
     """
-    if gaussian_noise is None:
-      gaussian_noise = torch.randn_like(x_start) 
-
     assert gaussian_noise.shape == x_start.shape
 
     weighted_x0 = extract_into_tensor(\
@@ -156,7 +144,7 @@ class GaussianDiffusion(object):
     :param x_start   : completely denoised input x_0
     :param x_t       : noisy input at timestep t
     :param timesteps : 1-D tensor of diffusion timestep indices
-    :return          : (posterior_mean, posterior_variance, posterior_log_variance_clipped)
+    :return          : (posterior_mean, posterior_variance)
     """
     assert x_start.shape == x_t.shape
 
@@ -164,17 +152,14 @@ class GaussianDiffusion(object):
         + extract_into_tensor(self.posterior_mean_coef2, timesteps, x_start.shape) * x_t
     
     posterior_variance = extract_into_tensor(self.posterior_variance, timesteps, x_start.shape)
-    posterior_log_variance_clipped = extract_into_tensor(self.posterior_log_variance_clipped, timesteps, x_start.shape)
-
-    assert posterior_mean.shape[0] == posterior_variance.shape[0] == \
-        posterior_log_variance_clipped.shape[0] == x_start.shape[0]
+    assert posterior_mean.shape[0] == posterior_variance.shape[0], "Batch sizes do not match"
     
-    return posterior_mean, posterior_variance, posterior_log_variance_clipped
+    return posterior_mean, posterior_variance
   
   def predict_x0_from_eps(self, x_t, timesteps, gaussian_noise):
     """
     Reconstruct x_0 from x_t and the estimated noise eps:
-        x_0 = x_t / sqrt(alpha_bar_t) - eps * sqrt(1/alpha_bar_t - 1)
+      x_0 = x_t / sqrt(alpha_bar_t) - eps * sqrt(1 / alpha_bar_t - 1)
 
     :param x_t            : noisy input at timestep t
     :param timesteps      : 1-D tensor of diffusion timestep indices
@@ -183,41 +168,9 @@ class GaussianDiffusion(object):
     """
     assert x_t.shape == gaussian_noise.shape
     return (
-        extract_into_tensor(self.sqrt_recip_alphas_cumprod,   timesteps, x_t.shape) * x_t -
-        extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, timesteps, x_t.shape) * gaussian_noise
+      extract_into_tensor(self.sqrt_recip_alphas_cumprod,   timesteps, x_t.shape) * x_t -
+      extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, timesteps, x_t.shape) * gaussian_noise
     )
-
-  def predict_x0_from_xprev(self, x_t, timesteps, x_prev):
-    """
-    Reconstruct x_0 from x_t and the immediately previous denoised sample x_{t-1}.
-
-    :param x_t       : noisy input at timestep t
-    :param timesteps : 1-D tensor of diffusion timestep indices
-    :param x_prev    : denoised sample at timestep t-1
-    :return          : reconstructed x_0
-    """
-    assert x_t.shape == x_prev.shape
-    return extract_into_tensor(1.0 / self.posterior_mean_coef1, timesteps, x_t.shape) * x_t - \
-        extract_into_tensor(self.posterior_mean_coef2 / self.posterior_mean_coef1, timesteps, x_t.shape) * x_prev
-    
-  def predict_eps_from_x0(self, x_t, timesteps, pred_x_start):
-    """
-    Reconstruct noise eps from x_t and the predicted x_0:
-        eps = (x_t / sqrt(alpha_bar_t) - x_0) / sqrt(1 / alpha_bar_t - 1)
-
-    :param x_t          : noisy input at timestep t
-    :param timesteps    : 1-D tensor of diffusion timestep indices
-    :param pred_x_start : predicted x_0
-    :return             : reconstructed noise eps
-    """
-    return (extract_into_tensor(self.sqrt_recip_alphas_cumprod, timesteps, x_t.shape) \
-            * x_t - pred_x_start) / extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, timesteps, x_t.shape)
-
-  def scale_timesteps(self, timesteps):
-    """Scale timesteps to [0, 1000] range if rescale_timesteps is True."""
-    if self.rescale_timesteps:
-      return timesteps.float() * (1000.0 / self.num_timesteps)
-    return timesteps
 
   def p_mean_variance(self, model, conditional_guide, input_x, timesteps):
     """
@@ -232,23 +185,13 @@ class GaussianDiffusion(object):
     """
     B, C = input_x.shape[:2]
     assert timesteps.shape == (B,)
-
-    model_out = model(input_x, self.scale_timesteps(timesteps), conditional_guide)
-
+    model_out = model(input_x, timesteps, conditional_guide) # set default to predict to white noise
     pred_x0 = self.predict_x0_from_eps(
      x_t = input_x,
      timesteps = timesteps,
      gaussian_noise = model_out,
     )
-
-    model_mean, _, _ = self.q_posterior_mean_variance(
-      x_start = pred_x0,
-      x_t = input_x,
-      timesteps = timesteps,
-    )
-    assert model_mean.shape == pred_x0.shape == input_x.shape, "model_mean, pred_x0, input_x shape mismatched"
-
-    return {"mean" : model_mean, "pred_x0" : pred_x0}
+    return {"pred_x0" : pred_x0, "pred_noise" : model_out}
   
 
   def ddim_sample(self, model, input_x, curr_t, next_t, conditional_guide):
@@ -272,12 +215,11 @@ class GaussianDiffusion(object):
     )
 
     # Reconstruct eps from predicted x_0
-    eps = self.predict_eps_from_x0(input_x, next_t, out['pred_x0'])
     alpha_bar_prev = extract_into_tensor(self.alphas_cumprod_prev, curr_t, input_x.shape)
 
-    mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev) * eps
+    mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev) * out['pred_noise']
 
-    return {'sample' : mean_pred, 'pred_x0' : out['pred_x0'] }
+    return {'sample' : mean_pred}
 
   def inpainting_complete(
     self, 
@@ -409,20 +351,3 @@ class GaussianDiffusion(object):
 
     return final, intermediate_samples
 
-  def training_losses(self, model, x_start, timesteps, condition_guide, noise = None):
-    """
-    Compute training losses for a single timestep.
-
-    :param model           : denoising model
-    :param x_start         : [B x T x D] tensor of clean inputs
-    :param timesteps       : 1-D tensor of timestep indices, shape (B,)
-    :param condition_guide : conditioning signal (e.g. padded past poses)
-    :param noise           : optional pre-sampled Gaussian noise
-    :return                : dict with keys 'mse' and 'loss', each of shape (B,)
-    """
-    if noise is None:
-      noise = torch.randn_like(x_start)
-
-    x_t = self.q_sample(x_start = x_start, timesteps = timesteps, gaussian_noise = noise)
-    model_out = model(x_t, self.scale_timesteps(timesteps), condition_guide)
-    return mean_flat((noise - model_out) ** 2).mean()

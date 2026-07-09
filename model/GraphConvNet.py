@@ -287,32 +287,27 @@ class SimpleEncoder(nn.Module):
       nn.Dropout(p_dropout)
     )
 
-    weight_init(self._back, init_fn_ = xavier_init_)                            
+    #weight_init(self._back, init_fn_ = xavier_init_)                            
 
 
-  def forward(self, x):
+  def forward(self, x, time_embedding):
     """Forward pass of network.
     Args:
       x: [batch_size, n_poses, pose_dim/input_dim]. 
     """
     B, S, D = x.size()
-
+    x = x + time_embedding 
     y = self.gc1(x.view(-1, self._output_nodes, self._input_features))  # [batch_size, n_joints, model_dim]
     b, n, f = y.shape
     y = self.bn1(y.view(b, -1)).view(b, n, f)
     y = self.act_f(y)
     y = self.do(y)
-
     for i in range(self._num_stage):
       y = self.gcbs[i](y)
-
     # [batch_size, n_joints, model_dim]
     y = self.gc2(y)
-
     y = self._back(y.view(-1, self._model_dim * self._output_nodes))
-
     y = y.view(B, S, self._model_dim)
-
     return y
 
 

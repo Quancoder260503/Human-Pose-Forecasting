@@ -15,6 +15,16 @@ from runner.SamplingUtils import *
 from runner.DiffusionRunner import *
 from runner.FlowMatchingRunner import *
 
+def str2bool(v):
+  if isinstance(v, bool):
+    return v
+  if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    return True
+  elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    return False
+  else:
+    raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def create_dir_tree(base_dir, params):
   dir_tree = ['result_dir', 'tb_dir', 'gif_dir', 'config_dir', 'log_dir', 'models']
   for dir_ in dir_tree:
@@ -82,7 +92,7 @@ if __name__ == '__main__':
   parser.add_argument('--learning_rate_fn', type = str, default = 'milestones')
   parser.add_argument('--step_gamma', default = 0.1, type = float)
   parser.add_argument('--exp_gamma', default = 0.95, type = float)
-  parser.add_argument('--milestones', type = list, default = [150, 225, 275, 350, 450, 650, 850])
+  parser.add_argument('--milestones', type = list, default = [100, 150, 225, 275, 350, 450, 650, 850])
   parser.add_argument('--milestone_gamma', type = float, default = 0.9)
   parser.add_argument('--end_learning_rate', type = float, default = 1e-6)
   
@@ -107,7 +117,7 @@ if __name__ == '__main__':
   parser.add_argument('--num_workers', type = int, default = 0)
 
   parser.add_argument('--num_train_data_samples', type = int, default = 50000)
-  parser.add_argument('--num_val_data_samples', type = int, default = 10000)
+  parser.add_argument('--num_val_data_samples', type = int, default = 5000)
 
   parser.add_argument('--save_gif_interval', type = int, default = 10)  
   parser.add_argument('--save_metrics_interval', type = int, default = 500)
@@ -116,8 +126,8 @@ if __name__ == '__main__':
   parser.add_argument('--diffusion_num_timesteps', type = int, default = 1000)
   parser.add_argument('--ddim_num_timesteps', type = int, default = 100)
   parser.add_argument('--timesteps_sampling', type = str, default = 'uniform_time_sampling')
-  parser.add_argument('--noise_scheduler', type = str, default = 'linear')
-  parser.add_argument('--rescale_timesteps', type = bool, default = False) 
+  parser.add_argument('--noise_scheduler', type = str, default = 'cosine')
+  parser.add_argument('--rescale_timesteps', type = str2bool, default = False) 
 
   parser.add_argument('--num_dct_channels', type = int, default = 20)
 
@@ -128,17 +138,17 @@ if __name__ == '__main__':
   parser.add_argument('--ffn_dim', type = int, default = 2048)
   parser.add_argument('--num_layers', type = int, default = 8) 
   parser.add_argument('--num_heads', type = int, default = 8) 
-  parser.add_argument('--use_gate', type = bool, default = False)
+  parser.add_argument('--use_gate', type = str2bool, default = False)
   parser.add_argument('--dropout', type = float, default = 0.2)
   parser.add_argument('--activation', type = str, default = 'GeLU')
-  parser.add_argument('--use_cross_attention', type = bool, default = False)
+  parser.add_argument('--use_cross_attention', type = str2bool, default = False)
   parser.add_argument('--embedding_max_period', type = int, default = 10000)
-  parser.add_argument('--flatten_arc', type = bool, default = False) 
-  parser.add_argument('--learnable_embedding', type = bool, default = True)
+  parser.add_argument('--flatten_arc', type = str2bool, default = False) 
+  parser.add_argument('--learnable_embedding', type = str2bool, default = True)
   parser.add_argument('--se_ratio', type = int, default = 4)
-  parser.add_argument('--use_excitation', type = bool, default = False) 
-  parser.add_argument('--use_max_pooling', type = bool, default = False) 
-  parser.add_argument('--use_adaptive', type = bool, default = True)
+  parser.add_argument('--use_excitation', type = str2bool, default = False) 
+  parser.add_argument('--use_max_pooling', type = str2bool, default = False) 
+  parser.add_argument('--use_adaptive', type = str2bool, default = True)
 
 
   # Flow Matching ODE
@@ -211,7 +221,6 @@ if __name__ == '__main__':
     pose_encoder_fn = pose_encoder_fn, 
   )
   if args.mode == 'train':
-    seed_set(0)
     runner.train()
   elif args.mode == 'eval':
     runner.compute_stats(sampling_model = runner._ema_model, multimodal_dict = multimodal_dict) 

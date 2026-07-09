@@ -672,17 +672,17 @@ class DiffusionTransformer(nn.Module):
     batch_size, T, _ = input.shape
   
 
-    embedding = self.time_embedding(
+    time_embedding = self.time_embedding(
       timestep_embedding(
         timesteps = timesteps, 
         dim = self.model_dim, 
         max_period = self.embedding_max_period, 
       )
     )
-
+    total_embedding = time_embedding
     if memory is not None : 
       enc_memory = memory.contiguous().view(batch_size, -1)
-      embedding  = embedding + self.conditional_embedding(enc_memory)
+      total_embedding  = total_embedding + self.conditional_embedding(enc_memory)
 
     network_in = self.pose_encoder(input) # (B, T_{prediction}, model_dim)
     network_in = network_in + self.sequence_embedding.unsqueeze(0)[:, :T, :]
@@ -692,16 +692,16 @@ class DiffusionTransformer(nn.Module):
       for index, module in enumerate(self.posterior_decoder_block): 
         if index < self.num_layers // 2: 
           enc_list.append(network_in) 
-          network_in = module(network_in, embedding, memory)
+          network_in = module(network_in, total_embedding, memory)
         else :  
-          network_in = module(network_in, embedding, memory)
+          network_in = module(network_in, total_embedding, memory)
           network_in += enc_list[-1]  
           enc_list.pop() 
     else : 
       for index, module in enumerate(self.posterior_decoder_block): 
-        network_in = module(network_in, embedding, memory)
+        network_in = module(network_in, total_embedding, memory)
     
-    output = self.final_layer(network_in, embedding)
+    output = self.final_layer(network_in, time_embedding)
 
     return output 
 

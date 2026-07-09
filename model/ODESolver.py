@@ -66,7 +66,7 @@ class FixedStepSizeODESolver(object):
 
     j = 1 
     # Right now can fuse a bit noise to increase the diversity if use refinement step 
-
+    # now run without feeding raw truth and see if they can generate good poses 
     for t_0, t_1 in zip(time_grid[:-1], time_grid[1:]):
       ones = torch.ones(y_0.shape[0], device = y_0.device, dtype = y_0.dtype)
       gauss_noise = torch.randn_like(cond).to(cond.device)

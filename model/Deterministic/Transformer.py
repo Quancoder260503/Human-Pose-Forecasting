@@ -3,13 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np 
 import matplotlib.pyplot as plt
-from model.GraphConvNet import * 
+from model.Deterministic.GraphConvNet import * 
 from scipy.optimize import linear_sum_assignment
 import numpy as np
 import torch
 import torch.nn as nn
 import numpy as np
-from model.WeightInit import *
+from model.ModelUtils import *
 
 
 class PositionalEncoding1D(object):

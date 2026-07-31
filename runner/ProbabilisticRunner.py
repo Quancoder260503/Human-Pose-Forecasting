@@ -14,12 +14,13 @@ from model import ODESolver
 from model.ProbabilityPath import * 
 from model.VectorFieldScheduler import *
 import torch.nn.functional as F
-from runner.WarmupScheduler     import *
-from data.Dataset3DUtils        import * 
-from model.EMA                  import *
-from model.DiffusionTransformer      import * 
-from model.GaussianDiffusion    import *
-from runner.SamplingUtils       import *
+from runner.WarmupScheduler import *
+from data.Dataset3DUtils import * 
+from model.EMA import *
+from model.DiffusionTransformer import *
+from model.GCNDiffusion import * 
+from model.GaussianDiffusion import *
+from runner.SamplingUtils import *
 import pandas as pd 
 import csv 
 import copy 
@@ -42,8 +43,6 @@ class ProbabilisticRunner(object):
     multimodel_dict, 
     logger, 
     tblogger, 
-    pose_encoder_fn = None, 
-    pose_decoder_fn = None
   ):
 
     self._params = params
@@ -60,7 +59,7 @@ class ProbabilisticRunner(object):
     
     self.dct = self.dct.to(params['device'], dtype = torch.float32)
     self.idct = self.idct.to(params['device'], dtype = torch.float32)
-    self.init_model(pose_encoder_fn, pose_decoder_fn)
+    self.init_model()
     self._model.to(self._params['device'])
     self._optimizer_fn = self.select_optimizer()
     self.select_lr_fn()
@@ -91,6 +90,7 @@ class ProbabilisticRunner(object):
     self.train_generator = None 
     self.val_losses = None 
     self.val_generator = None 
+  
 
   @abstractmethod
   def train_one_epoch(self):
@@ -118,6 +118,11 @@ class ProbabilisticRunner(object):
       self._optimizer_fn.load_state_dict(model_dict['optimizer'])
       self._lr_scheduler.load_state_dict(model_dict['lr_scheduler'])
       self._ema_model.load_state_dict(model_dict['ema_model'])
+      # for name, param in self._model.named_parameters():
+      #   print(f"--- {name} | shape {list(param.shape)} ---")
+      #   print(param.data)
+      #   print()
+      # exit(0)
 
   def select_lr_fn(self):
     """Calls the selection of learning rate function."""
@@ -386,11 +391,15 @@ class ProbabilisticRunner(object):
       self._lr_db_curve.append([self._params['learning_rate'], epoch_step])
       self._params['learning_rate'] = self._lr_scheduler.get_last_lr()[0]
 
-  def init_model(self, pose_encoder_fn = None, pose_decoder_fn = None):
-    self._model = diffusion_transformer(
-      self._params, 
-      pose_encoder_fn(self._params),
-    )
+  def init_model(self):
+    if self._params['model_architecture'] == 'transformer': 
+      self._model = diffusion_transformer(self._params)
+    elif self._params['model_architecture'] == 'gcn': 
+      self._model = gcn_diffusion(self._params)
+    elif self._params['model_architecture'] == 'gcn_transformer': 
+      self._model = gcn_transformer_diffusion(self._params)
+    else : 
+      raise NotImplementedError(f"Model architecture {self._params['model_architecture']} not found")
 
   def select_optimizer(self): 
     if self._params['optimizer'] == 'AdamW': 

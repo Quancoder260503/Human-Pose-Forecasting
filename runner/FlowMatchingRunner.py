@@ -1,8 +1,8 @@
 from runner.ProbabilisticRunner import * 
 
 class FlowMatchingRunner(ProbabilisticRunner):
-  def __init__(self, params, dataset, multimodal_dict, logger, tblogger, pose_encoder_fn = None, pose_decoder_fn = None):
-    super().__init__(params, dataset, multimodal_dict, logger, tblogger, pose_encoder_fn, pose_decoder_fn)
+  def __init__(self, params, dataset, multimodal_dict, logger, tblogger):
+    super().__init__(params, dataset, multimodal_dict, logger, tblogger)
     self._logger.info(">>> Training using Flow Matching algorithm")
     self.get_ode_solver_class()
 

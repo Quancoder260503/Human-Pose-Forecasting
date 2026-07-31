@@ -3,7 +3,7 @@ import torch
 from data.MultiDataset import *
 from data.Visualization import *
 from runner.SamplingUtils import *
-from model.GraphConvNet import SimpleEncoder
+from model.Deterministic.GraphConvNet import SimpleEncoder
 
 if __name__ == '__main__':
    model = SimpleEncoder(

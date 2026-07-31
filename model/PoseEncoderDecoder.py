@@ -3,7 +3,7 @@ import os
 import sys
 import torch
 import torch.nn as nn
-from model.GraphConvNet import xavier_init_, normal_init_, weight_init, PoseGCN, SimpleEncoder
+from model.Deterministic.GraphConvNet import xavier_init_, normal_init_, weight_init, PoseGCN, SimpleEncoder
 
 def zero_module(module):
   """

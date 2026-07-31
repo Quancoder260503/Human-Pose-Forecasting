@@ -68,11 +68,20 @@ def extract_into_tensor(arr, timesteps, broadcast_shape):
 # x_{t}        = N(x_{t} | sqrt(1 - beta_{t}) * x_{t-1}, beta_{t} * I)
 
 class GaussianDiffusion(object):
-  def __init__(self, noise_schedule, num_diffusion_steps, num_sampling_steps, rescale_timesteps = False):
+  def __init__(
+    self, 
+    noise_schedule, 
+    num_diffusion_steps, 
+    num_sampling_steps, 
+    rescale_timesteps = False,
+    use_classifier_free_guidance = False,  
+    cfg_scale = 0.7, 
+  ):
     self.rescale_timesteps = rescale_timesteps
     self.betas = get_named_beta_schedule(noise_schedule, num_diffusion_steps)
     self.betas = np.array(self.betas, dtype = np.float64)
-
+    self.cfg_scale = cfg_scale
+    self.use_classifier_free_guidance = use_classifier_free_guidance
     assert len(self.betas.shape) == 1, "betas must be 1-D"
     assert (self.betas > 0).all() and (self.betas <= 1).all(), "betas must be in (0, 1]"
 
@@ -132,9 +141,9 @@ class GaussianDiffusion(object):
     assert gaussian_noise.shape == x_start.shape
 
     weighted_x0 = extract_into_tensor(\
-       self.sqrt_alphas_cumprod, timesteps, x_start.shape) * x_start
+      self.sqrt_alphas_cumprod, timesteps, x_start.shape) * x_start
     weighted_noise = extract_into_tensor(\
-       self.sqrt_one_minus_alphas_cumprod, timesteps, x_start.shape) * gaussian_noise
+      self.sqrt_one_minus_alphas_cumprod, timesteps, x_start.shape) * gaussian_noise
 
     return weighted_x0 + weighted_noise
 
@@ -186,6 +195,9 @@ class GaussianDiffusion(object):
     B, C = input_x.shape[:2]
     assert timesteps.shape == (B,)
     model_out = model(input_x, timesteps, conditional_guide) # set default to predict to white noise
+    if self.use_classifier_free_guidance: 
+      uncond_model_out = model(input_x, timesteps, None) 
+      model_out = self.cfg_scale * model_out + (1. - self.cfg_scale) * uncond_model_out
     pred_x0 = self.predict_x0_from_eps(
      x_t = input_x,
      timesteps = timesteps,
@@ -194,31 +206,33 @@ class GaussianDiffusion(object):
     return {"pred_x0" : pred_x0, "pred_noise" : model_out}
   
 
-  def ddim_sample(self, model, input_x, curr_t, next_t, conditional_guide):
+  def ddim_sample(self, model, input_x, curr_t, next_t, conditional_guide, eta = 1.):
     """
     One DDIM denoising step.
     The posterior is:
         q_sigma(x_{\pi_{t-1}} | x_{\pi_{t}}, x_0) = N(x_{\pi_{t-1}} | sqrt(alpha_{t-1}) * x_0 + sqrt(1 - alpha_{t-1}) * eps, 0)
     Variance is set to 0 (fully implicit / deterministic).
 
-    :param model             : denoising model
-    :param input_x           : noisy input at timestep t
-    :param timesteps         : 1-D tensor of timestep indices
+    :param model : denoising model
+    :param input_x : the output from the last backward diffusion steps 
+    :param curr_t : 1-D tensor of timestep of the current index (i.e. x_{\eta_{i}})
+    :param next_t : 1-D tensor of timestep of the next index (i.e. x_{\eta_{i - 1}})
     :param conditional_guide : conditioning signal
-    :return                  : dict with keys 'sample' (x_{t-1}) and 'pred_x0'
+    :return  : dict with keys 'sample' (x_\eta_{{t-1}}) and 'pred_x0'
     """
     out = self.p_mean_variance(
       model = model,
       conditional_guide = conditional_guide,
       input_x = input_x,
-      timesteps = next_t,
+      timesteps = curr_t,
     )
-
-    # Reconstruct eps from predicted x_0
-    alpha_bar_prev = extract_into_tensor(self.alphas_cumprod_prev, curr_t, input_x.shape)
-
-    mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev) * out['pred_noise']
-
+    alpha_bar_prev = extract_into_tensor(self.alphas_cumprod, next_t, input_x.shape)
+    alpha_bar_curr = extract_into_tensor(self.alphas_cumprod, curr_t, input_x.shape)
+    eps = torch.randn_like(input_x).to(input_x.device)
+    std_dev = eta * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar_curr)) * torch.sqrt(1. - alpha_bar_curr / alpha_bar_prev)
+    nonzero_mask = (next_t != 0).float().view(-1, *([1] * (len(input_x.shape) - 1)))
+    mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev - std_dev ** 2) * out['pred_noise'] \
+      + nonzero_mask * std_dev * eps
     return {'sample' : mean_pred}
 
   def inpainting_complete(
@@ -288,7 +302,7 @@ class GaussianDiffusion(object):
 
 
     inp = noise if noise is not None else torch.randn_like(trajectory_dct, device = device)
-    successive_indices = list(zip(self.sampling_indices[:-1], self.sampling_indices[1:])) 
+    successive_indices = list(zip(self.sampling_indices[1:], self.sampling_indices[:-1])) 
   
 
     for curr_t, next_t in reversed(successive_indices):
@@ -306,7 +320,7 @@ class GaussianDiffusion(object):
         dct_sample = self.inpainting_complete(
           input_x = out['sample'],
           trajectory_dct_mod = trajectory_dct_mod, 
-          curr_t = curr_t,
+          curr_t = next_t,
           masks = masks, 
           dct_num_channels = dct_num_channels,
           dct = dct,

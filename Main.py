@@ -57,6 +57,9 @@ def dataset_split(params):
     multimodal_path = params['multimodal_path'], 
     data_candidate_path = params['data_candi_path']
    )
+   edges = dataset_train.skeleton.get_edges()
+   num_points = len(dataset_train.skeleton.get_parents())
+   params['adj_matrix'] = dataset_train.skeleton.get_adj_matrix(num_points, edges, sparse = False).to(params['device'])
    return { 
     'train' : dataset_train, 
     'test' : dataset_test, 
@@ -73,6 +76,7 @@ def seed_set(seed):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--model_prefix', type = str, default = '', required = True)
+  parser.add_argument('--model_architecture', type = str, default = 'cheb_gcn_transformer')
   parser.add_argument('--mode', default = 'train', type = str) 
   parser.add_argument('--sampling_mode', default = 'pred', type = str) # pred / switch/ control/ zero_shot')
   parser.add_argument('--algo', type = str, default = 'diffusion', required = True)
@@ -135,7 +139,7 @@ if __name__ == '__main__':
   parser.add_argument('--num_joints', type = int, default = 16)
   parser.add_argument('--joint_dim', type = int, default = 3) # (x, y, z)
   parser.add_argument('--model_dim', type = int, default = 512)
-  parser.add_argument('--ffn_dim', type = int, default = 2048)
+  parser.add_argument('--ffn_dim', type = int, default = 1024)
   parser.add_argument('--num_layers', type = int, default = 8) 
   parser.add_argument('--num_heads', type = int, default = 8) 
   parser.add_argument('--use_gate', type = str2bool, default = False)
@@ -149,6 +153,10 @@ if __name__ == '__main__':
   parser.add_argument('--use_excitation', type = str2bool, default = False) 
   parser.add_argument('--use_max_pooling', type = str2bool, default = False) 
   parser.add_argument('--use_adaptive', type = str2bool, default = True)
+  parser.add_argument('--pre_gcn', type = str2bool, default = True)
+  parser.add_argument('--num_gcn_stages', type = int, default = 1)
+  parser.add_argument('--gcn_dim', type = int, default = 128)
+
 
 
   # Flow Matching ODE
@@ -157,7 +165,6 @@ if __name__ == '__main__':
   parser.add_argument('--num_sampling_steps', type = int, default = 10)
   parser.add_argument('--path_refinement_steps', type = int, default = 1) 
   parser.add_argument('--interpolation', type = str, default = 'linear')
-
 
   # Multimodal 
   parser.add_argument('--multimodal_threshold', type = float, default = 0.5)
@@ -180,13 +187,9 @@ if __name__ == '__main__':
 
 
   args = parser.parse_args()
-
-
     
   params = vars(args)
-
-  pose_encoder_fn, pose_decoder_fn = select_pose_encoder_decoder_fn(params)
-
+  params['model_prefix'] = os.path.join('exp', params['model_prefix'])
   create_dir_tree(params['model_prefix'], params)
   params['pose_dim'] = params['joint_dim'] * params['num_joints'] 
 
@@ -206,19 +209,19 @@ if __name__ == '__main__':
   for k, v in params.items():
     logger.info('[INFO] (GenerativePose@main) {}: {}'.format(k, v))
 
-  multimodal_dict = get_multimodal_dataset(
-    logger = logger, 
-    dataset_multi_test = dataset_multi_test, 
-    params = params, 
-  )
+  # multimodal_dict = get_multimodal_dataset(
+  #   logger = logger, 
+  #   dataset_multi_test = dataset_multi_test, 
+  #   params = params, 
+  # )
+
+
   runner = (DiffusionRunner if params['algo'] == 'diff' else FlowMatchingRunner)(
     params = params, 
     dataset = dataset, 
-    multimodal_dict = multimodal_dict, 
+    multimodal_dict = None, #multimodal_dict, 
     tblogger = tb_logger, 
     logger = logger, 
-    pose_decoder_fn = pose_decoder_fn, 
-    pose_encoder_fn = pose_encoder_fn, 
   )
   if args.mode == 'train':
     runner.train()

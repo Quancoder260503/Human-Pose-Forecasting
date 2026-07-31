@@ -3,54 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math 
 import numpy as np 
-
-def zero_module(module):
-  """
-  Zero out the parameters of a module and return it.
-  """
-  for p in module.parameters():
-    p.detach().zero_()
-  return module
-
-def timestep_embedding(timesteps, dim, max_period = 10000):
-   """
-    Create sinusoidal timestep embeddings.
-    :param timesteps: a 1-D Tensor of N indices, one per batch element.
-                        These may be fractional.
-    :param dim: the dimension of the output.
-    :param max_period: controls the minimum frequency of the embeddings.
-    :return: an [N x dim] Tensor of positional embeddings.
-   """
-   half = dim // 2
-   freqs = torch.exp(-math.log(max_period) * torch.\
-                     arange(start = 0, end = half, dtype=torch.float32) / half).to(device=timesteps.device)
-   args = timesteps[:, None].float() * freqs[None]
-   embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-   if dim % 2:
-    embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
-   return embedding
-
-
-class PositionalEncoding1D(object):
-  def __init__(self, model_dim = 512, temperature = 10000, alpha = 1):
-    self._model_dim = model_dim
-    self._temperature = temperature
-    self._alpha = alpha
-
-  def __call__(self, seq_length):
-    angle_rads = self.get_angles(np.arange(seq_length)[:, np.newaxis], np.arange(self._model_dim)[np.newaxis, :])
-
-    angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
-    angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
-    pos_encoding = angle_rads[np.newaxis, ...]
-    pos_encoding = pos_encoding.astype(np.float32)
-
-    return torch.from_numpy(pos_encoding)
-
-  def get_angles(self, pos, i):
-    angle_rates = 1 / np.power(self._temperature, (2 *  (i//2)) / np.float32(self._model_dim))
-    return self._alpha*pos * angle_rates
-
+from model.ModelUtils import *
 
 class SqueezeAndExcitation(nn.Module): 
   def __init__(self, channels, ratio = 4, act_fn = 'GeLU', use_max_pooling = False):
@@ -133,7 +86,7 @@ class ScaleShiftLayer(nn.Module):
       zero_module(nn.Linear(latent_dim, latent_dim))
     )
   def forward(self, latent_input, embedding_input): 
-    embedding_out = self.embedding_proj(embedding_input).unsqueeze(1) # (B, 1, 3 * latent_dim) 
+    embedding_out = self.embedding_proj(embedding_input).unsqueeze(1) # (B, 1, 2* latent_dim) 
     scale, shift = torch.chunk(embedding_out, 2, dim = -1) 
     out = self.layernorm(latent_input) * (1. + scale) + shift
     out = self.proj_out(out) 
@@ -525,7 +478,7 @@ class DiffusionTransformerLayer(nn.Module):
     :param input     : a tensor of shape (B, T, model_dim) 
     :param embedding : a tensor of shape (B, embedding_dim) 
     :return : 
-        a tensor of shape (B, T, model_dim)
+      a tensor of shape (B, T, model_dim)
     """       
     if self.use_excitation: 
       input = self.excitation_layer(input)
@@ -581,7 +534,6 @@ class DiffusionTransformer(nn.Module):
     activation = 'GeLU', 
     use_cross_attention = False, 
     embedding_max_period = 10000,
-    pose_encoder = None, 
     learnable_embedding = True, 
     pos_encoding_params = (10000, 1), 
     flatten_arc = False, 
@@ -667,7 +619,7 @@ class DiffusionTransformer(nn.Module):
     :param memory : if not None, can be the observed seqs information 
     """
 
-    batch_size, T, _ = input.shape
+    batch_size, num_channels, _ = input.shape
   
 
     time_embedding = self.time_embedding(
@@ -683,7 +635,7 @@ class DiffusionTransformer(nn.Module):
       total_embedding  = total_embedding + self.conditional_embedding(enc_memory)
 
     network_in = self.pose_encoder(input) # (B, T_{prediction}, model_dim)
-    network_in = network_in + self.sequence_embedding.unsqueeze(0)[:, :T, :]
+    network_in = network_in + self.sequence_embedding.unsqueeze(0)[:, :num_channels, :]
     
     if self.flatten_arc == False: 
       enc_list = [] 
@@ -702,8 +654,7 @@ class DiffusionTransformer(nn.Module):
     output = self.final_layer(network_in, time_embedding)
     return output 
 
-
-def diffusion_transformer(params, pose_encoder):
+def diffusion_transformer(params):
   return DiffusionTransformer(
     input_features = params['pose_dim'], 
     prediction_len = params['num_dct_channels'], 

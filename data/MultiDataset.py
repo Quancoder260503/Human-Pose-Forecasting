@@ -2,7 +2,8 @@ import time
 import os 
 import numpy as np 
 from abc import abstractmethod, ABC
-import argparse
+import scipy
+import torch 
 
 def absolute_to_relative(x, parents, invert = False, x_0 = None): 
   if not invert : 
@@ -99,8 +100,42 @@ class Skeleton(object):
       self.joints_right = np.array(new_joints_right)
 
     self.compute_metadata()
-        
     return valid_joints
+
+  def normalize(self, matrix): 
+    row_sum = np.array(matrix.sum(1))
+    r_inv = np.power(row_sum, -1).flatten() 
+    r_inv[np.isinf(r_inv)] = 0. 
+    r_mat_inv = scipy.sparse.diags(r_inv)
+    matrix = r_mat_inv.dot(matrix)
+    return matrix 
+ 
+  def sparse_matrix_to_torch_sparse_tensor(self, sparse_matrix): 
+    sparse_matrix = sparse_matrix.tocoo().astype(np.float32)
+    indices = torch.from_numpy(np.vstack((sparse_matrix.row, sparse_matrix.col))).astype(np.int64) 
+    values = torch.from_numpy(sparse_matrix.data) 
+    shape = torch.Size(sparse_matrix.shape) 
+    return torch.sparse.FloatTensor(indices, values, shape)
+
+
+  def get_adj_matrix(self, num_pts, edges, sparse = True):
+    data, i, j = np.ones(edges.shape[0]), edges[:, 0], edges[:, 1] 
+    adj_matrix = scipy.sparse.coo_matrix((data, (i, j)), shape = (num_pts, num_pts), dtype = np.float32) 
+    adj_matrix = adj_matrix + adj_matrix.multiply(adj_matrix.T > adj_matrix) - adj_matrix.multiply(adj_matrix.T > adj_matrix)
+    adj_matrix = self.normalize(adj_matrix + scipy.sparse.eye(adj_matrix.shape[0]))
+    if sparse:
+      adj_matrix = self.sparse_matrix_to_torch_sparse_tensor(adj_matrix)
+    else:
+      adj_matrix = torch.tensor(adj_matrix.todense(), dtype = torch.float32)
+    return adj_matrix
+
+  def get_edges(self): 
+    edges = [] 
+    for i in range(len(self.parents)): 
+      if self.parents[i] == -1: 
+        continue 
+      edges.append([self.parents[i], i]) 
+    return np.array(edges, dtype = np.int32)
 
 
 class Dataset:

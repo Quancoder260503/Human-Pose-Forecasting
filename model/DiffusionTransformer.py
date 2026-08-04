@@ -5,29 +5,19 @@ import math
 import numpy as np 
 from model.ModelUtils import *
 
+
 class SqueezeAndExcitation(nn.Module): 
   def __init__(self, channels, ratio = 4, act_fn = 'GeLU', use_max_pooling = False):
     super(SqueezeAndExcitation, self).__init__()
     self.channels = channels 
     self.ratio = ratio 
     self.use_max_pooling = use_max_pooling 
-
-    def get_act(activation_fn):
-      if activation_fn   == 'GeLU':
-        return nn.GELU() 
-      elif activation_fn == 'ReLU':
-        return nn.ReLU() 
-      elif activation_fn == 'LeakyReLU':
-        return nn.LeakyReLU() 
-      else : 
-        raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')
-
     self.squeeze = nn.AdaptiveAvgPool1d(1) if not \
       self.use_max_pooling else nn.AdaptiveMaxPool1d(1)
 
     self.excitation = nn.Sequential(
       nn.Linear(channels, channels // ratio, bias = False), 
-      get_act(activation_fn = act_fn),
+      get_activation(activation_fn = act_fn),
       zero_module(nn.Linear(channels // ratio, channels, bias = False)), 
       nn.Sigmoid(), 
     )
@@ -109,7 +99,7 @@ class AdaptiveFeedForwardNetwork(nn.Module):
     self.linear_1 = nn.Linear(model_dim, ffn_dim)
     self.linear_2 = nn.Linear(ffn_dim, model_dim)
 
-    def get_act(activation_fn):
+    def get_activation(activation_fn):
       if activation_fn   == 'GeLU':
         return nn.GELU() 
       elif activation_fn == 'ReLU':
@@ -119,7 +109,7 @@ class AdaptiveFeedForwardNetwork(nn.Module):
       else : 
         raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')
             
-    self.act = get_act(activation_fn = activation)
+    self.act = get_activation(activation_fn = activation)
     self.dropout = nn.Dropout(p = dropout)
 
   def forward(self, input, embedding):
@@ -273,17 +263,7 @@ class FeedForwardNetwork(nn.Module):
     self.linear_1 = nn.Linear(model_dim, ffn_dim)
     self.linear_2 = nn.Linear(ffn_dim, model_dim) 
 
-    def get_act(activation_fn):
-      if activation_fn   == 'GeLU':
-        return nn.GELU() 
-      elif activation_fn == 'ReLU':
-        return nn.ReLU() 
-      elif activation_fn == 'LeakyReLU':
-        return nn.LeakyReLU() 
-      else : 
-        raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')
-            
-    self.act = get_act(activation_fn = activation)
+    self.act = get_activation(activation_fn = activation)
     self.dropout = nn.Dropout(p = dropout)
 
   def forward(self, input, embedding):

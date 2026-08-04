@@ -20,7 +20,7 @@ from model.EMA import *
 from model.DiffusionTransformer import *
 from model.GCNDiffusion import * 
 from model.GaussianDiffusion import *
-from runner.SamplingUtils import *
+from runner.RunnerUtils import *
 import pandas as pd 
 import csv 
 import copy 
@@ -318,16 +318,16 @@ class ProbabilisticRunner(object):
   def metrics_calc_sampling(self, sampling_model, data): 
     trajectory_np = data[..., 1:, :].transpose([0, 2, 3, 1])
     trajectory = torch.tensor(trajectory_np, device = self._params['device'], dtype = torch.float32)
-    trajectory = trajectory.reshape([trajectory.shape[0], -1, trajectory.shape[-1]]).transpose(1, 2)
+    trajectory = trajectory.reshape([trajectory.shape[0], -1, trajectory.shape[-1]]).transpose(1, 2) # [n_samples, frame, n_joints * joint_dim]
 
 
-    mode_dict, traj_dct, traj_dct_mod = sample_preprocessing(trajectory, self._params, 'metrics', self.dct)
-    sampled_motion = self.sampling(sampling_model, traj_dct, traj_dct_mod, mode_dict)
+    mode_dict, traj_dct, traj_dct_mod = sample_preprocessing(trajectory, self._params, 'metrics', self.dct) 
+    sampled_motion = self.sampling(sampling_model, traj_dct, traj_dct_mod, mode_dict) #
 
     result_trajectory = torch.matmul(self.idct[:, :self._params['num_dct_channels']], sampled_motion)
     # result_trajectory.shape (K, 125, 48)
     result_trajectory = result_trajectory.cpu().numpy()
-    result_trajectory = result_trajectory[None, ...]
+    result_trajectory = result_trajectory[None, ...] # [1, K, 125, 48]
     return result_trajectory
 
 

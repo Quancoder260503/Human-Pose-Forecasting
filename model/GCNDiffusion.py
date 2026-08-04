@@ -13,6 +13,22 @@ from model.DiffusionTransformer import (
   AdaptiveFeedForwardNetwork,  
 ) 
 
+def get_act(activation_fn):
+  if activation_fn == 'GeLU':
+    return nn.GELU(approximate = 'tanh') 
+  elif activation_fn == 'ReLU':
+    return nn.ReLU() 
+  elif activation_fn == 'LeakyReLU':
+    return nn.LeakyReLU() 
+  elif activation_fn == 'ELU':
+    return nn.ELU() 
+  elif activation_fn == 'SoftPlus':
+    return nn.SoftPlus() 
+  elif activation_fn == 'SiLU':
+    return nn.SiLU() 
+  else : 
+    raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')
+
 class GraphConvolution(nn.Module): 
   def __init__(self, in_features, out_features, bias = True, node_n = 48):
     super(GraphConvolution, self).__init__()
@@ -278,19 +294,6 @@ class GCNDiffusion(nn.Module):
     self.model_dim = model_dim 
     self.embedding_max_period = embedding_max_period
 
-    def get_act(activation_fn):
-      if activation_fn == 'GeLU':
-        return nn.GELU(approximate = 'tanh') 
-      elif activation_fn == 'ReLU':
-        return nn.ReLU() 
-      elif activation_fn == 'LeakyReLU':
-        return nn.LeakyReLU() 
-      elif activation_fn == 'ELU': 
-        return nn.ELU()
-      else : 
-        raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')
-
-
     self.sequence_embedding = nn.Parameter(torch.randn(input_dim, num_features))
 
     
@@ -388,19 +391,6 @@ class GCNDiffusionTransformer(nn.Module):
     self.gcn_dim = gcn_dim
     self.pre_gcn = pre_gcn
     self.flatten_arc = flatten_arc
-
-    def get_act(activation_fn):
-      if activation_fn == 'GeLU':
-        return nn.GELU(approximate = 'tanh') 
-      elif activation_fn == 'ReLU':
-        return nn.ReLU() 
-      elif activation_fn == 'LeakyReLU':
-        return nn.LeakyReLU() 
-      elif activation_fn == 'ELU': 
-        return nn.ELU()
-      else : 
-        raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')
-
 
     if self.learnable_embedding : 
       self.sequence_embedding = nn.Parameter(torch.randn(num_features, model_dim))
@@ -529,6 +519,41 @@ class GCNDiffusionTransformer(nn.Module):
     return out
 
   
+def gcn_transformer_diffusion(params):
+  return GCNDiffusionTransformer(
+    input_dim = params['pose_dim'], 
+    num_features = params['num_dct_channels'], 
+    model_dim = params['model_dim'], 
+    ffn_dim = params['ffn_dim'], 
+    num_layers = params['num_layers'],
+    num_heads = params['num_heads'], 
+    dropout = params['dropout'], 
+    activation = params['activation'],
+    embedding_max_period = params['embedding_max_period'], 
+    learnable_embedding = params['learnable_embedding'], 
+    pos_encoding_params = (params['pos_enc_beta'], params['pos_enc_alpha']), 
+    se_ratio = params['se_ratio'], 
+    use_excitation = params['use_excitation'], 
+    use_max_pooling = params['use_max_pooling'], 
+    use_adaptive = params['use_adaptive'],
+    num_gcn_stages = params['num_gcn_stages'],  
+    gcn_dim = params['gcn_dim'], 
+    pre_gcn = params['pre_gcn'], 
+    flatten_arc = params['flatten_arc'], 
+  )
+
+def gcn_diffusion(params):
+  return GCNDiffusion(
+    input_dim = params['pose_dim'], 
+    num_features = params['num_dct_channels'], 
+    model_dim = params['model_dim'], 
+    dropout = params['dropout'], 
+    activation = params['activation'],
+    use_max_pooling = params['use_max_pooling'],   
+    num_gcn_stages = params['num_gcn_stages'], 
+    embedding_max_period = params['embedding_max_period'], 
+  )
+
 #'''
 # Try this on 3D instead of GCN,  
 # Chebyshev GCN convolution
@@ -902,42 +927,6 @@ class GCNDiffusionTransformer(nn.Module):
 #     output = output.contiguous().view(batch_size, self.num_features, -1)
 #     output = self.proj_o(output)
 #     return output 
-  
-
-def gcn_transformer_diffusion(params):
-  return GCNDiffusionTransformer(
-    input_dim = params['pose_dim'], 
-    num_features = params['num_dct_channels'], 
-    model_dim = params['model_dim'], 
-    ffn_dim = params['ffn_dim'], 
-    num_layers = params['num_layers'],
-    num_heads = params['num_heads'], 
-    dropout = params['dropout'], 
-    activation = params['activation'],
-    embedding_max_period = params['embedding_max_period'], 
-    learnable_embedding = params['learnable_embedding'], 
-    pos_encoding_params = (params['pos_enc_beta'], params['pos_enc_alpha']), 
-    se_ratio = params['se_ratio'], 
-    use_excitation = params['use_excitation'], 
-    use_max_pooling = params['use_max_pooling'], 
-    use_adaptive = params['use_adaptive'],
-    num_gcn_stages = params['num_gcn_stages'],  
-    gcn_dim = params['gcn_dim'], 
-    pre_gcn = params['pre_gcn'], 
-    flatten_arc = params['flatten_arc'], 
-  )
-
-def gcn_diffusion(params):
-  return GCNDiffusion(
-    input_dim = params['pose_dim'], 
-    num_features = params['num_dct_channels'], 
-    model_dim = params['model_dim'], 
-    dropout = params['dropout'], 
-    activation = params['activation'],
-    use_max_pooling = params['use_max_pooling'],   
-    num_gcn_stages = params['num_gcn_stages'], 
-    embedding_max_period = params['embedding_max_period'], 
-  )
 
 # def cheb_gcn_diffusion_transformer(params): 
 #   return ChebGCNDiffusionTransformer(

@@ -91,3 +91,23 @@ class PositionalEncoding1D(object):
   def get_angles(self, pos, i):
     angle_rates = 1 / np.power(self._temperature, (2 *  (i//2)) / np.float32(self._model_dim))
     return self._alpha*pos * angle_rates
+
+def get_activation(activation_fn):
+  if activation_fn == 'GeLU':
+    return nn.GELU(approximate = 'tanh') 
+  elif activation_fn == 'ReLU':
+    return nn.ReLU() 
+  elif activation_fn == 'LeakyReLU':
+    return nn.LeakyReLU() 
+  elif activation_fn == 'ELU':
+    return nn.ELU() 
+  elif activation_fn == 'SoftPlus':
+    return nn.SoftPlus() 
+  elif activation_fn == 'SiLU':
+    return nn.SiLU() 
+  elif activation_fn == 'Sig': 
+    return nn.Sigmoid() 
+  elif activation_fn == 'Tanh':
+    return nn.Tanh() 
+  else : 
+    raise NotImplementedError(f'Activation function {activation_fn} does not support for this class')

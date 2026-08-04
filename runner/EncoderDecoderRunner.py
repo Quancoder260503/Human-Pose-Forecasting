@@ -29,11 +29,10 @@ class EncoderDecoderRunner(object):
   ):
     self._params = params
     self._train_dataset_fn = train_dataset_fn
-    self._eval_dataset_fn  = eval_dataset_fn
-    self._visualize        = False
+    self._eval_dataset_fn = eval_dataset_fn
+    self._visualize = False
     thisname = self.__class__.__name__
     self._norm_stats = train_dataset_fn.dataset._norm_stats
-    self._ms_range = [80, 160, 320, 400, 560, 1000]
     self.init_model(pose_encoder_fn, pose_decoder_fn)
     self._loss_fn = self.layerwise_loss_fn
     self._model.to(self._params['device'])
@@ -52,7 +51,6 @@ class EncoderDecoderRunner(object):
     #       #self.evaluate_fn = self.evaluate_amass
 
     self._writer = SummaryWriter(os.path.join(self._params['model_prefix'], 'tf_logs'))
-    self._time_range_eval = []
 
     m_params = filter(lambda p: p.requires_grad, self._model.parameters())
     nparams = sum([np.prod(p.size()) for p in m_params])             
@@ -87,10 +85,10 @@ class EncoderDecoderRunner(object):
     self._lr_scheduler = self.get_lr_fn()
     if self._params['warmup_epochs'] > 0:
       self._lr_scheduler = GradualWarmupScheduler(
-          self._optimizer_fn, 
-          multiplier = 1, 
-          total_epoch = self._params['warmup_epochs'], 
-          after_scheduler = self._lr_scheduler
+        self._optimizer_fn, 
+        multiplier = 1, 
+        total_epoch = self._params['warmup_epochs'], 
+        after_scheduler = self._lr_scheduler
       )
 
 

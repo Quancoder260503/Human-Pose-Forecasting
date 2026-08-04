@@ -11,9 +11,10 @@ from torch.utils.tensorboard import SummaryWriter
 from data.MultiDataset import DatasetH36M,  DatasetH36M_Multi
 #import data.NTURGDDataset as NTURGDDataset
 from model.PoseEncoderDecoder import select_pose_encoder_decoder_fn
-from runner.SamplingUtils import *
+from runner.RunnerUtils import *
 from runner.DiffusionRunner import *
 from runner.FlowMatchingRunner import *
+from runner.RewardModelRunner import * 
 
 def str2bool(v):
   if isinstance(v, bool):
@@ -57,9 +58,6 @@ def dataset_split(params):
     multimodal_path = params['multimodal_path'], 
     data_candidate_path = params['data_candi_path']
    )
-   edges = dataset_train.skeleton.get_edges()
-   num_points = len(dataset_train.skeleton.get_parents())
-   params['adj_matrix'] = dataset_train.skeleton.get_adj_matrix(num_points, edges, sparse = False).to(params['device'])
    return { 
     'train' : dataset_train, 
     'test' : dataset_test, 
@@ -79,7 +77,7 @@ if __name__ == '__main__':
   parser.add_argument('--model_architecture', type = str, default = 'cheb_gcn_transformer')
   parser.add_argument('--mode', default = 'train', type = str) 
   parser.add_argument('--sampling_mode', default = 'pred', type = str) # pred / switch/ control/ zero_shot')
-  parser.add_argument('--algo', type = str, default = 'diffusion', required = True)
+  parser.add_argument('--algo', type = str, default = 'diff')
   parser.add_argument('--batch_size', type = int, default = 64)
   parser.add_argument('--learning_rate', type = float, default = 3e-4)
   parser.add_argument('--max_epochs', type = int, default = 1000)
@@ -185,6 +183,15 @@ if __name__ == '__main__':
   parser.add_argument('--vis_col', type = int, default = 5)
   parser.add_argument('--vis_row', type = int, default = 3)
 
+  # Reward Model 
+  parser.add_argument('--code_size', type = int, default = 128)
+  parser.add_argument('--reward_model_architecture', type = str, default = 'transformer_encoder')
+  parser.add_argument('--info_nce_temperature', type = float, default = 0.07)
+
+  parser.add_argument('--reward_use_sampler', type = str2bool, default = False)
+  parser.add_argument('--num_samples', type = int, default = 0)
+
+
 
   args = parser.parse_args()
     
@@ -202,33 +209,52 @@ if __name__ == '__main__':
   dataset, dataset_multi_test = dataset_split(params)
   tb_logger = SummaryWriter(params['tb_dir'])
   logger = create_logger(os.path.join(params['log_dir'], 'log.txt'))
-  
-  if args.mode == 'train':
+
+  if 'train' in args.mode:
     seed_set(0)
 
   for k, v in params.items():
     logger.info('[INFO] (GenerativePose@main) {}: {}'.format(k, v))
 
-  # multimodal_dict = get_multimodal_dataset(
-  #   logger = logger, 
-  #   dataset_multi_test = dataset_multi_test, 
-  #   params = params, 
-  # )
-
-
-  runner = (DiffusionRunner if params['algo'] == 'diff' else FlowMatchingRunner)(
-    params = params, 
-    dataset = dataset, 
-    multimodal_dict = None, #multimodal_dict, 
-    tblogger = tb_logger, 
+  multimodal_dict = get_multimodal_dataset(
     logger = logger, 
+    dataset_multi_test = dataset_multi_test, 
+    params = params, 
   )
-  if args.mode == 'train':
-    runner.train()
-  elif args.mode == 'eval':
-    runner.compute_stats(sampling_model = runner._ema_model, multimodal_dict = multimodal_dict) 
-  elif args.mode == 'demo_vis':
-    runner.demo_visualize(sampling_model = runner._ema_model, \
-      sampling_mode = params['sampling_mode'], dataset = dataset)
-  else : 
-    raise not NotImplementedError
+
+
+  if 'reward' in args.mode: 
+    runner = RewardRunner(
+      params = params, 
+      dataset = dataset, 
+      multimodal_dict = multimodal_dict, 
+      tblogger = tb_logger, 
+      logger = logger, 
+    )
+    if args.mode == 'reward_train':
+      runner.train()
+    elif args.mode == 'reward_eval':
+      pass 
+      runner.compute_stats(multimodal_dict = multimodal_dict)  
+    else:
+      raise NotImplementedError
+    
+  else:
+
+    runner = (DiffusionRunner if params['algo'] == 'diff' else FlowMatchingRunner)(
+      params = params, 
+      dataset = dataset, 
+      multimodal_dict = None, #multimodal_dict, 
+      tblogger = tb_logger, 
+      logger = logger, 
+    )
+
+    if args.mode == 'train':
+      runner.train()
+    elif args.mode == 'eval':
+      runner.compute_stats(sampling_model = runner._ema_model, multimodal_dict = None) #multimodal_dict) 
+    elif args.mode == 'demo_vis':
+      runner.demo_visualize(sampling_model = runner._ema_model, \
+        sampling_mode = params['sampling_mode'], dataset = dataset)
+    else: 
+      raise NotImplementedError

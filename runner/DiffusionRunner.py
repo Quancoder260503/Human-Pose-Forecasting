@@ -6,11 +6,15 @@ class DiffusionRunner(ProbabilisticRunner):
     self._logger.info("Training using Diffusion Process")
 
   def init_algo(self):
-    self.gaussian_diffusion = GaussianDiffusion(
+    self.policy_diffusion = GaussianDiffusion(
       noise_schedule = self._params['noise_scheduler'],  
       rescale_timesteps = self._params['rescale_timesteps'], 
       num_diffusion_steps = self._params['diffusion_num_timesteps'],
       num_sampling_steps = self._params['ddim_num_timesteps'],
+      cfg_scale = self._params['cfg_scale'], 
+      use_classifier_free_guidance = self._params['use_classifier_free_guidance'], 
+      deterministic = self._params['deterministic'], 
+      enable_complete = self._params['enable_complete'], 
     )
   
   def train_one_epoch(self):

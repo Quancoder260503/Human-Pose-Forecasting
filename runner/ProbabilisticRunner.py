@@ -247,7 +247,7 @@ class ProbabilisticRunner(object):
         generated_poses = generated_pose, 
         algos = [self._params['algo']], 
         num_observed_frames = self._params['num_observed_frames'], 
-        num_cols = self._params['vis_col'], 
+        num_cols = 4, 
         output = os.path.join(self._params['gif_dir'], f"val_{self.curr_epoch}.gif")
       )
     
@@ -490,7 +490,12 @@ class ProbabilisticRunner(object):
           str_stats = f'{stats}: ' + ' '.join([f'{x}: {y.avg:.4f}' for x, y in stats_meter[stats].items()])
           self._logger.info(str_stats)
 
-    # save stats in csv
+        for stats in statistics_names:
+          str_stats = f'{stats}: ' + ' '.join(
+              [f'{x}: {y.avg:.4f}' for x, y in stats_meter[stats].items()]
+          )
+          self.logger.info(str_stats)
+
     file_latest = f"{self._params['result_dir']}/stats_latest.csv"
     file_stat = f"{self._params['result_dir']}/stats.csv"
     with open(file_latest, 'w') as csv_file:

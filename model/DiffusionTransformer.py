@@ -494,7 +494,7 @@ class FinalTransformerLayer(nn.Module):
     :return : 
         a tensor of shape (B, T, model_dim)
     """  
-    embedding_out = self.scale_shift_norm(embedding).unsqueeze(1)
+    embedding_out = self.adaptiveLN(embedding).unsqueeze(1)
     shift, scale =  torch.chunk(embedding_out, 2, dim = -1) 
     norm_input = self.layernorm(input) * (scale + 1.) + shift
     out = self.linear(norm_input)
@@ -586,6 +586,8 @@ class DiffusionTransformer(nn.Module):
         )
       )
     
+    self._model_version = model_version
+    
     self.final_layer = FinalTransformerLayer(
       model_dim = model_dim, 
       output_dim = input_features, 
@@ -630,8 +632,9 @@ class DiffusionTransformer(nn.Module):
     else : 
       for index, module in enumerate(self.posterior_decoder_block): 
         network_in = module(network_in, total_embedding, memory)
-    # the idea is that we are trying to prevent the approximator from relying too much on the condition
+    
     output = self.final_layer(network_in, time_embedding)
+
     return output 
 
 def diffusion_transformer(params):

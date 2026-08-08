@@ -394,8 +394,6 @@ class ProbabilisticRunner(object):
   def init_model(self):
     if self._params['model_architecture'] == 'transformer': 
       self._model = diffusion_transformer(self._params)
-    elif self._params['model_architecture'] == 'gcn': 
-      self._model = gcn_diffusion(self._params)
     elif self._params['model_architecture'] == 'gcn_transformer': 
       self._model = gcn_transformer_diffusion(self._params)
     else : 

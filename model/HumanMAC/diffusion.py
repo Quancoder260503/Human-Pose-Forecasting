@@ -3,7 +3,8 @@ import torch
 import numpy as np
 import math
 from copy import deepcopy
-
+import tqdm
+from collections import deque
 
 def sqrt_beta_schedule(timesteps, s = 0.0001):
   steps = timesteps + 1
@@ -61,6 +62,7 @@ class Diffusion:
     dct = None,
     idct = None,
     n_pre = 10,
+    deterministic = True, 
   ):
     self.noise_steps = noise_steps
     self.beta_start = (1000 / noise_steps) * beta_start
@@ -79,6 +81,7 @@ class Diffusion:
     self.EnableComplete = EnableComplete
     self.mod_enable = mod_enable
     self.mod_test = mod_test
+    self.deterministic = deterministic
 
     self.ddim_timestep_seq = np.asarray(
       list(range(0, self.noise_steps, self.noise_steps // self.ddim_timesteps))
@@ -91,13 +94,13 @@ class Diffusion:
     self.n_pre = n_pre
 
   def prepare_noise_schedule(self):
-    if self.scheduler == 'Linear':
+    if self.scheduler == 'linear':
       return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
-    elif self.scheduler == 'Cosine':
+    elif self.scheduler == 'cosine':
       return cosine_beta_schedule(self.noise_steps)
-    elif self.scheduler == 'Sqrt':
+    elif self.scheduler == 'sqrt':
       return sqrt_beta_schedule(self.noise_steps)
-    elif self.scheduler == 'Sigmoid':
+    elif self.scheduler == 'sigmoid':
       return sigmoid_beta_schedule(self.noise_steps)
     else:
       raise NotImplementedError(f"unknown scheduler: {self.scheduler}")
@@ -173,9 +176,15 @@ class Diffusion:
         predicted_noise = model(x, t, traj_dct_mod)
 
         predicted_x0 = (x - torch.sqrt((1. - alpha_hat)) * predicted_noise) / torch.sqrt(alpha_hat)
-        pred_dir_xt = torch.sqrt(1 - alpha_hat_prev) * predicted_noise
-        x_prev = torch.sqrt(alpha_hat_prev) * predicted_x0 + pred_dir_xt
-
+        if self.deterministic : 
+          pred_dir_xt = torch.sqrt(1 - alpha_hat_prev) * predicted_noise
+          x_prev = torch.sqrt(alpha_hat_prev) * predicted_x0 + pred_dir_xt
+        else : 
+          std_dev = torch.sqrt((1 - alpha_hat_prev) / (1 - alpha_hat)) * torch.sqrt(1 - alpha_hat / alpha_hat_prev)
+          pred_dir_xt = torch.sqrt(1 - alpha_hat_prev - std_dev ** 2) * predicted_noise 
+          gauss_noise = torch.randn_like(pred_dir_xt, dtype = pred_dir_xt.dtype, device = pred_dir_xt.device) 
+          #nonzero_mask = (prev_t != 0).float().view(-1, *([1] * (len(pred_dir_xt.shape) - 1))) # skip the mask in purpose for model to learn nosier negative stuff
+          x_prev = torch.sqrt(alpha_hat_prev) * predicted_x0 + pred_dir_xt + gauss_noise * std_dev  
         x = x_prev
 
         if self.EnableComplete is True:
@@ -183,36 +192,9 @@ class Diffusion:
 
         yield x
 
-  def sample_ddim(self, model, traj_dct, traj_dct_mod, mode_dict):
-    """
-    Generate samples from the model.
 
-    :param model : the model to predict noise
-    :param traj_dct : DCT coefficient of the traj, shape as [sample_num, n_pre, 3 * joints_num]
-    :param traj_dct_mod : equal to traj_dct or None when no modulation
-    :param mode_dict : a dict containing the following keys:
-      - 'mask' : [[1, 1, ..., 0, 0, 0]
-                  [1, 1, ..., 0, 0, 0]
-                  ...
-                  [1, 1, ..., 0, 0, 0]], mask for observation
-      - 'sample_num' : sample_num for different modes
-      - 'mode' : mode name, e.g. 'pred', 'control'....
-      when mode is 'switch', there are two additional keys:
-      - 'traj_switch' : traj to switch to
-      - 'mask_end' : [[0, 0, ...., 1, 1, 1]
-                      [0, 0, ...., 1, 1, 1]
-                      ...
-                      [0, 0, ...., 1, 1, 1]], mask for switch
-      when mode is 'control', there are one additional key:
-      - 'traj_fix' : retained the fixed part of the traj
-        and current mask will be:
-                      [[0, 0, ...., 1, 1, 1]
-                      [1, 1, ...., 1, 1, 1]
-                      ...
-                      [0, 0, ...., 1, 1, 1]]
-    :return : sample
-    """
+  def sample_ddim(self, model, traj_dct, traj_dct_mod, mode_dict):
     final = None
     for sample in self.sample_ddim_progressive(model, traj_dct, traj_dct_mod, mode_dict):
-      final = sample
+      final = sample 
     return final

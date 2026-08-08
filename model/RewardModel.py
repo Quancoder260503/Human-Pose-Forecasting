@@ -5,6 +5,7 @@ from torch.nn.modules.loss import _WeightedLoss
 import math 
 import numpy as np 
 from model.ModelUtils import *
+import random 
 
 class SqueezeAndExcitation(nn.Module): 
   def __init__(self, channels, ratio = 4, act_fn = 'GeLU', use_max_pooling = False):
@@ -488,14 +489,14 @@ class GC_Block(nn.Module):
       output_nodes = output_nodes, 
       bias = bias
     )
-    self.bn1 = nn.BatchNorm1d(output_nodes * in_features)
+    self.norm1 = nn.LayerNorm(output_nodes * in_features)
     self.gc2 = GraphConvolution(
       in_features, 
       in_features, 
       output_nodes = output_nodes, 
       bias = bias
     )
-    self.bn2 = nn.BatchNorm1d(output_nodes * in_features)
+    self.norm2 = nn.LayerNorm(output_nodes * in_features)
     self.do = nn.Dropout(p_dropout)
     self.act_f = nn.Tanh()
 
@@ -503,13 +504,13 @@ class GC_Block(nn.Module):
     """Forward pass of the residual module"""
     y = self.gc1(x)
     b, n, f = y.shape
-    y = self.bn1(y.view(b, -1)).view(b, n, f)
+    y = self.norm1(y.view(b, -1)).view(b, n, f)
     y = self.act_f(y)
     y = self.do(y)
 
     y = self.gc2(y)
     b, n, f = y.shape
-    y = self.bn2(y.view(b, -1)).view(b, n, f)
+    y = self.norm2(y.view(b, -1)).view(b, n, f)
     y = self.act_f(y)
     y = self.do(y)
     return y + x
@@ -522,7 +523,7 @@ class GCN(nn.Module):
     super(GCN, self).__init__()
     self.num_stage = num_stage
     self.gc1 = GraphConvolution(input_feature, hidden_feature, output_nodes = node_n)
-    self.bn1 = nn.BatchNorm1d(node_n * hidden_feature)
+    self.norm1 = nn.LayerNorm(node_n * hidden_feature)
     self.gcbs = []
     for _ in range(num_stage):
        self.gcbs.append(GC_Block(hidden_feature, p_dropout = p_dropout, output_nodes = node_n))
@@ -536,7 +537,7 @@ class GCN(nn.Module):
   def forward(self, x):
     y = self.gc1(x)
     b, n, f = y.shape
-    y = self.bn1(y.view(b, -1)).view(b, n, f)
+    y = self.norm1(y.view(b, -1)).view(b, n, f)
     y = self.act_f(y)
     y = self.do(y)
 
@@ -656,7 +657,18 @@ class ExpNLLLoss(_WeightedLoss):
     )
 
 class InfoNCE(nn.Module): 
-  def __init__(self, encoder, prior_encoder, sample_model = None, sampler = None, num_samples = 0, temperature = 0.07):
+  def __init__(
+    self, 
+    encoder, 
+    prior_encoder, 
+    sample_model = None, 
+    sampler = None, 
+    num_samples = 0, 
+    num_taken_samples = 5, 
+    num_select_per_samples = 3, 
+    temperature = 0.07, 
+    noise_scale = 0.05,
+  ):
     super(InfoNCE, self).__init__()
     self.temperature = temperature 
     self.contrast_loss = ExpNLLLoss()
@@ -664,21 +676,25 @@ class InfoNCE(nn.Module):
     self.prior_encoder = prior_encoder 
     self.sample_model = sample_model
     self.sampler = sampler 
-    self.num_samples = num_samples 
+    self.num_samples = num_samples
+    self.num_taken_samples = num_taken_samples
+    self.num_select_per_samples = num_select_per_samples
+    self.noise_scale = noise_scale
 
   def sampling(self, trajectory_dct, trajectory_dct_mod, mode_dict): 
     """
     :param trajectory_dct : compressed DCT of the entire true sequence [b, num_dct_channels, pose_dim]
     :param trajectory_dct_mod : compressed DCT of the prior/observed-padded sequence [b, num_dct_channels, pose_dim]
     """
-    return self.sampler.sample_ddim(
-      model = self.sampler_model, 
+    sample_lst = self.sampler.sample_ddim(
+      model = self.sample_model, 
       traj_dct = trajectory_dct, 
       traj_dct_mod = trajectory_dct_mod, 
       mode_dict = mode_dict, 
+      num_takes = self.num_taken_samples, 
     )
-
-
+    return random.sample(sample_lst, self.num_select_per_samples)
+  
   def forward_sampler(self, trajectory_dct, trajectory_dct_mod, mode_dict = None):
     """
     :param trajectory_dct : compressed DCT of the entire true sequence [b, num_dct_channels, pose_dim]
@@ -688,17 +704,26 @@ class InfoNCE(nn.Module):
     samples_arr = []
     for _ in range(self.num_samples):
       sample = self.sampling(trajectory_dct_mod, trajectory_dct_mod, mode_dict) # mod out since we assume that the entire frame is unseen 
-      samples_arr.append(sample)
+      samples_arr.extend(sample)
 
     samples_arr = torch.stack(samples_arr, dim = 1)  # [b, K, num_dct_channels, pose_dim]
     samples_trajectory = samples_arr.contiguous().view(-1, samples_arr.shape[2], samples_arr.shape[3])
 
+    gauss_noise = torch.randn_like(samples_trajectory, device = samples_trajectory.device, dtype = samples_trajectory.dtype)
+
+    samples_trajectory = samples_trajectory + gauss_noise * self.noise_scale
+
+    #per_sample_mse = ((trajectory_dct - samples_trajectory) ** 2).mean(dim=(-2, -1))  # [b * K]
+    #print("MSE mean/std/min/max:", per_sample_mse.mean().item(), per_sample_mse.std().item(), per_sample_mse.min().item(), per_sample_mse.max().item())
+
+
+
     enc_trajectory_dct_sample = self.encoder(samples_trajectory)  # [b*K, code_size]
-    enc_trajectory_dct_sample = enc_trajectory_dct_sample.contiguous().view(batch_size, \
-      self.num_samples, enc_trajectory_dct_sample.shape[-1])  # [b, K, code_size]
+    enc_trajectory_dct_sample = enc_trajectory_dct_sample.contiguous().view(batch_size, -1, \
+      enc_trajectory_dct_sample.shape[-1])  # [b, K, code_size]
 
     enc_trajectory_dct_main = self.encoder(trajectory_dct).unsqueeze(1)  # [b, 1, code_size]
-    enc_trajectory_dct = torch.cat([enc_trajectory_dct_main, enc_trajectory_dct_sample], dim=1)  # [b, 1+K, code_size]
+    enc_trajectory_dct = torch.cat([enc_trajectory_dct_main, enc_trajectory_dct_sample], dim = 1)  # [b, 1+K, code_size]
     enc_trajectory_dct_mod = self.prior_encoder(trajectory_dct_mod).unsqueeze(1)  # [b, 1, code_size]
 
     enc_trajectory_dct = F.normalize(enc_trajectory_dct, dim = -1)
@@ -768,7 +793,16 @@ class InfoNCE(nn.Module):
 
 # For this we need to ensure that output is a scalar 
 class ConditioningInfoNCE(nn.Module): 
-  def __init__(self, model, sample_model = None, sampler = None, num_samples = 0, temperature = 0.07):
+  def __init__(
+    self, 
+    model, 
+    sample_model = None, 
+    sampler = None, 
+    num_samples = 0, 
+    num_taken_samples = 5, 
+    num_select_per_samples = 3, 
+    temperature = 0.07
+  ):
     super(ConditioningInfoNCE, self).__init__()
     self.temperature = temperature 
     self.contrast_loss = ExpNLLLoss()
@@ -776,6 +810,8 @@ class ConditioningInfoNCE(nn.Module):
     self.sample_model = sample_model
     self.sampler = sampler 
     self.num_samples = num_samples 
+    self.num_taken_samples = num_taken_samples 
+    self.num_select_per_samples = num_select_per_samples
     
 
   def sampling(self, trajectory_dct, trajectory_dct_mod, mode_dict): 
@@ -783,12 +819,14 @@ class ConditioningInfoNCE(nn.Module):
     :param trajectory_dct : compressed DCT of the entire true sequence [b, num_dct_channels, pose_dim]
     :param trajectory_dct_mod : compressed DCT of the prior/observed-padded sequence [b, num_dct_channels, pose_dim]
     """
-    return self.sampler.sample_ddim(
-      model = self.sampler_model, 
+    sample_lst = self.sampler.sample_ddim(
+      model = self.sample_model, 
       traj_dct = trajectory_dct, 
       traj_dct_mod = trajectory_dct_mod, 
       mode_dict = mode_dict, 
+      num_takes = self.num_takes, 
     )
+    return random.sample(sample_lst, self.num_select_per_samples)
 
   def forward(self, trajectory_dct, trajectory_dct_mod, mode_dict = None):
     """
@@ -800,12 +838,12 @@ class ConditioningInfoNCE(nn.Module):
     estimated_score = [self.cond_prob_estimator(trajectory_dct, trajectory_dct_mod)]
     for _ in range(self.num_samples):
       sample = self.sampling(trajectory_dct_mod, trajectory_dct_mod, mode_dict) # mod out since we assume that the entire frame is unseen 
-      estimated_score.append(self.cond_prob_estimator(sample, trajectory_dct_mod)) # 
+      estimated_score.extend(self.cond_prob_estimator(sample, trajectory_dct_mod)) # 
 
     estimated_score = torch.stack(estimated_score, dim = 1).squeeze(-1)  # [b, 1 + K]
     estimated_score = F.normalize(estimated_score, dim = -1) / self.temperature
     estimated_score = F.softmax(estimated_score, dim = -1)  
-    targets = torch.arange(batch_size, device = trajectory_dct.device, dtype = torch.long)
+    targets = torch.zeros(batch_size, device=trajectory_dct.device, dtype=torch.long)
     loss = self.contrast_loss(input = estimated_score, target = targets)
     with torch.no_grad():
       pred = estimated_score.argmax(dim = -1)

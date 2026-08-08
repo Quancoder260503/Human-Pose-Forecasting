@@ -51,8 +51,17 @@ class FlowMatchingRunner(ProbabilisticRunner):
         trajectory_dct = torch.matmul(self.dct[:self.num_dct_channels], trajectory) 
         trajectory_dct_mod = torch.matmul(self.dct[:self.num_dct_channels], trajectory_pad) 
 
-        if np.random.random() > self._params['mod_train']:
-          trajectory_dct_mod = None 
+        if self._params['drop_cond_method'] == 'sample': 
+          batch_size = trajectory_dct.shape[0]  # batch size
+          drop_mask = torch.rand(batch_size, device = trajectory_dct.device) > self._params['mod_train']
+          mask = drop_mask.view(batch_size, *([1] * (trajectory_dct.dim() - 1)))  
+          null_cond = torch.zeros_like(trajectory_dct_mod)  
+          trajectory_dct_mod = torch.where(mask, null_cond, trajectory_dct_mod)
+        elif self._params['drop_cond_method'] == 'batch':
+          if np.random.random() > self._params['mod_train']:
+            trajectory_dct_mod = None 
+        else:
+          raise NotImplementedError("Unknown conditional dropping method")
       
       timesteps = self.sampling_timesteps(self._params['batch_size']) 
       x_1 = trajectory_dct

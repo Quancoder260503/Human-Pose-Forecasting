@@ -520,3 +520,28 @@ def generate_pad(padding, num_observed_frames, num_predict_frames):
     raise NotImplementedError(f"unknown padding method : {padding}")
   
   return idx_pad, zero_index
+
+
+class RunningMeanStd(object):
+  def __init__(self, eps = 1e-4):
+    self.mean = 0.0
+    self.var = 1.0
+    self.count = eps
+
+  def update(self, x):
+    batch_mean = x.mean().item()
+    batch_var = x.var().item()
+    batch_count = x.numel()
+
+    delta = batch_mean - self.mean
+    tot_count = self.count + batch_count
+
+    new_mean = self.mean + delta * batch_count / tot_count
+    m_a = self.var * self.count
+    m_b = batch_var * batch_count
+    M2 = m_a + m_b + delta ** 2 * self.count * batch_count / tot_count
+    new_var = M2 / tot_count
+    self.mean, self.var, self.count = new_mean, new_var, tot_count
+
+  def normalize(self, x):
+    return (x - self.mean) / (self.var ** 0.5 + 1e-8)

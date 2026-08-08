@@ -231,10 +231,13 @@ class GaussianDiffusion(object):
     alpha_bar_prev = extract_into_tensor(self.alphas_cumprod, next_t, input_x.shape)
     alpha_bar_curr = extract_into_tensor(self.alphas_cumprod, curr_t, input_x.shape)
     eps = torch.randn_like(input_x).to(input_x.device)
-    std_dev = eta * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar_curr)) * torch.sqrt(1. - alpha_bar_curr / alpha_bar_prev)
-    nonzero_mask = (next_t != 0).float().view(-1, *([1] * (len(input_x.shape) - 1)))
-    mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev - std_dev ** 2) * out['pred_noise'] \
-      + nonzero_mask * std_dev * eps
+    if self.deterministic :
+      mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev) * out['pred_noise'] 
+    else: 
+      std_dev = eta * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar_curr)) * torch.sqrt(1. - alpha_bar_curr / alpha_bar_prev)
+      nonzero_mask = (next_t != 0).float().view(-1, *([1] * (len(input_x.shape) - 1)))
+      mean_pred = out['pred_x0'] * torch.sqrt(alpha_bar_prev) + torch.sqrt(1 - alpha_bar_prev - std_dev ** 2) \
+        * out['pred_noise'] + nonzero_mask * std_dev * eps
     return {'sample' : mean_pred}
 
   def inpainting_complete(
@@ -395,12 +398,12 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
       enable_complete = enable_complete
     )
 
-  def get_variance_log_prob(self, timestep, prev_timestep): 
-    alpha_prod_t = self.alphas_cumprod.to(timestep.device)[timestep] 
-    alpha_prod_prev_t = self.alphas_cumprod.to(timestep.device)[prev_timestep]
+  def get_variance_log_prob(self, timestep, next_timestep, shape): 
+    alpha_prod_t = extract_into_tensor(self.alphas_cumprod, timestep, shape)
+    alpha_prod_next_t = extract_into_tensor(self.alphas_cumprod, next_timestep, shape)
     beta_prod_t = 1 - alpha_prod_t 
-    beta_prod_prev_t = 1 - alpha_prod_prev_t 
-    variance = (beta_prod_prev_t / beta_prod_t) * (1 - alpha_prod_t / alpha_prod_prev_t)
+    beta_prod_next_t = 1 - alpha_prod_next_t 
+    variance = (beta_prod_next_t / beta_prod_t) * (1 - alpha_prod_t / alpha_prod_next_t)
     return variance 
 
 
@@ -411,7 +414,6 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
     next_timesteps, 
     sample, 
     eta = 1., 
-    cond = None, 
     clip_sample = False, 
     use_clipped_output = False, 
     variance_noise = None,
@@ -421,14 +423,13 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
     pred_original_sample = self.predict_x0_from_eps(x_t = sample, timesteps = timesteps, gaussian_noise = model_out)
     
     if clip_sample: 
-        pred_original_sample = torch.clamp(pred_original_sample, -1, 1) 
+      pred_original_sample = torch.clamp(pred_original_sample, -1, 1) 
 
-    variance = self.get_variance_log_prob(timesteps, next_timesteps).to(dtype = sample.dtype) 
+    variance = self.get_variance_log_prob(timesteps, next_timesteps, sample.shape).to(dtype = sample.dtype)
     std_dev_t = (eta * variance ** (0.5)).to(dtype = sample.dtype) 
 
     if use_clipped_output: 
-        model_out = (sample - alpha_bar_t ** (0.5) * pred_original_sample) / ((1 - alpha_bar_t) ** 0.5) 
-
+      model_out = (sample - alpha_bar_t ** (0.5) * pred_original_sample) / ((1 - alpha_bar_t) ** 0.5) 
     pred_sample_direction = (1 - alpha_bar_prev_t - std_dev_t ** 2) ** 0.5 * model_out 
     prev_sample = alpha_bar_prev_t ** (0.5) * pred_original_sample + pred_sample_direction 
     
@@ -439,7 +440,7 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
       variance = std_dev_t * variance_noise 
       dist = Normal(prev_sample, std_dev_t) 
       prev_sample = prev_sample.detach().clone() + variance 
-      log_prob = dist.log_prob(prev_sample.detach().clone()).mean(dim = -1).mean(dim = -1).mean(dim = -1).detach().cpu() 
+      log_prob = dist.log_prob(prev_sample.detach().clone()).mean(dim = -1).mean(dim = -1).detach().cpu() 
     
     return prev_sample, pred_original_sample, log_prob
 
@@ -461,7 +462,9 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
     if clip_sample: 
       pred_original_sample = torch.clamp(pred_original_sample, -1, 1) 
     
-    variance = self.get_variance_log_prob(timesteps, next_timesteps).to(dtype = sample.dtype) 
+    variance = self.get_variance_log_prob(timesteps, next_timesteps, sample.shape).to(dtype = sample.dtype)
+  #  print(variance)
+
     std_dev_t = (eta * variance ** (0.5)).to(dtype = sample.dtype) 
     
     if use_clipped_output: 
@@ -471,12 +474,13 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
     prev_sample = alpha_bar_prev_t ** (0.5) * pred_original_sample + pred_sample_direction 
         
     log_prob = 0. 
+
     if eta > 0: 
       if variance_noise is None: 
         variance_noise = torch.randn_like(prev_sample, dtype = prev_sample.dtype, device = prev_sample.device)
       variance = std_dev_t * variance_noise 
       dist = Normal(prev_sample, std_dev_t)       
-      log_prob = dist.log_prob(next_sample.detach().clone()).mean(dim = -1).mean(dim = -1).mean(dim = -1)
+      log_prob = dist.log_prob(next_sample.detach().clone()).mean(dim = -1).mean(dim = -1)
     return log_prob
 
   def forward_collect_traj_ddim(
@@ -484,35 +488,25 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
     model, 
     cond, 
     eta = 1., 
-    model_copy = None, 
-    soft_reward = False, 
     clip_sample = False, 
     use_clipped_output = False, 
   ): 
-    sample_lst, log_prob_lst, kl_lst = [], [], []  
+    sample_lst, log_prob_lst = [], [] 
     sample = torch.randn(cond.shape, dtype = cond.dtype, device = cond.device)
 
     sample_lst.append(sample.detach().clone().cpu())
 
-    for index, time in tqdm.tqdm(enumerate(self.sampling_indices)): 
-      time_next = 0 if index == 0 else self.sampling_indices[index - 1]
+    indices = list(reversed(self.sampling_indices))
+
+    for (time, time_next) in tqdm.tqdm(zip(indices[:-1], indices[1:])): 
       curr_t = torch.tensor([time] * sample.shape[0], device = sample.device)
       next_t = torch.tensor([time_next] * sample.shape[0], device = sample.device)
       if self.use_classifier_free_guidance:
-        uncond_model_out = model(sample, curr_t, None) 
+        uncond_model_out = model(sample, curr_t) 
         cond_model_out = model(sample, curr_t, cond)
         model_out = self.cfg_scale * cond_model_out + (1. - self.cfg_scale) * uncond_model_out 
       else : 
         model_out = model(sample, curr_t, cond)
-
-      if soft_reward :
-        if self.use_classifier_free_guidance:
-          old_uncond_model_out = model_copy(sample, curr_t, None) 
-          old_cond_model_out = model_copy(sample, curr_t, cond)
-          old_model_out = self.cfg_scale * old_cond_model_out + (1. - self.cfg_scale) * old_uncond_model_out 
-        else : 
-          old_model_out = model_copy(sample, curr_t, cond) 
-
 
       next_sample, _, log_prob = self.step_log_prob(
         model_out = model_out, 
@@ -522,44 +516,15 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
         clip_sample = clip_sample, 
         use_clipped_output = use_clipped_output, 
         sample = sample, 
-        cond = cond,
       )
       sample_lst.append(next_sample) 
       log_prob_lst.append(log_prob.detach().clone().cpu())
-
-      if soft_reward: 
-        old_log_prob = self.step_forward_logprob(
-          model_out = old_model_out, 
-          timesteps = curr_t, 
-          next_timesteps = next_t, 
-          sample = sample, 
-          next_sample = next_sample, 
-          eta = eta, 
-          clip_sample = clip_sample, 
-          use_clipped_output = use_clipped_output, 
-        ).detach().cpu() 
-
-        kl_lst.append((log_prob - old_log_prob).detach().clone().cpu())
       sample = next_sample
         
-    if soft_reward: 
-      kl_sum = 0. 
-      kl_path = [] 
-      for i in range(len(kl_lst)):
-        kl_sum += kl_lst[i] 
-      
-      kl_path.append(kl_sum.clone())
-      for i in range(1, len(kl_lst)):
-        kl_sum = kl_sum - kl_lst[i - 1] 
-        kl_path.append(kl_sum.clone())
-    else : 
-      kl_path = None 
-    
     return (
       sample, 
       sample_lst, 
       log_prob_lst, 
-      kl_path, 
     )
 
   def forward_calculate_log_prob(
@@ -572,41 +537,31 @@ class PolicyGaussianDiffusion(GaussianDiffusion):
     next_time, 
     eta = 1., 
     model_copy = None, 
-    soft_reward = False, 
     clip_sample = False, 
     use_clipped_output = False, 
   ): 
-    if soft_reward : 
-      model_copy = None 
-
-    curr_t = torch.tensor([time] * sample.shape[0], device = sample.device)
-    next_t = torch.tensor([next_time] * sample.shape[0], device = sample.device)
 
     if self.use_classifier_free_guidance:
-      uncond_model_out = model(sample, curr_t, None) 
-      cond_model_out = model(sample, curr_t, cond)
+      uncond_model_out = model(sample, time) 
+      cond_model_out = model(sample, time, cond)
       model_out = self.cfg_scale * cond_model_out + (1. - self.cfg_scale) * uncond_model_out 
     else : 
-      model_out = model(sample, curr_t, cond)
+      model_out = model(sample, time, cond)
 
-    if model_copy is not None :
-      if self.use_classifier_free_guidance:
-        old_uncond_model_out = model_copy(sample, curr_t, None) 
-        old_cond_model_out = model_copy(sample, curr_t, cond)
-        old_model_out = self.cfg_scale * old_cond_model_out + (1. - self.cfg_scale) * old_uncond_model_out 
-      else : 
-        old_model_out = model_copy(sample, curr_t, cond) 
+    if self.use_classifier_free_guidance:
+      old_uncond_model_out = model_copy(sample, time) 
+      old_cond_model_out = model_copy(sample, time, cond)
+      old_model_out = self.cfg_scale * old_cond_model_out + (1. - self.cfg_scale) * old_uncond_model_out 
+    else : 
+      old_model_out = model_copy(sample, time, cond) 
   
 
-    if model_copy is not None :
-      kl_regularizer = (model_out - old_model_out) ** 2  
-    else : 
-      kl_regularizer = torch.zeros(model_out.shape[0], device = model_out.device)
-    
+    kl_regularizer = (model_out - old_model_out) ** 2  
+
     log_prob = self.step_forward_logprob(
       model_out = model_out, 
-      timesteps = curr_t, 
-      next_timesteps = next_t, 
+      timesteps = time, 
+      next_timesteps = next_time, 
       sample = sample, 
       next_sample = next_sample, 
       eta = eta,

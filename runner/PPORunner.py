@@ -14,8 +14,10 @@ from runner.WarmupScheduler import *
 from data.Dataset3DUtils import * 
 from model.GaussianDiffusion import PolicyGaussianDiffusion
 from model.RewardModel import reward_transformer, reward_encoder, reward_gcn, InfoNCE, ConditioningInfoNCE
+from model.HumanMAC.diffusion import Diffusion
+from model.HumanMAC.transformer import MotionTransformer
 from model.DiffusionTransformer import diffusion_transformer
-from model.ValueFunctionApproximator import get_linear_value_model, get_transformer_value_model
+from model.ValueFunctionApproximator import get_linear_value_model, get_transformer_value_model, get_linear_value_model_v1
 from model.GCNDiffusion import gcn_transformer_diffusion
 from runner.RunnerUtils import *
 import pandas as pd 
@@ -75,6 +77,8 @@ class PPORunner(object):
     self.policy_lr_scheduler = self.get_lr_fn(self.policy_optimizer) 
     self.value_lr_scheduler = self.get_lr_fn(self.value_optimizer)
 
+    self.finetune_init()
+
 
     self.num_dct_channels = self._params['num_dct_channels']
     self._params['learning_rate_type'] = 'epochwise'
@@ -95,31 +99,57 @@ class PPORunner(object):
     self.val_losses = None 
     self.val_generator = None 
 
+    self.reward_rms = RunningMeanStd()
+
+
+  def finetune_init(self):
+    # loading model for inference only 
+    if self._params['finetuning_ckpt'] is not None and self._params['train'] == False:
+      self._logger.info(f'[INFO] (finetune_model) Finetuning from: {self._params["finetuning_ckpt"]}')
+      model_dict = torch.load(self._params['finetuning_ckpt'], weights_only = False, map_location = self._params['device'])
+      self.diffusion_model.load_state_dict(model_dict['diffusion_model'])
+
   def get_random_indices(self, num_indices, sample_size): 
    return np.random.choice(num_indices, size = sample_size, replace = False)
 
-  def collecting_rollouts(self, trajectory_pad_dct, state_dict): 
+  def collecting_rollouts(self, trajectory_pad_dct, trajectory_gt_dct, state_dict): 
+    """
+    :params trajectory_pad_dct : [batch_size, num_dct_channels, pose_dim]
+    :params trajectory_gt_dct : [batch_size, num_dct_channels, pose_dim]
+    :return : 
+      state_dict['cond_trajectory'] : [batch_size * num_ddim_timestep, num_dct_channels, pose_dim]
+      state_dict['state'] : [batch_size * num_ddim_timestep, num_dct_channels, pose_dim] 
+      state_dict['next_state'] : [batch_size * num_ddim_timestep, num_dct_channels, pose_dim]
+    """
     for _ in range(self._params['g_step']): 
       with torch.no_grad():
-        trajectory_dct, latent_trajectory_dct, log_prob_lst, _ = self.policy_diffusion.forward_collect_traj_ddim(
+        trajectory_dct, latent_trajectory_dct, log_prob_lst = self.policy_diffusion.forward_collect_traj_ddim(
           model = self.diffusion_model, 
           cond = trajectory_pad_dct, 
           eta = 1.,
         )
-        reward_lst = [] 
-        for i in range(trajectory_pad_dct.shape[0]): 
-          reward_lst.append(self.compute_rewards(trajectory_pad_dct[i], trajectory_dct[i])) 
-        reward_lst = torch.stack(reward_lst).detach().cpu()
+        reward_lst = self.compute_rewards(
+          cond_trajectory = trajectory_pad_dct, 
+          gt_trajectory = trajectory_gt_dct, 
+          out_trajectory = trajectory_dct, 
+        ) 
 
+        reward_lst = reward_lst.detach().cpu()
+        self.reward_rms.update(reward_lst)
+
+        sampling_indices = self.policy_diffusion.sampling_indices
+        sampling_indices = list(reversed(sampling_indices))
         for i in range(len(latent_trajectory_dct) - 1): 
           state_dict['cond_trajectory'] = torch.cat((state_dict['cond_trajectory'], trajectory_pad_dct.detach().cpu()))
-          state_dict['state'] = torch.cat((state_dict['state'], latent_trajectory_dct[i]))
-          state_dict['next_state'] = torch.cat((state_dict['next_state'], latent_trajectory_dct[i + 1]))
-          state_dict['timestep'] = torch.cat((state_dict['timestep'], torch.LongTensor([self.policy_diffusion.sampling_indices[i]] * trajectory_pad_dct.shape[0])))
-          state_dict['next_timestep'] = torch.cat((state_dict['next_timestep'], torch.LongTensor([self.policy_diffusion.sampling_indices[i + 1]] * trajectory_pad_dct.shape[0])))
+          state_dict['state'] = torch.cat((state_dict['state'], latent_trajectory_dct[i].detach().cpu()))
+          state_dict['next_state'] = torch.cat((state_dict['next_state'], latent_trajectory_dct[i + 1].detach().cpu()))
+          state_dict['timestep'] = torch.cat((state_dict['timestep'], torch.LongTensor([sampling_indices[i]] * trajectory_pad_dct.shape[0])))
+          state_dict['next_timestep'] = torch.cat((state_dict['next_timestep'], torch.LongTensor([sampling_indices[i + 1]] * trajectory_pad_dct.shape[0])))
           state_dict['final_reward'] = torch.cat((state_dict['final_reward'], reward_lst))
           state_dict['log_prob'] = torch.cat((state_dict['log_prob'], log_prob_lst[i]))
 
+        self._logger.info(f"final_reward mean/std this batch: {state_dict['final_reward'].mean().item(), state_dict['final_reward'].std().item()}")
+        
         del (
           trajectory_dct, 
           latent_trajectory_dct, 
@@ -128,20 +158,27 @@ class PPORunner(object):
         )
         torch.cuda.empty_cache()
 
-
-  # TODO : may add 3d distance as another metrics 
-  def compute_rewards(self, cond_trajectory, out_trajectory): 
+  def compute_rewards(self, cond_trajectory, gt_trajectory, out_trajectory): 
     if isinstance(self.reward_model, InfoNCE): 
-      enc_cond_trajectory = self.reward_model.prior_encoder(cond_trajectory)
-      enc_out_trajectory = self.reward_model.encoder(out_trajectory) 
+      enc_cond_trajectory = self.reward_model.prior_encoder(cond_trajectory) # [b, code_size]
+      enc_out_trajectory = self.reward_model.encoder(out_trajectory) # [b, code_size]
       enc_cond_trajectory = F.normalize(enc_cond_trajectory, dim = -1) 
       enc_out_trajectory = F.normalize(enc_out_trajectory, dim = -1) 
-      prob = enc_out_trajectory  * enc_out_trajectory / self.reward_model.temperature 
-      prob = F.sigmoid(prob)
+      prob = torch.matmul(enc_out_trajectory, enc_cond_trajectory.t())#  / self.reward_model.temperature
+      prob = torch.diag(prob)  
     elif isinstance(self.reward_model, ConditioningInfoNCE):
       prob = self.reward_model.cond_prob_estimator(out_trajectory, cond_trajectory)
-      prob = F.sigmoid(prob) 
-    return np.exp(prob.detach().cpu() * self._params['visual_weight'])  
+
+    prob = F.sigmoid(prob) 
+
+    loss_dct = F.mse_loss(gt_trajectory, out_trajectory, reduction = 'none').mean(dim = [1, 2])
+    gt_pose = torch.matmul(self.idct[:, :self.num_dct_channels], gt_trajectory)
+    gen_pose = torch.matmul(self.idct[:, :self.num_dct_channels], out_trajectory)
+    loss_3d = F.mse_loss(gt_pose, gen_pose, reduction = 'none').mean(dim = [1, 2]) 
+
+    return torch.exp(prob.detach() * self._params['visual_weight']) +\
+      torch.exp(-loss_dct.detach() * self._params['dct_weight']) + \
+      torch.exp(-loss_3d.detach() * self._params['3d_weight'])  
       
   def train_value_func(self, state_dict):
     indices = self.get_random_indices(state_dict['state'].shape[0], self._params['value_batch_size'])
@@ -149,16 +186,18 @@ class PPORunner(object):
     batch_timestep = state_dict['timestep'][indices]
     batch_final_reward = state_dict['final_reward'][indices]
     batch_trajectory_dct_mod = state_dict['cond_trajectory'][indices]
-
+ #   print(batch_trajectory_dct.shape, batch_trajectory_dct_mod.shape, batch_timestep.shape)
     pred_value = self.value_model(
       batch_trajectory_dct.cuda().detach(), 
-      batch_trajectory_dct_mod.cuda().detach(), 
       batch_timestep.cuda().detach(), 
+      batch_trajectory_dct_mod.cuda().detach(), 
     )
-    batch_final_reward = batch_final_reward.cuda().float() 
+    batch_final_reward = batch_final_reward.cuda().float()
+    batch_final_reward = self.reward_rms.normalize(batch_final_reward)
+
     value_loss = F.mse_loss(
       pred_value.float().reshape([self._params['value_batch_size'], 1]), 
-      batch_final_reward.cuda().detach().reshape([self._params['value_batch_size'], 1])
+      batch_final_reward.detach().reshape([self._params['value_batch_size'], 1])
     )
     (value_loss / self._params['value_step']).backward()
 
@@ -192,16 +231,22 @@ class PPORunner(object):
       eta = 1., 
     )
 
+    batch_final_reward = batch_final_reward.cuda().float()
+    batch_final_reward = self.reward_rms.normalize(batch_final_reward)
+    
+
     with torch.no_grad():
       if self._params['value_flag'] == 1:
         approximated_value = self.value_model(
           batch_trajectory_dct.cuda(),
+          batch_timestep.cuda(), 
           batch_trajectory_dct_mod.cuda(),
-          batch_timestep.cuda()
         ).reshape([self._params['policy_batch_size'], 1])
-        advantages = batch_final_reward.cuda().reshape([self._params['policy_batch_size'], 1]) - approximated_value
+        advantages = batch_final_reward.reshape([self._params['policy_batch_size'], 1]) - approximated_value
       else:
-        advantages = batch_final_reward.cuda().reshape([self._params['policy_batch_size'], 1])
+        advantages = batch_final_reward.reshape([self._params['policy_batch_size'], 1])
+
+   # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-7)    
 
     ratio = torch.exp(log_prob - batch_log_prob.cuda())
     ratio = torch.clamp(ratio, 1.0 - self._params['ratio_clip'], 1.0 + self._params['ratio_clip'])
@@ -219,8 +264,8 @@ class PPORunner(object):
       
 
   def train_one_epoch(self, state_dict):
-    max_train_steps = self._params['max_train_steps'] // self._params['policy_step']
-    for index, trajectory_np in enumerate(self.train_generator):
+    steps = 0
+    for _, trajectory_np in enumerate(self.train_generator):
       self.diffusion_model.eval() # freeze model weight to sample 
       with torch.no_grad():
         trajectory_np = trajectory_np[..., 1:, :].reshape([
@@ -228,18 +273,22 @@ class PPORunner(object):
           self._params['num_observed_frames'] + self._params['num_predict_frames'], 
           -1, 
         ]) 
-        trajectory = torch.tensor(trajectory_np, device = self._params['device'], dtype = torch.float32) 
+        trajectory_gt = torch.tensor(trajectory_np, device = self._params['device'], dtype = torch.float32) 
         trajectory_pad = padding_trajectory(
-          trajectory, 
+          trajectory_gt, 
           self._params['padding'], 
           self._params['idx_pad'], 
           self._params['zero_index'],
         )
-
-        trajectory_dct = torch.matmul(self.dct[:self.num_dct_channels], trajectory) 
+        trajectory_dct_gt = torch.matmul(self.dct[:self.num_dct_channels], trajectory_gt)
         trajectory_dct_mod = torch.matmul(self.dct[:self.num_dct_channels], trajectory_pad) 
-
-      self.collecting_rollouts(trajectory_dct_mod, state_dict)
+      
+      self.collecting_rollouts(
+        trajectory_gt_dct = trajectory_dct_gt, 
+        trajectory_pad_dct = trajectory_dct_mod, 
+        state_dict = state_dict 
+      )
+      self.trim_buffer(self._params['buffer_size'], state_dict)
 
 
       total_value_loss = 0.
@@ -248,7 +297,7 @@ class PPORunner(object):
         total_value_loss += self.train_value_func(state_dict)
 
       self.value_optimizer.step()
-      print("value_loss", total_value_loss)
+      self._logger.info(f"----------------------value_loss: {total_value_loss}----------------------")
       self._tblogger.add_scalar('ValueLoss/value', total_value_loss, self._global_step)
       del total_value_loss
       torch.cuda.empty_cache()
@@ -257,12 +306,13 @@ class PPORunner(object):
       self.diffusion_model.train()
       tpfdata = TrainPolicyFunctionData()
       norm = torch.tensor(0.0)
+      policy_steps = self._params['policy_step'] * self._params['gradient_accumulation_steps']
       for _ in range(self._params['policy_step']):
         self.policy_optimizer.zero_grad()
         for _ in range(int(self._params['gradient_accumulation_steps'])):
           self.train_policy_func(
             state_dict = state_dict, 
-            policy_steps = self._params['policy_step'], 
+            policy_steps = policy_steps, 
             tpfdata = tpfdata,
             count = self._global_step,
           )
@@ -271,18 +321,22 @@ class PPORunner(object):
         tpfdata.total_gradient_norm += norm.item() / self._params['policy_step'] 
 
         self.policy_optimizer.step()
-        print(f"count: [{self._global_step} / {max_train_steps}]")
-        print("train_reward", torch.mean(state_dict['final_reward']).item())
+        self._logger.info(f"count: [{self._global_step} / {self.max_train_steps}]")
+        self._logger.info(f"train_reward : {torch.mean(state_dict['final_reward']).item()}")
         self._tblogger.add_scalar('Reward/train_reward', torch.mean(state_dict['final_reward']).item(), self._global_step)
-        print("grad norm", tpfdata.total_gradient_norm, "ratio", tpfdata.total_ratio)
-        print("kl", tpfdata.total_kl_divergence, "policy_loss", tpfdata.total_policy_loss)
+        self._logger.info(f"grad norm : {tpfdata.total_gradient_norm}, ratio : {tpfdata.total_ratio}")
+        self._logger.info(f"kullback leiber : {tpfdata.total_kl_divergence}, policy_loss : {tpfdata.total_policy_loss}")
         self._tblogger.add_scalar('Policy/grad_norm', tpfdata.total_gradient_norm, self._global_step)
         self._tblogger.add_scalar('Policy/ratio', tpfdata.total_ratio, self._global_step)
         self._tblogger.add_scalar('Policy/kl', tpfdata.total_kl_divergence, self._global_step)
         self._tblogger.add_scalar('Policy/policy_loss', tpfdata.total_policy_loss, self._global_step)
         torch.cuda.empty_cache()
 
-        self._global_step += 1
+      self._global_step += 1
+      steps += 1
+      if self._params['train_steps_per_epoch'] != -1 and steps >= self._params['train_steps_per_epoch']:
+        break 
+        
 
   def train(self):
     state_dict = {}
@@ -295,31 +349,48 @@ class PPORunner(object):
     state_dict['log_prob'] = torch.FloatTensor().to(torch.float32).cpu()
 
     """Main training loop."""
+    self.max_train_steps = self._params['max_train_steps'] // self._params['policy_step']
     thisname = self.__class__.__name__
     self._logger.info('=' * 90)
     self._logger.info(f"[INFO] {thisname} | global step : {self._global_step:06d} | epoch : {(self._epoch + 1):06d} | Start training")
     self._logger.info('=' * 90)
     for e in range(self._epoch + 1, self._params['max_epochs']):
       self.curr_epoch = e
+      #self._logger.info(f"[INFO] {thisname} | global step : {self._global_step:06d} | epoch : {(self._epoch + 1):06d}")
 
       # Train
       self.prepare_train_step()
       self.train_one_epoch(state_dict)
-      self.prepare_eval_step()
-      self.compute_train_stats()
-      self.compute_eval_stats()
+   #   self.prepare_eval_step()
+    #  self.compute_train_stats()
+   #   self.compute_eval_stats()
       self._logger.info('>>> Epoch: {} | Time: {:.2f} | Policy LR : {:.6f} | Value LR : {:.6f}'.format(
         self.curr_epoch,
         time.time() - self.start_time,
         self.policy_lr_scheduler.get_last_lr()[0],
         self.value_lr_scheduler.get_last_lr()[0],
       ))
-
       self.update_learning_rate()
 
       if (e + 1) % self._params['snapshot_saving_steps'] == 0:
         self.save_checkpoint(e)
+
+
+      if self._global_step > self.max_train_steps:
+        break 
+
     self.save_checkpoint(e)
+
+
+  def trim_buffer(self, buffer_size, state_dict):
+    if state_dict['state'].shape[0] > buffer_size:
+      state_dict['cond_trajectory'] = state_dict['cond_trajectory'][-buffer_size:]
+      state_dict['state'] = state_dict['state'][-buffer_size:]
+      state_dict['next_state'] = state_dict['next_state'][-buffer_size:]
+      state_dict['timestep'] = state_dict['timestep'][-buffer_size:]
+      state_dict['next_timestep'] = state_dict['next_timestep'][-buffer_size:] 
+      state_dict['final_reward'] = state_dict['final_reward'][-buffer_size:]
+      state_dict['log_prob'] = state_dict['log_prob'][-buffer_size:]
 
   def save_checkpoint(self, epoch):
     model_path = os.path.join(self._params['model_prefix'], 'models', 'model_ckpt.pth.tar')
@@ -336,14 +407,14 @@ class PPORunner(object):
     torch.save(state, model_path)
     self._logger.info(f"[INFO] Saved checkpoint to {model_path} at epoch {epoch}")
 
+
   def init_model(self):
-    # reward model setup 
     if self._params['reward_model_architecture'] == 'cross_transformer': 
       enc = reward_transformer(self._params)
       self._model = ConditioningInfoNCE(
         model = enc, 
-        sample_model = self._sample_model, 
-        sampler = self.gaussian_diffusion, 
+        sample_model = None, 
+        sampler = None, 
         num_samples = self._params['num_samples'], 
         temperature = self._params['info_nce_temperature']
       )
@@ -352,8 +423,8 @@ class PPORunner(object):
       self.reward_model = InfoNCE(
         encoder = enc, 
         prior_encoder = prior_enc,
-        sample_model = self._sample_model, 
-        sampler = self.gaussian_diffusion,
+        sample_model = None, 
+        sampler = None,
         num_samples = self._params['num_samples'],         
         temperature = self._params['info_nce_temperature']
       )
@@ -362,35 +433,63 @@ class PPORunner(object):
       self.reward_model = InfoNCE(
         encoder = enc, 
         prior_encoder = prior_enc,
-        sample_model = self._sample_model, 
-        sampler = self.gaussian_diffusion,
+        sample_model = None, 
+        sampler = None,
         num_samples = self._params['num_samples'], 
         temperature = self._params['info_nce_temperature']
       )
     else : 
       raise NotImplementedError(f"Reward Model architecture {self._params['reward_model_architecture']} not found")
 
+
     assert self._params['reward_model_path'] is not None, "Expected reward model path"
     reward_model_dict = torch.load(self._params['reward_model_path'], weights_only = False, map_location = self._params['device'])
-    self.reward_model.load_state_dict(reward_model_dict['model'])
+    self.reward_model.encoder.load_state_dict(reward_model_dict['encoder'])
+    self.reward_model.prior_encoder.load_state_dict(reward_model_dict['prior_encoder'])
 
     self.reward_model.eval()
     for p in self.reward_model.parameters(): 
       p.requires_grad_(False)
 
+    self.reward_model.to(self._params['device'])
+
     # diffusion_model 
-    if self._params['model_architecture'] == 'transformer': 
-      self.diffusion_model = diffusion_transformer(self._params)
-    elif self._params['model_architecture'] == 'gcn_transformer': 
-      self.diffusion_model = gcn_transformer_diffusion(self._params)
-    else : 
-      raise NotImplementedError(f"Model architecture {self._params['model_architecture']} not found")
-    assert self._params['diffusion_model_path'] is not None, "Expected reward model path"
-    diffusion_model_dict = torch.load(self._params['diffusion_model_path'], weights_only = False, map_location = self._params['device'])
-    if self._params['diffusion_load_ema_flag'] == 1: 
-      self.diffusion_model.load_state_dict(diffusion_model_dict['ema_model'])
-    else : 
-      self.diffusion_model.load_state_dict(diffusion_model_dict['model'])
+    # if self._params['model_architecture'] == 'transformer': 
+    #   self.diffusion_model = diffusion_transformer(self._params)
+    # elif self._params['model_architecture'] == 'gcn_transformer': 
+    #   self.diffusion_model = gcn_transformer_diffusion(self._params)
+    # else : 
+    #   raise NotImplementedError(f"Model architecture {self._params['model_architecture']} not found")
+    # assert self._params['diffusion_model_path'] is not None, "Expected reward model path"
+    # diffusion_model_dict = torch.load(self._params['diffusion_model_path'], weights_only = False, map_location = self._params['device'])
+    # if self._params['diffusion_load_ema_flag'] == 1: 
+    #   self.diffusion_model.load_state_dict(diffusion_model_dict['ema_model'])
+    # else : 
+    #   self.diffusion_model.load_state_dict(diffusion_model_dict['model'])
+
+    self.diffusion_model = MotionTransformer(
+      input_feats = self._params['pose_dim'], 
+      num_frames = self._params['num_dct_channels'], 
+    )
+    model_dict = torch.load(self._params['diffusion_model_path'], weights_only = True, map_location = self._params['device'])
+    self.diffusion_model.load_state_dict(model_dict)
+    self.diffusion_model.to(self._params['device'])
+
+    # # we want diverge sample for contrastive learning, set to true means h36M 
+    # self.gaussian_diffusion = Diffusion(
+    #   noise_steps = self._params['diffusion_num_timesteps'],
+    #   motion_size = (self._params['num_dct_channels'], self._params['pose_dim']),  
+    #   device = self._params['device'], 
+    #   padding = self._params['padding'],
+    #   EnableComplete = True,
+    #   deterministic = True, 
+    #   ddim_timesteps = self._params['ddim_num_timesteps'],
+    #   scheduler = self._params['noise_scheduler'],
+    #   mod_test = self._params['mod_test'],
+    #   dct = self.dct,
+    #   idct = self.idct,
+    #   n_pre = self._params['num_dct_channels'], 
+    # )
 
 
     self.reference_diffusion_model = copy.deepcopy(self.diffusion_model)
@@ -413,6 +512,8 @@ class PPORunner(object):
     # value_function_approximator
     if self._params['value_model_architecture'] == 'mlp': 
       self.value_model = get_linear_value_model(self._params)
+    elif self._params['value_model_architecture'] == 'mlp_v1': 
+      self.value_model['value_model_architecture'] = get_linear_value_model_v1(self._params)
     elif self._params['value_model_architecture'] == 'transformer': 
       self.value_model = get_transformer_value_model(self._params)
     else : 
@@ -536,7 +637,8 @@ class PPORunner(object):
     fde = fde.mean()
 
     return diversity, ade, fde, mmade, mmfde
-    
+
+  @torch.no_grad()
   def compute_stats(self, sampling_model, multimodal_dict): 
       ground_truth_group = multimodal_dict['gt_group']
       data_group = multimodal_dict['data_group']
@@ -752,7 +854,6 @@ class PPORunner(object):
     result_trajectory = result_trajectory.cpu().numpy()
     result_trajectory = result_trajectory[None, ...] # [1, K, 125, 48]
     return result_trajectory
-
 
   def compute_train_stats(self): 
     if self.curr_epoch % self._params['save_gif_interval'] == 0: 

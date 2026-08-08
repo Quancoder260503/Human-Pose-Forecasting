@@ -6,7 +6,7 @@ class DiffusionRunner(ProbabilisticRunner):
     self._logger.info("Training using Diffusion Process")
 
   def init_algo(self):
-    self.policy_diffusion = GaussianDiffusion(
+    self.gaussian_diffusion = GaussianDiffusion(
       noise_schedule = self._params['noise_scheduler'],  
       rescale_timesteps = self._params['rescale_timesteps'], 
       num_diffusion_steps = self._params['diffusion_num_timesteps'],
@@ -38,13 +38,22 @@ class DiffusionRunner(ProbabilisticRunner):
         trajectory_dct = torch.matmul(self.dct[:self.num_dct_channels], trajectory) 
         trajectory_dct_mod = torch.matmul(self.dct[:self.num_dct_channels], trajectory_pad) 
 
-        if np.random.random() > self._params['mod_train']:
-          trajectory_dct_mod = None 
-      
+        if self._params['drop_cond_method'] == 'sample': 
+          batch_size = trajectory_dct.shape[0]  # batch size
+          drop_mask = torch.rand(batch_size, device = trajectory_dct.device) > self._params['mod_train']
+          mask = drop_mask.view(batch_size, *([1] * (trajectory_dct.dim() - 1)))  
+          null_cond = torch.zeros_like(trajectory_dct_mod)  
+          trajectory_dct_mod = torch.where(mask, null_cond, trajectory_dct_mod)
+        elif self._params['drop_cond_method'] == 'batch':
+          if np.random.random() > self._params['mod_train']:
+            trajectory_dct_mod = None 
+        else:
+          raise NotImplementedError("Unknown conditional dropping method")
+        
       timesteps = self.sampling_timesteps(self._params['batch_size']) 
       noise = torch.randn_like(trajectory_dct).to(self._params['device'], dtype = torch.float32)
       x_t = self.gaussian_diffusion.q_sample(x_start = trajectory_dct, timesteps = timesteps, gaussian_noise = noise)
-      pred_noise = self._model(input = x_t, timesteps = timesteps, memory = trajectory_dct_mod)
+      pred_noise = self._model(x_t, timesteps, trajectory_dct_mod)
       loss = self.criterion(pred_noise, noise)
       loss.backward()
       self._optimizer_fn.step()
@@ -83,7 +92,7 @@ class DiffusionRunner(ProbabilisticRunner):
         timesteps = self.sampling_timesteps(self._params['batch_size']) 
         noise = torch.randn_like(trajectory_dct).to(self._params['device'], dtype = torch.float32)
         x_t = self.gaussian_diffusion.q_sample(x_start = trajectory_dct, timesteps = timesteps, gaussian_noise = noise)
-        pred_noise = self._model(input = x_t, timesteps = timesteps, memory = trajectory_dct_mod)
+        pred_noise = self._model(x_t, timesteps, trajectory_dct_mod)
         loss = self.criterion(pred_noise, noise)
         self.val_losses.update(loss.item())
         self._tblogger.add_scalar('Loss/val', loss.item(), self.curr_epoch)

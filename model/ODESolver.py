@@ -189,3 +189,5 @@ class RungeKutta4Solver(FixedStepSizeODESolver):
     k_4 = func(y_0 + dt[..., None, None] * (k_1 - k_2 + k_3), t_1, cond)
     return (k_1 + 3 * (k_2 + k_3) + k_4) * dt[..., None, None] * 0.125, v_0
 
+class EulerMaruyama(): 
+  pass 

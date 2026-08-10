@@ -451,7 +451,7 @@ class DatasetH36M_Multi(Dataset):
         [trajectory_multimodal, np.zeros_like(trajectory[None, ...][[0] * (n_modality - trajectory_multimodal.shape[0])])], 
         axis = 0
       )
-
+   
       return trajectory[None, ...], trajectory_multimodal
     else : 
       return trajectory[None, ...], None 

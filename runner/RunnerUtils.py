@@ -521,27 +521,28 @@ def generate_pad(padding, num_observed_frames, num_predict_frames):
   
   return idx_pad, zero_index
 
+class RunningStats:
+  """Tracks a running mean/std via exponential moving average, for cross-batch-consistent normalization."""
+  def __init__(self, momentum = 0.99, eps=1e-6):
+    self.momentum = momentum
+    self.eps = eps
+    self.mean = None
+    self.var = None
 
-class RunningMeanStd(object):
-  def __init__(self, eps = 1e-4):
-    self.mean = 0.0
-    self.var = 1.0
-    self.count = eps
-
+  @torch.no_grad()
   def update(self, x):
-    batch_mean = x.mean().item()
-    batch_var = x.var().item()
-    batch_count = x.numel()
+    batch_mean = x.mean()
+    batch_var = x.var(unbiased = False)
+    if self.mean is None:
+      self.mean = batch_mean
+      self.var = batch_var
+    else:
+      self.mean = self.momentum * self.mean + (1 - self.momentum) * batch_mean
+      self.var = self.momentum * self.var + (1 - self.momentum) * batch_var
 
-    delta = batch_mean - self.mean
-    tot_count = self.count + batch_count
-
-    new_mean = self.mean + delta * batch_count / tot_count
-    m_a = self.var * self.count
-    m_b = batch_var * batch_count
-    M2 = m_a + m_b + delta ** 2 * self.count * batch_count / tot_count
-    new_var = M2 / tot_count
-    self.mean, self.var, self.count = new_mean, new_var, tot_count
+  @property
+  def std(self):
+    return (self.var + self.eps).sqrt()
 
   def normalize(self, x):
-    return (x - self.mean) / (self.var ** 0.5 + 1e-8)
+    return (x - self.mean) / (self.std + self.eps)

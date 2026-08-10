@@ -121,7 +121,7 @@ if __name__ == '__main__':
     choices = ['step', 'exponential', 'linear', 'decay', 'milestones'])
   parser.add_argument('--step_gamma', default = 0.1, type = float)
   parser.add_argument('--exp_gamma', default = 0.95, type = float)
-  parser.add_argument('--milestones', type = list, default = [150, 200, 250, 400, 650, 850])
+  parser.add_argument('--milestones', type = list, default = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000])
   parser.add_argument('--milestone_gamma', type = float, default = 0.8)
   parser.add_argument('--end_learning_rate', type = float, default = 1e-6)
 
@@ -236,7 +236,7 @@ if __name__ == '__main__':
     choices = ['AdamW', 'Adam', 'RMSProp', 'SGD'])
   ppo.add_argument('--value_learning_rate', type = float, default = 1e-3)
   ppo.add_argument('--value_model_architecture', type = str, default = 'mlp',
-    choices = ['mlp', 'transformer'])
+    choices = ['mlp', 'transformer', 'mlp_v1'])
   ppo.add_argument('--value_flag', type = int, default = 1, choices = [0, 1],
     help = "1 = subtract the learned value baseline from the reward to form the advantage, "
            "0 = use the raw reward as the advantage.")
@@ -246,27 +246,28 @@ if __name__ == '__main__':
   ppo.add_argument('--value_step', type = int, default = 5,
     help = "Number of value-function gradient steps per epoch.")
   ppo.add_argument('--value_batch_size', type = int, default = 512)
-  ppo.add_argument('--value_network_layer_dims', type = list, default = [2048, 512, 128])
+  ppo.add_argument('--value_network_layer_dims', type = list, default = [2048, 1024, 512])
+  ppo.add_argument('--embed_dim', type = int, default = 1024)
   ppo.add_argument('--value_activation', type = str, default = 'GeLU')
   ppo.add_argument('--policy_step', type = int, default = 5,
     help = "Number of PPO policy update steps per epoch.")
   ppo.add_argument('--policy_batch_size', type = int, default = 512)
   ppo.add_argument('--gradient_accumulation_steps', type = int, default = 1)
-  ppo.add_argument('--buffer_size', type = int, default = 20000,
+  ppo.add_argument('--buffer_size', type = int, default = 3600,
     help = "Max number of (state, next_state) transitions kept in the rollout buffer.")
 
   ppo.add_argument('--ratio_clip', type = float, default = 1e-4,
     help = "PPO importance-ratio clip range")
-  ppo.add_argument('--reward_weight', type = float, default = 10.)
+  ppo.add_argument('--reward_weight', type = float, default = 1.)
   ppo.add_argument('--kl_weight', type = float, default = 0.01)
   ppo.add_argument('--kl_warmup', type = int, default = -1,
     help = "Global step after which the KL penalty against the reference model is added to the loss.")
-  ppo.add_argument('--clip_norm', type = float, default = 1.,
+  ppo.add_argument('--clip_norm', type = float, default = 0.1,
     help = "Gradient-norm clipping value for the policy optimizer during PPO.")
   ppo.add_argument('--max_train_steps', type = int, default = 100000,
     help = "Total policy-optimizer steps before training stops.")
 
-  ppo.add_argument('--visual_weight', type = float, default = 2.0,
+  ppo.add_argument('--visual_weight', type = float, default = 1.0,
     help = "Weight on the InfoNCE-based reward term in compute_rewards.")
   ppo.add_argument('--dct_weight', type = float, default = 1.0,
     help = "Weight on the DCT-space reconstruction reward term.")
@@ -275,7 +276,7 @@ if __name__ == '__main__':
 
   ppo.add_argument('--eta', type = float, default = 1.0,
     help = "DDIM stochasticity parameter used during rollout collection.")
-  ppo.add_argument('--cfg_scale', type = float, default = 0.7)
+  ppo.add_argument('--cfg_scale', type = float, default = 0.8)
   ppo.add_argument('--use_classifier_free_guidance', type = str2bool, default = False)
   ppo.add_argument('--deterministic', type = str2bool, default = False)
   ppo.add_argument('--enable_complete', type = str2bool, default = False)
@@ -332,7 +333,7 @@ if __name__ == '__main__':
     runner = RewardRunner(
       params = params,
       dataset = dataset,
-      multimodal_dict = multimodal_dict,
+      multimodal_dict = None, #multimodal_dict,
       tblogger = tb_logger,
       logger = logger,
     )
@@ -341,6 +342,7 @@ if __name__ == '__main__':
     elif args.mode == 'eval':
     #  runner.compute_stats(multimodal_dict = multimodal_dict)
       runner.diffusion_samples_evaluate()
+      #runner.gt_eval()
     else:
       raise NotImplementedError(f"--mode {args.mode} is not supported for --type reward")
 

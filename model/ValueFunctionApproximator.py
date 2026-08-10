@@ -54,25 +54,30 @@ class LinearValueApproximator(nn.Module):
 
 
 class ConditionalLinearv1(nn.Module): 
-  def __init__(self, input_dim, output_dim, embed_dim, activation):
+  def __init__(self, input_dim, output_dim, embed_dim):
     super(ConditionalLinearv1, self).__init__() 
     self.input_dim = input_dim 
-    self.act = activation
     self.output_dim = output_dim 
     self.embed_dim = embed_dim
-    self.linear_1 = nn.Linear(input_dim, output_dim) 
-    self.norm_1 = nn.LayerNorm(output_dim)
+    self.norm = nn.LayerNorm(output_dim)
+    self.in_layers = nn.Linear(input_dim, output_dim)
     self.embedding_proj = nn.Sequential(
       nn.SiLU(), 
       nn.Linear(embed_dim, output_dim * 2), 
     )
+    self.out_layers = nn.Sequential(
+      nn.SiLU(),
+      nn.Dropout(p = 0.1),
+      zero_module(nn.Linear(output_dim, output_dim)),
+    )
+
 
   def forward(self, x, y): 
-    out = self.linear_1(x) 
-    out = self.act(out) 
-    out = self.norm_1(out)
+    out = self.norm(self.in_layers(x))
     scale, shift = self.embedding_proj(y).chunk(2, dim = -1) 
-    out = out * scale.view(-1, self.output_dim) + shift.view(-1, self.output_dim)
+    out = out * (1. + scale.view(-1, self.output_dim)) + shift.view(-1, self.output_dim)
+    
+    out = self.out_layers(out)
     return out 
   
 
@@ -84,17 +89,15 @@ class LinearValueApproximatorv1(nn.Module):
     self.embed_dim = embed_dim
     self.act = get_activation(activation)
 
-    self.linear_0 = ConditionalLinearv1(input_dim, layer_dims[0], embed_dim, self.act) 
+    self.linear_0 = ConditionalLinearv1(input_dim, layer_dims[0], embed_dim) 
     for i in range(1, len(layer_dims)): 
       setattr(self, f"linear_{i}", ConditionalLinearv1(
         input_dim = layer_dims[i - 1], 
         output_dim = layer_dims[i], 
         embed_dim = embed_dim, 
-        activation = self.act, 
       ))
-    self.final_layer = nn.Linear(layer_dims[-1], 1) 
-    torch.nn.init.xavier_normal_(self.final_layer.weight) 
-    self.conditional_embedding = nn.Linear(input_dim, embed_dim)
+    self.final_layer = ConditionalLinearv1(layer_dims[-1], 1, embed_dim = embed_dim)
+  #  self.conditional_embedding = nn.Linear(input_dim, embed_dim)
 
     self.time_embed = nn.Sequential(
       nn.Linear(embed_dim,  2 * embed_dim), 
@@ -106,15 +109,13 @@ class LinearValueApproximatorv1(nn.Module):
     x = x.view(x.shape[0], -1) 
     cond = cond.view(cond.shape[0], -1)
     embed = self.time_embed(timestep_embedding(timesteps, self.embed_dim)) 
-    embed = embed + self.conditional_embedding(cond)
-
-    out = self.act(self.linear_0(x, embed))
+    x = torch.cat([x, cond], dim = -1)
+    out = self.act(self.linear_0(x, embed)) 
     for i in range(1, self.num_layers):  
       out = getattr(self, f"linear_{i}")(out, embed) 
       out = self.act(out) 
-    return self.final_layer(out)   
-
-
+    out = self.final_layer(out, embed) 
+    return out   
   
 class TransformerValueApproximator(nn.Module): 
   def __init__(
@@ -167,7 +168,7 @@ class TransformerValueApproximator(nn.Module):
 
   def forward(self, x, timesteps, cond): 
     x = self.transformer(x, timesteps, cond) 
-    x = self.avg_module(x) 
+    x = self.avg_module(x).squeeze(-1) 
     out = self.value_approx(x) 
     return out 
 
@@ -182,7 +183,7 @@ def get_linear_value_model(params):
 
 def get_linear_value_model_v1(params):
   return LinearValueApproximatorv1(
-    input_dim = params['num_dct_channels'] * params['pose_dim'], 
+    input_dim = params['num_dct_channels'] * params['pose_dim'] * 2, 
     layer_dims = params['value_network_layer_dims'], 
     activation = params['value_activation'], 
     embed_dim = params['embed_dim'],  

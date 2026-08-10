@@ -311,8 +311,8 @@ class RewardRunner(object):
       motion_size = (self._params['num_dct_channels'], self._params['pose_dim']),  
       device = self._params['device'], 
       padding = self._params['padding'],
-      EnableComplete = True,
-      deterministic = True, 
+      EnableComplete = False,
+      deterministic = False, 
       ddim_timesteps = self._params['ddim_num_timesteps'],
       scheduler = self._params['noise_scheduler'],
       mod_test = self._params['mod_test'],
@@ -351,7 +351,7 @@ class RewardRunner(object):
         temperature = self._params['info_nce_temperature']
       )
     else : 
-      raise NotImplementedError(f"Reward Model architecture {self._params['reward_model_architecture']} not found")
+      raise NotImplementedError(f"Reward Model architecture {self._params['_model_architecture']} not found")
 
   def select_optimizer(self): 
     if self._params['optimizer'] == 'AdamW': 
@@ -489,6 +489,106 @@ class RewardRunner(object):
       df2 = pd.concat([df2, df1], ignore_index = True)
       df2.to_csv(file_stat, index = False)
 
+  def compute_rewards(self, cond_trajectory, gt_trajectory, out_trajectory): 
+    if isinstance(self._model, InfoNCE): 
+      enc_cond_trajectory = self._model.prior_encoder(cond_trajectory) # [b, code_size]
+      enc_out_trajectory = self._model.encoder(out_trajectory) # [b, code_size]
+      enc_cond_trajectory = F.normalize(enc_cond_trajectory, dim = -1) 
+      enc_out_trajectory = F.normalize(enc_out_trajectory, dim = -1) 
+      prob = torch.matmul(enc_out_trajectory, enc_cond_trajectory.t())
+      prob = torch.diag(prob)  
+    elif isinstance(self._model, ConditioningInfoNCE):
+      prob = self._model.cond_prob_estimator(out_trajectory, cond_trajectory)
+
+  #  prob = F.sigmoid(prob) 
+
+    loss_dct = F.mse_loss(gt_trajectory, out_trajectory, reduction = 'none').mean(dim = [1, 2])
+    gt_pose = torch.matmul(self.idct[:, :self.num_dct_channels], gt_trajectory)
+    gen_pose = torch.matmul(self.idct[:, :self.num_dct_channels], out_trajectory)
+    loss_3d = F.mse_loss(gt_pose, gen_pose, reduction = 'none').mean(dim = [1, 2]) 
+
+    #result = torch.exp(prob.detach() * self._params['visual_weight']) + 
+    result = torch.exp(-loss_dct.detach() * self._params['dct_weight']) + \
+       torch.exp(-loss_3d.detach() * self._params['3d_weight'])  
+    # print(result.min(), result.max())
+    # result = (result - self.mean) / self.std 
+    return 
+  
+  @torch.no_grad()
+  def gt_eval(self):
+    """
+    Evaluate compute_rewards() with out_trajectory == gt_trajectory, i.e.
+    measure the reward function's own score on ground-truth data. This gives
+    a principled ceiling/anchor for the reward's mean and std, since GT
+    represents zero reconstruction loss and (presumably) maximal similarity
+    to its own conditioning signal.
+    """
+    self.prepare_eval_step()
+    self._model.prior_encoder.eval()
+    self._model.encoder.eval()
+
+    reward_meter = AverageMeter()
+    all_rewards = []
+
+    for index, trajectory_np in enumerate(self.val_generator):
+      trajectory_np = trajectory_np[..., 1:, :].reshape([
+        trajectory_np.shape[0],
+        self._params['num_observed_frames'] + self._params['num_predict_frames'],
+        -1,
+      ])
+      trajectory = torch.tensor(trajectory_np, device = self._params['device'], dtype = torch.float32)
+      trajectory_pad = padding_trajectory(
+        trajectory,
+        self._params['padding'],
+        self._params['idx_pad'],
+        self._params['zero_index'],
+      )
+
+      trajectory_dct = torch.matmul(self.dct[:self.num_dct_channels], trajectory)
+      trajectory_dct_mod = torch.matmul(self.dct[:self.num_dct_channels], trajectory_pad)
+
+      raw_result = self.compute_rewards(
+        cond_trajectory = trajectory_dct_mod,
+        gt_trajectory = trajectory_dct,
+        out_trajectory = trajectory_dct,
+      )
+
+      batch_mean = raw_result.mean().item()
+      reward_meter.update(batch_mean)
+      all_rewards.append(raw_result.detach().cpu())
+
+      if index % self._params['log_frequency'] == 0:
+        self._logger.info(
+          f"[gt_eval] step {index} | batch_mean : {batch_mean:.4f} | running_avg : {reward_meter.avg:.4f}"
+        )
+
+
+    all_rewards = torch.cat(all_rewards, dim = 0)
+    gt_mean = all_rewards.mean().item()
+    gt_std = all_rewards.std().item()
+
+    self._logger.info(f"[gt_eval] Final GT reward stats -> mean: {gt_mean:.4f} | std: {gt_std:.4f} | n: {all_rewards.shape[0]}")
+
+    # Persist so you can compare across runs / feed into a decay schedule
+    file_latest = f"{self._params['result_dir']}/gt_eval_latest.csv"
+    file_stat = f"{self._params['result_dir']}/gt_eval_stats.csv"
+
+    latest_data = {'gt_mean': gt_mean, 'gt_std': gt_std, 'n_samples': all_rewards.shape[0], 'epoch': self.curr_epoch}
+    df1 = pd.DataFrame([latest_data])
+    df1.to_csv(file_latest, index = False)
+
+    if os.path.exists(file_stat) is False:
+      df1.to_csv(file_stat, index = False)
+    else:
+      df2 = pd.read_csv(file_stat)
+      df2 = pd.concat([df2, df1], ignore_index = True)
+      df2.to_csv(file_stat, index = False)
+
+    return gt_mean, gt_std
+    
+    
+  
+
   @torch.no_grad()
   def diffusion_samples_evaluate(self, top_k = (1, 2, 3)): 
     self.prepare_eval_step()
@@ -514,8 +614,7 @@ class RewardRunner(object):
         traj_dct_mod = traj_dct_mod,
         mode_dict = mode_dict,   
       )
-
-      # gt_pose = torch.matmul(self.idct[:, :self.num_dct_channels], trajectory)          # [1, total_frames, pose_dim]
+      gt_pose = torch.matmul(self.idct[:, :self.num_dct_channels], trajectory_dct)          # [1, total_frames, pose_dim]
       # sample_pose = torch.matmul(self.idct[:, :self.num_dct_channels], traj_samples_dct)  # [num_samples, total_frames, pose_dim]
 
       # n_obs = self._params['num_observed_frames']
@@ -528,8 +627,15 @@ class RewardRunner(object):
       #   f"obs_dist mean={obs_dist.mean().item():.6f} max={obs_dist.max().item():.6f} | "
       #   f"fut_dist mean={fut_dist.mean().item():.6f} min={fut_dist.min().item():.6f} max={fut_dist.max().item():.6f}"
       # )
+      sample_pose = torch.matmul(self.idct[:, :self.num_dct_channels], traj_samples_dct) 
+      dist_diverse = torch.pdist(sample_pose.reshape(sample_pose.shape[0], -1))
+      dist_gt = torch.linalg.norm(gt_pose - sample_pose, dim = -1)
+      ade, _ = dist_gt.mean(dim = 1).min(dim = 0)
+
+      print(dist_diverse.mean(), ade)
 
       traj_dct = torch.cat([traj_samples_dct, trajectory_dct], dim = 0)
+      traj_dct_mod = torch.cat([traj_dct_mod, traj_dct_mod[0, ...].unsqueeze(0)], dim = 0)
 
       enc_trajectory_dct = self._model.encoder(traj_dct)
       enc_trajectory_dct_mod = self._model.prior_encoder(traj_dct_mod)
@@ -538,20 +644,20 @@ class RewardRunner(object):
       enc_trajectory_dct_mod = F.normalize(enc_trajectory_dct_mod, dim = -1)
       
       prior_to_all = torch.matmul(enc_trajectory_dct_mod, enc_trajectory_dct.t()) / self._model.temperature
-      prior_to_all = F.softmax(prior_to_all, dim = -1) # [1, 1 + num_candidates]
-      scores = prior_to_all[0]  # [1 + num_candidates]
+      prior_to_all = F.softmax(prior_to_all, dim = -1)
+      scores = torch.diag(prior_to_all)  # [1 + num_candidates]    
       prob = scores[-1]
       rank = (scores > scores[-1]).sum().item() + 1  
       stats_meter['MeanRank'].update(rank)
       scores = sorted(scores, reverse = True)
 
       for k in top_k:
-  
         stats_meter[f'Top{k}_Accuracy'].update(scores[k - 1].item())
       stats_meter['Probability'].update(prob.item())
+
    
-      if index % 10 == 0: 
-        print(index, stats_meter['Top1_Accuracy'].avg, stats_meter['Top2_Accuracy'].avg, stats_meter['Top3_Accuracy'].avg, stats_meter['MeanRank'].avg, stats_meter['Probability'].avg)
+    #  if index % 10 == 0: 
+        #print(index, stats_meter['Top1_Accuracy'].avg, stats_meter['Top2_Accuracy'].avg, stats_meter['Top3_Accuracy'].avg, stats_meter['MeanRank'].avg, stats_meter['Probability'].avg)
 
     for stats in stats_names:
       str_stats = f'{stats}: {stats_meter[stats].avg:.4f}'

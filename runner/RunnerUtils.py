@@ -260,13 +260,13 @@ def render_animation(
   fix_0 = True, 
   azim = 0.0, 
   output = None, 
-  sampling_mode = 'pred', 
+  sampling_sampling_mode = 'pred', 
   size = 2, 
   num_cols = 5, 
   bitrate = 3000, 
   fix_index = None 
 ): 
-  if sampling_mode == 'switch': 
+  if sampling_sampling_mode == 'switch': 
     fix_0 = False 
   if fix_index is not None : 
     fix_list = [
@@ -310,10 +310,10 @@ def render_animation(
     ax.set_yticklabels([])
     ax.set_zticklabels([])
     ax.dist = 5.0
-    if sampling_mode == 'switch':
+    if sampling_sampling_mode == 'switch':
       if index == 0:
         ax.set_title('target', y = 1.0, fontsize = 12)
-    if sampling_mode == 'pred' or 'fix' in sampling_mode or sampling_mode == 'control' or sampling_mode == 'zero_shot':
+    if sampling_sampling_mode == 'pred' or 'fix' in sampling_sampling_mode or sampling_sampling_mode == 'control' or sampling_sampling_mode == 'zero_shot':
       if index == 0 or index == 1:
         ax.set_title(title, y = 1.0, fontsize = 12)
     ax.set_axis_off()
@@ -338,7 +338,7 @@ def render_animation(
 
   def update_video(index): 
     nonlocal initialized 
-    if sampling_mode == 'switch':
+    if sampling_sampling_mode == 'switch':
       if index < num_observed_frames:
         lcol, mcol, rcol = hist_lcol, hist_mcol, hist_rcol
       elif index > 75:

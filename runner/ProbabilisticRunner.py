@@ -493,9 +493,14 @@ class ProbabilisticRunner(object):
           str_stats = f'{stats}: ' + ' '.join([f'{x}: {y.avg:.4f}' for x, y in stats_meter[stats].items()])
           self._logger.info(str_stats)
 
+        for stats in statistics_names:
+          str_stats = f'{stats}: ' + ' '.join(
+              [f'{x}: {y.avg:.4f}' for x, y in stats_meter[stats].items()]
+          )
+          self.logger.info(str_stats)
 
-    file_latest = f"{self._params['result_dir']}/{exp_desc}_stats_latest.csv"
-    file_stat = f"{self._params['result_dir']}/{exp_desc}_stats.csv"
+    file_latest = f"{self._params['result_dir']}/stats_latest.csv"
+    file_stat = f"{self._params['result_dir']}/stats.csv"
     with open(file_latest, 'w') as csv_file:
       writer = csv.DictWriter(csv_file, fieldnames = ['Metric'] + [self._params['algo']])
       writer.writeheader()

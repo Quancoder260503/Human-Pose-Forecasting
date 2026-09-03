@@ -1,3 +1,5 @@
+# remove after finish testing 
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -160,7 +162,6 @@ class GCN(nn.Module):
 class GCNDiffusionTransformerLayer(nn.Module):
   def __init__(
     self, 
-    input_dim, 
     model_dim, 
     ffn_dim, 
     embedding_dim, 
@@ -172,9 +173,9 @@ class GCNDiffusionTransformerLayer(nn.Module):
     use_adaptive, 
     se_ratio, 
     use_max_pooling, 
+    use_concat, 
   ):
     super(GCNDiffusionTransformerLayer, self).__init__()
-    self.input_dim = input_dim 
     self.model_dim = model_dim 
     self.ffn_dim = ffn_dim 
     self.embedding_dim = embedding_dim
@@ -186,9 +187,8 @@ class GCNDiffusionTransformerLayer(nn.Module):
     self.use_excitation = use_excitation 
     self.use_max_pooling = use_max_pooling 
     self.se_ratio = se_ratio
+    self.use_concat = use_concat
 
-    #self.proj_m = nn.Linear(self.input_dim, self.model_dim)
-    #self.proj_o = nn.Linear(self.model_dim, self.input_dim)
     self.attention_layer = (AdaptiveMultiHeadAttention if self.use_adaptive else MultiHeadAttention) (
       model_dim = model_dim, 
       num_head  = num_head, 
@@ -210,21 +210,23 @@ class GCNDiffusionTransformerLayer(nn.Module):
         act_fn = activation, 
         use_max_pooling = use_max_pooling, 
       ) 
+    if self.use_concat: 
+      self.concat = nn.Linear(self.model_dim * 2, self.model_dim)
 
-  def forward(self, input, embedding): 
+
+  def forward(self, x, embedding): 
     """
     :param input     : a tensor of shape (B, num_dct_channels, input_dim) 
     :param embedding : a tensor of shape (B, embedding_dim) 
     :return : 
       a tensor of shape (B, T, input_dim)
     """       
-   # x = self.proj_m(input)
-    x = input 
+    if self.use_concat: 
+      x = self.concat(x) 
     if self.use_excitation: 
       x = self.excitation_layer(x)
     out = self.attention_layer(x, embedding)
     out = self.ffn_layer(out, embedding)
-    #out = self.proj_o(out) 
     return out 
 
 class ConditionalTransformerLayer(nn.Module):
@@ -254,7 +256,6 @@ class ConditionalTransformerLayer(nn.Module):
     out = self.linear(norm_input)
     return out 
 
-
 class GCNDiffusionTransformer(nn.Module): 
   def __init__(
     self, 
@@ -275,8 +276,11 @@ class GCNDiffusionTransformer(nn.Module):
     se_ratio = 4, 
     use_max_pooling = False,
     use_adaptive = True,  
-    pre_gcn = False, 
     flatten_arc = False, 
+    num_classes = False,
+    use_action = False,     
+    use_mid_block = False, 
+    use_concat = False, 
   ):
     super(GCNDiffusionTransformer, self).__init__()
     self.input_dim = input_dim
@@ -297,8 +301,11 @@ class GCNDiffusionTransformer(nn.Module):
     self.use_max_pooling = use_max_pooling 
     self.num_gcn_states = num_gcn_stages
     self.gcn_dim = gcn_dim
-    self.pre_gcn = pre_gcn
     self.flatten_arc = flatten_arc
+    self.num_classes = num_classes
+    self.use_action = use_action
+    self.use_mid_block = use_mid_block
+    self.use_concat = use_concat
 
     if self.learnable_embedding : 
       self.sequence_embedding = nn.Parameter(torch.randn(num_features, model_dim))
@@ -323,20 +330,6 @@ class GCNDiffusionTransformer(nn.Module):
     )
 
     self.posterior_decoder_block = nn.ModuleList()
-    # pre-gcn blocks 
-    if self.pre_gcn: 
-      self.pre_gcn_blocks = GCN(
-        input_feature = self.num_features,
-        hidden_feature = self.gcn_dim,
-        embedding_dim = self.time_embedding_dim, 
-        p_dropout = self.dropout_p, 
-        normalizer = ScaleShiftLayer, 
-        num_stage = self.num_gcn_states,
-        node_n = self.input_dim, 
-        activation = get_activation(self.activation), 
-      ) 
-      self.vertices_embeddings = nn.Parameter(torch.randn(self.input_dim, self.num_features))
-
 
     self.attn_blocks = []
     # post-gcn blocks
@@ -351,10 +344,9 @@ class GCNDiffusionTransformer(nn.Module):
       activation = get_activation(self.activation), 
     ) 
 
-    for _ in range(self.num_layers):
-      self.attn_blocks.append(
+    for index in range(self.num_layers):
+      self.posterior_decoder_block.append(
         GCNDiffusionTransformerLayer(
-          input_dim = self.input_dim, 
           model_dim = self.model_dim, 
           ffn_dim = self.ffn_dim, 
           embedding_dim = self.time_embedding_dim,
@@ -366,22 +358,41 @@ class GCNDiffusionTransformer(nn.Module):
           se_ratio = self.se_ratio, 
           use_max_pooling = self.use_max_pooling, 
           use_excitation = self.use_excitation, 
+          use_concat = (self.use_concat and index >= self.num_layers // 2), 
         )
       )
-    self.attn_blocks = nn.ModuleList(self.attn_blocks)
     self.pose_encoder = nn.Linear(input_dim, model_dim)
     self.proj_p = ConditionalTransformerLayer(
       model_dim = model_dim, 
       output_dim = input_dim, 
       embedding_dim = self.time_embedding_dim, 
     )
+    if self.use_mid_block: 
+      self.mid_block = GCNDiffusionTransformerLayer(
+        model_dim = self.model_dim, 
+        ffn_dim = self.ffn_dim, 
+        embedding_dim = self.time_embedding_dim,
+        num_head = self.num_heads, 
+        dropout = self.dropout_p, 
+        activation = self.activation, 
+        use_excitation = self.use_excitation, 
+        use_max_pooling = self.use_max_pooling, 
+        se_ratio = self.se_ratio,
+        num_channels = self.num_features, 
+        use_adaptive = self.use_adaptive, 
+        use_concat = False, 
+      )
+    if self.use_action: 
+      self.action_embed = torch.nn.Embedding(self.num_classes + 1, self.model_dim)
     
-  def forward(self, input, timesteps, memory = None):
+  def forward(self, input, timesteps, memory = None, actions = None):
     """
     :param input : a tensor of shape (B, num_dct_channels, num_joints * 3) 
     :param timesteps : a tensor of shape (B, ) 
     :param memory : if not None, can be the observed seqs information of shape (B, num_dct_channels, num_joints * 3)
     """
+    if self.use_action == False: 
+      assert actions is None 
 
     batch_size, num_dct_channels, _ = input.shape
 
@@ -397,30 +408,34 @@ class GCNDiffusionTransformer(nn.Module):
       enc_memory = memory.contiguous().view(batch_size, -1)
       total_embedding  = total_embedding + self.conditional_embedding(enc_memory)
 
-    x = input 
-    if self.pre_gcn:
-      x = x.permute(0, 2, 1) + self.vertices_embeddings.unsqueeze(0)[:, :self.input_dim, :]
-      x = x.permute(0, 2, 1)
-      x = self.pre_gcn_blocks(x, total_embedding)  
-    x = self.pose_encoder(x)
+    if self.use_action and actions is not None:
+      action_emb = self.action_embed(actions) * (actions != 0).float().unsqueeze(-1)
+      total_embedding = total_embedding + action_emb
+
+    x = self.pose_encoder(input)
     x = x + self.sequence_embedding.unsqueeze(0)[:, :num_dct_channels, :]
     
-    for i in range(self.num_layers): 
-      x = self.attn_blocks[i](x, total_embedding)
 
     if self.flatten_arc == False: 
       enc_list = [] 
-      for index, module in enumerate(self.posterior_decoder_block): 
-        if index < self.num_layers // 2: 
-          enc_list.append(x) 
-          x = module(x, total_embedding, memory)
-        else :  
-          x = module(x, total_embedding, memory)
+      for _, module in enumerate(self.posterior_decoder_block[: self.num_layers // 2]): 
+        enc_list.append(x) 
+        x = module(x, total_embedding)
+
+        
+      if self.use_mid_block: 
+        x = self.mid_block(x, total_embedding)
+
+      for _, module, in enumerate(self.posterior_decoder_block[self.num_layers // 2 : ]): 
+        if self.use_concat == False: 
+          x = module(x, total_embedding)
           x += enc_list[-1]  
-          enc_list.pop() 
+        else : 
+          x = module(torch.cat([x, enc_list[-1]], dim = -1), total_embedding)
+        enc_list.pop() 
     else : 
       for _, module in enumerate(self.posterior_decoder_block): 
-        x = module(x, total_embedding, memory)  
+        x = module(x, total_embedding)  
 
     out = self.proj_p(x, total_embedding) 
     out = self.post_gcn_blocks(out, total_embedding)
@@ -446,8 +461,11 @@ def gcn_transformer_diffusion(params):
     use_adaptive = params['use_adaptive'],
     num_gcn_stages = params['num_gcn_stages'],  
     gcn_dim = params['gcn_dim'], 
-    pre_gcn = params['pre_gcn'], 
     flatten_arc = params['flatten_arc'], 
+    num_classes = params['num_classes'], 
+    use_action = params['use_action'], 
+    use_mid_block = params['use_mid_block'], 
+    use_concat = params['use_concat'],  
   )
 
 

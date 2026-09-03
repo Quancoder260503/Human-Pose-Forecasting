@@ -9,14 +9,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-from data.MultiDataset import DatasetH36M, DatasetH36M_Multi
-#import data.NTURGDDataset as NTURGDDataset
+from data.MultiDataset import DatasetH36M, DatasetH36M_Multi, DatasetHumanEva, DatasetHumanEvaMulti
 from runner.RunnerUtils import *
 from runner.DiffusionRunner import *
-from runner.FlowMatchingRunner import *
-from runner.RewardModelRunner import *
-from runner.PPORunner import *
-
 
 def str2bool(v):
   if isinstance(v, bool):
@@ -54,6 +49,7 @@ def dataset_split(params):
     num_observed_frames = params['num_observed_frames'],
     num_predict_frames = params['num_predict_frames'],
     actions = 'all',
+    use_action = params['use_action'], 
     dim_per_joints = 3,  # (x, y, z)
   )
   dataset_test = dataset_class_(
@@ -61,8 +57,11 @@ def dataset_split(params):
     num_observed_frames = params['num_observed_frames'],
     num_predict_frames = params['num_predict_frames'],
     actions = 'all',
+    use_action = params['use_action'], 
     dim_per_joints = 3,  # (x, y, z)
   )
+
+  params['num_classes'] = len(dataset_train.action_lst)
 
   dataset_multi_test = DatasetH36M_Multi(
     mode = 'test',
@@ -89,12 +88,9 @@ def seed_set(seed):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('--type', type = str, default = 'diffusion',
-    choices = ['diffusion', 'flow_matching', 'reward', 'ppo'],
-    help = "Which pipeline to run: generative model pretraining (diffusion / "
-      "flow_matching), reward model training (reward), or RL "
-      "fine-tuning of a pretrained diffusion policy (ppo)."
+    choices = ['diffusion', 'motion_refine_diffusion'],
   )
-  parser.add_argument('--mode', default = 'train', type = str, choices = ['train', 'eval', 'demo_vis'])
+  parser.add_argument('--mode', default = 'train', type = str, choices = ['train', 'eval', 'demo_vis', 'dct_vis'])
   parser.add_argument('--sampling_mode', default = 'pred', choices = ['pred', 'switch', 'control', 'zero_shot'], type = str)  # pred / switch / control / zero_shot
   parser.add_argument('--algo', type = str, default = None,
     help = "Label used for logging/output filenames. Defaults to --type if unset."
@@ -102,7 +98,7 @@ if __name__ == '__main__':
 
   parser.add_argument('--model_prefix', type = str, default = '', required = True)
   parser.add_argument('--model_architecture', type = str, default = 'transformer',
-    choices = ['transformer', 'gcn_transformer', 'gcn'])
+    choices = ['transformer', 'gcn_transformer'])
   parser.add_argument('--batch_size', type = int, default = 64)
   parser.add_argument('--learning_rate', type = float, default = 3e-4)
   parser.add_argument('--train_steps_per_epoch', type = int, default = -1)
@@ -122,7 +118,7 @@ if __name__ == '__main__':
   parser.add_argument('--step_gamma', default = 0.1, type = float)
   parser.add_argument('--exp_gamma', default = 0.95, type = float)
   parser.add_argument('--milestones', type = list, default = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000])
-  parser.add_argument('--milestone_gamma', type = float, default = 0.8)
+  parser.add_argument('--milestone_gamma', type = float, default = 0.9)
   parser.add_argument('--end_learning_rate', type = float, default = 1e-6)
 
   parser.add_argument('--pose_embedding_type', type = str, default = 'simple')
@@ -133,7 +129,7 @@ if __name__ == '__main__':
   parser.add_argument('--pos_enc_beta', type = float, default = 10000)
   parser.add_argument('--device', type = str, default = 'cuda')
 
-  parser.add_argument('--optimizer', default = 'Adam', type = str)
+  parser.add_argument('--optimizer', default = 'AdamW', type = str)
   parser.add_argument('--betas', default = (0.9, 0.999), type = tuple)
 
   parser.add_argument('--snapshot_saving_steps', default = 10, type = int)
@@ -141,6 +137,9 @@ if __name__ == '__main__':
 
   parser.add_argument('--mod_train', default = 0.8, type = float)
   parser.add_argument('--mod_test', default = 1., type = float)
+  parser.add_argument('--mod_act_train', default = 0.6, type = float)
+  parser.add_argument('--mod_act_test', default = 1., type = float)
+
 
   parser.add_argument('--num_workers', type = int, default = 0)
 
@@ -152,13 +151,17 @@ if __name__ == '__main__':
 
   # --- Diffusion process ---
   parser.add_argument('--diffusion_num_timesteps', type = int, default = 1000)
-  parser.add_argument('--ddim_num_timesteps', type = int, default = 100)
+  parser.add_argument('--ddim_num_timesteps', type = int, default = 10)
   parser.add_argument('--timesteps_sampling', type = str, default = 'uniform_time_sampling')
   parser.add_argument('--noise_scheduler', type = str, default = 'cosine')
   parser.add_argument('--rescale_timesteps', type = str2bool, default = False)
   parser.add_argument('--drop_cond_method', type = str, default = 'sample')
+  parser.add_argument('--model_var_type', type = str, default = 'fixed_large')
 
   # --- Backbone model ---
+  parser.add_argument('--use_action', type = str2bool, default = False) 
+  parser.add_argument('--use_mid_block', type = str2bool, default = False) 
+  parser.add_argument('--use_concat', type = str2bool, default = False) 
   parser.add_argument('--num_dct_channels', type = int, default = 20)
   parser.add_argument('--num_joints', type = int, default = 16)
   parser.add_argument('--joint_dim', type = int, default = 3)  # (x, y, z)
@@ -176,17 +179,28 @@ if __name__ == '__main__':
   parser.add_argument('--se_ratio', type = int, default = 4)
   parser.add_argument('--use_excitation', type = str2bool, default = False)
   parser.add_argument('--use_max_pooling', type = str2bool, default = False)
-  parser.add_argument('--use_adaptive', type = str2bool, default = True)
-  parser.add_argument('--pre_gcn', type = str2bool, default = True)
+  parser.add_argument('--use_adaptive', type = str2bool, default = False)
+  parser.add_argument('--do_zero_module', type = str2bool, default = True)
+  parser.add_argument('--attention_resolution', type=int, nargs='+', default = [0, 1, 2, 3])
+  parser.add_argument('--use_pose_enc_dec', type = str2bool, default = False)
+
+
   parser.add_argument('--num_gcn_stages', type = int, default = 1)
   parser.add_argument('--gcn_dim', type = int, default = 128)
+  parser.add_argument('--gcn_dropout', type = float, default = 0.3)
+  parser.add_argument('--gcn_use_adaptive', type = str2bool, default = False)
 
-  # Flow matching ODE (type == flow_matching) 
-  parser.add_argument('--path_scheduler', type = str, default = 'cosine')
-  parser.add_argument('--ode_solver', type = str, default = 'rk4')
-  parser.add_argument('--num_sampling_steps', type = int, default = 10)
-  parser.add_argument('--path_refinement_steps', type = int, default = 1)
-  parser.add_argument('--interpolation', type = str, default = 'linear')
+  parser.add_argument('--num_samples', type = int, default = 4)
+  parser.add_argument('--n_pred', type = int, default = 20)
+  parser.add_argument('--n_prior', type = int, default = 20)
+
+
+  parser.add_argument('-future_weight', default = 100.0, type = float)
+  parser.add_argument('--past_weight', default = 1.0, type = float) 
+  parser.add_argument('--diversity_weight', default = 20.0, type = float) 
+  parser.add_argument('--min_threshold', default = 20.0, type = float) 
+
+  
 
   # Multimodal / eval 
   parser.add_argument('--multimodal_threshold', type = float, default = 0.5)
@@ -195,91 +209,36 @@ if __name__ == '__main__':
     default = 'dataset/multimodal_set/data_multi_modal/t_his25_1_thre0.500_t_pred100_thre0.100_filtered_dlow.npz')
   parser.add_argument('--data_candi_path', type = str,
     default = 'dataset/multimodal_set/data_multi_modal/data_candi_t_his25_t_pred100_skiprate20.npz')
-
+  parser.add_argument('--exp_desc', type = str, default = None)
   # EMA 
   parser.add_argument('--ema_rate', type = float, default = 0.999)
   parser.add_argument('--step_start_ema', type = int, default = 2000)
 
   # Visualization 
   parser.add_argument('--vis_switch_num', type = int, default = 10)
-  parser.add_argument('--vis_col', type = int, default = 5)
+  parser.add_argument('--vis_col', type = int, default = 10)
   parser.add_argument('--vis_row', type = int, default = 3)
 
-  # ---------------------------------------------------------------------
-  # Reward model (type == reward, also consumed by ppo for scoring)
-  # ---------------------------------------------------------------------
-  parser.add_argument('--code_size', type = int, default = 128)
-  parser.add_argument('--reward_model_architecture', type = str, default = 'transformer_encoder',
-    choices = ['cross_transformer', 'gcn_encoder', 'transformer_encoder'])
-  parser.add_argument('--info_nce_temperature', type = float, default = 0.07)
-  parser.add_argument('--reward_use_sampler', type = str2bool, default = False)
-  parser.add_argument('--num_samples', type = int, default = 5)
-  parser.add_argument('--num_taken_samples', type = int, default = 10) 
-  parser.add_argument('--num_select_per_samples', type = int, default = 3)
-  parser.add_argument('--reward_model_path', type = str, default = None,
-    help = "Path to a trained reward-model checkpoint. Required for --type ppo, "
-           "and for --type reward --mode eval.")
 
-  # ---------------------------------------------------------------------
-  # PPO fine-tuning (type == ppo)
-  # ---------------------------------------------------------------------
-  ppo = parser.add_argument_group('ppo')
-  ppo.add_argument('--diffusion_model_path', type = str, default = None,
-    help = "Pretrained diffusion checkpoint to fine-tune with PPO. Required for --type ppo.")
-  ppo.add_argument('--diffusion_load_ema_flag', type = int, default = 1, choices = [0, 1],
-    help = "1 = load the EMA weights from --diffusion_model_path, 0 = load raw weights.")
+  parser.add_argument('--clip_norm', type = float, default = 1.0)
 
-  ppo.add_argument('--policy_optimizer', type = str, default = 'AdamW',
-    choices = ['AdamW', 'Adam', 'RMSProp', 'SGD'])
-  ppo.add_argument('--policy_learning_rate', type = float, default = 1e-5)
-  ppo.add_argument('--value_optimizer', type = str, default = 'AdamW',
-    choices = ['AdamW', 'Adam', 'RMSProp', 'SGD'])
-  ppo.add_argument('--value_learning_rate', type = float, default = 1e-3)
-  ppo.add_argument('--value_model_architecture', type = str, default = 'mlp',
-    choices = ['mlp', 'transformer', 'mlp_v1'])
-  ppo.add_argument('--value_flag', type = int, default = 1, choices = [0, 1],
-    help = "1 = subtract the learned value baseline from the reward to form the advantage, "
-           "0 = use the raw reward as the advantage.")
-
-  ppo.add_argument('--g_step', type = int, default = 1,
-    help = "Number of rollout-collection passes per epoch before optimizing.")
-  ppo.add_argument('--value_step', type = int, default = 5,
-    help = "Number of value-function gradient steps per epoch.")
-  ppo.add_argument('--value_batch_size', type = int, default = 512)
-  ppo.add_argument('--value_network_layer_dims', type = list, default = [2048, 1024, 512])
-  ppo.add_argument('--embed_dim', type = int, default = 1024)
-  ppo.add_argument('--value_activation', type = str, default = 'GeLU')
-  ppo.add_argument('--policy_step', type = int, default = 5,
-    help = "Number of PPO policy update steps per epoch.")
-  ppo.add_argument('--policy_batch_size', type = int, default = 512)
-  ppo.add_argument('--gradient_accumulation_steps', type = int, default = 1)
-  ppo.add_argument('--buffer_size', type = int, default = 3600,
-    help = "Max number of (state, next_state) transitions kept in the rollout buffer.")
-
-  ppo.add_argument('--ratio_clip', type = float, default = 1e-4,
-    help = "PPO importance-ratio clip range")
-  ppo.add_argument('--reward_weight', type = float, default = 1.)
-  ppo.add_argument('--kl_weight', type = float, default = 0.01)
-  ppo.add_argument('--kl_warmup', type = int, default = -1,
-    help = "Global step after which the KL penalty against the reference model is added to the loss.")
-  ppo.add_argument('--clip_norm', type = float, default = 0.1,
-    help = "Gradient-norm clipping value for the policy optimizer during PPO.")
-  ppo.add_argument('--max_train_steps', type = int, default = 100000,
-    help = "Total policy-optimizer steps before training stops.")
-
-  ppo.add_argument('--visual_weight', type = float, default = 1.0,
-    help = "Weight on the InfoNCE-based reward term in compute_rewards.")
-  ppo.add_argument('--dct_weight', type = float, default = 1.0,
-    help = "Weight on the DCT-space reconstruction reward term.")
-  ppo.add_argument('--three_d_weight', dest = '3d_weight', type = float, default = 1.0,
-    help = "Weight on the 3D-pose-space reconstruction reward term.")
-
-  ppo.add_argument('--eta', type = float, default = 1.0,
+  parser.add_argument('--eta', type = float, default = 1.0,
     help = "DDIM stochasticity parameter used during rollout collection.")
-  ppo.add_argument('--cfg_scale', type = float, default = 0.8)
-  ppo.add_argument('--use_classifier_free_guidance', type = str2bool, default = False)
-  ppo.add_argument('--deterministic', type = str2bool, default = False)
-  ppo.add_argument('--enable_complete', type = str2bool, default = False)
+  parser.add_argument('--cfg_scale', type = float, default = 1.0) 
+  parser.add_argument('--deterministic', type = str2bool, default = False)
+  parser.add_argument('--enable_complete', type = str2bool, default = False)
+
+  # --- DPM Solver ---- 
+  parser.add_argument('--use_dpm_solver', type = str2bool, default = False)
+  parser.add_argument('--dpm_solver_type', type = str, default = 'dpmsolver',\
+    choices = ['dpmsolver', 'dpmsolver++'])
+  parser.add_argument('--dpm_solver_num_steps', type = int, default = 10)
+  parser.add_argument('--dpm_solver_skip_type', type = str, default = 'logSNR', \
+    choices = ['time_uniform', 'time_quadratic', 'logSNR'])
+  parser.add_argument('--dpm_solver_method', type = str, default = 'singlestep_fixed', \
+    choices = ['adaptive', 'multistep', 'singlestep', 'singlestep_fixed'])
+  parser.add_argument('--dpm_solver_order', type = int, default = 1)
+  parser.add_argument('--dpm_solver_denoise_to_zero', type = str2bool, default = True)
 
   args = parser.parse_args()
 
@@ -288,30 +247,32 @@ if __name__ == '__main__':
   if params['algo'] is None:
     params['algo'] = params['type']
 
-  # PPORunner.finetune_init needs to know whether this is a training run
-  # or an inference-only load.
+
+
   params['train'] = (args.mode == 'train')
 
   params['model_prefix'] = os.path.join('exp', params['model_prefix'])
-  create_dir_tree(params['model_prefix'], params)
-  params['pose_dim'] = params['joint_dim'] * params['num_joints']
 
-  params['idx_pad'], params['zero_index'] = generate_pad(
-    params['padding'], params['num_observed_frames'], params['num_predict_frames'])
+  if params['mode'] in ['eval', 'demo_vis', 'dct_vis'] and os.path.exists(params['model_prefix']):
+    config_path = os.path.join(params['model_prefix'], 'config_dir', 'config.json')
+    with open(config_path, 'r') as f:
+      saved_params = json.load(f)
 
-  # required-argument sanity checks that argparse itself can't express
-  # because they're conditional on --type
-  if params['type'] == 'ppo':
-    if params['diffusion_model_path'] is None:
-      parser.error("--diffusion_model_path is required when --type ppo")
-    if params['reward_model_path'] is None:
-      parser.error("--reward_model_path is required when --type ppo")
-  if params['type'] == 'reward' and args.mode == 'eval' and params['reward_model_path'] is None:
-    parser.error("--reward_model_path is required for --type reward --mode eval")
+    for key, value in saved_params.items():
+      if key in ['enable_complete', 'finetuning_ckpt', 'deterministic', 'cfg_scale',\
+          'use_classifier_free_guidance', 'exp_desc', 'mode', 'ddim_num_timesteps']: 
+        continue
+      params[key] = value
 
-  config_path = os.path.join(params['model_prefix'], 'config_dir', 'config.json')
-  with open(config_path, 'w') as file_:
-    json.dump(params, file_, indent = 4)
+  else : 
+    create_dir_tree(params['model_prefix'], params)
+    params['pose_dim'] = params['joint_dim'] * params['num_joints']
+
+    params['idx_pad'], params['zero_index'] = generate_pad(
+      params['padding'], params['num_observed_frames'], params['num_predict_frames'])
+    config_path = os.path.join(params['model_prefix'], 'config_dir', 'config.json')
+    with open(config_path, 'w') as file_:
+      json.dump(params, file_, indent = 4)
 
   dataset, dataset_multi_test = dataset_split(params)
   tb_logger = SummaryWriter(params['tb_dir'])
@@ -323,71 +284,34 @@ if __name__ == '__main__':
   for k, v in params.items():
     logger.info('[INFO] (GenerativePose@main) {}: {}'.format(k, v))
 
-  # multimodal_dict = get_multimodal_dataset(
-  #   logger = logger,
-  #   dataset_multi_test = dataset_multi_test,
-  #   params = params,
-  # )
-
-  if params['type'] == 'reward':
-    runner = RewardRunner(
-      params = params,
-      dataset = dataset,
-      multimodal_dict = None, #multimodal_dict,
-      tblogger = tb_logger,
-      logger = logger,
-    )
-    if args.mode == 'train':
-      runner.train()
-    elif args.mode == 'eval':
-    #  runner.compute_stats(multimodal_dict = multimodal_dict)
-      runner.diffusion_samples_evaluate()
-      #runner.gt_eval()
-    else:
-      raise NotImplementedError(f"--mode {args.mode} is not supported for --type reward")
-
-  elif params['type'] == 'ppo':
-    runner = PPORunner(
-      params = params,
-      dataset = dataset,
-      multimodal_dict = None, #multimodal_dict,
-      tblogger = tb_logger,
-      logger = logger,
-    )
-    if args.mode == 'train':
-      runner.train()
-    elif args.mode == 'eval':
-      runner.compute_stats(
-        sampling_model = runner.diffusion_model,
-        multimodal_dict = multimodal_dict,
-      )
-    elif args.mode == 'demo_vis':
-      runner.demo_visualize(
-        sampling_model = runner.diffusion_model,
-        sampling_mode = params['sampling_mode'],
-        dataset = dataset,
-      )
-    else:
-      raise NotImplementedError(f"--mode {args.mode} is not supported for --type ppo")
-
-  else:  # 'diffusion' or 'flow_matching'
-    runner_cls = DiffusionRunner if params['type'] == 'diffusion' else FlowMatchingRunner
-    runner = runner_cls(
+  multimodal_dict = get_multimodal_dataset(
+    logger = logger,
+    dataset_multi_test = dataset_multi_test,
+    params = params,
+  )
+  if params['type'] == 'diffusion':
+    runner = DiffusionRunner(
       params = params,
       dataset = dataset,
       multimodal_dict = None,
-      tblogger = tb_logger,
       logger = logger,
+      tblogger = tb_logger, 
     )
-    if args.mode == 'train':
-      runner.train()
-    elif args.mode == 'eval':
-      runner.compute_stats(sampling_model = runner._ema_model, multimodal_dict = None)
-    elif args.mode == 'demo_vis':
-      runner.demo_visualize(
-        sampling_model = runner._ema_model,
-        sampling_mode = params['sampling_mode'],
-        dataset = dataset,
-      )
-    else:
-      raise NotImplementedError(f"--mode {args.mode} is not supported for --type {params['type']}")
+  else : 
+    raise NotImplementedError(f"run type {args.type} is not supported")
+  
+  if args.mode == 'train':
+    runner.train()
+  elif args.mode == 'eval':
+    runner.compute_stats(sampling_model = runner._ema_model, multimodal_dict = multimodal_dict, exp_desc = params['exp_desc'])
+  elif args.mode == 'demo_vis':
+    runner.demo_visualize(
+      sampling_model = runner._ema_model,
+      sampling_mode = params['sampling_mode'],
+      dataset = dataset,
+    )
+  elif args.mode == 'dct_vis': 
+    runner.visualize_dct_space()
+  else:
+    raise NotImplementedError(f"--mode {args.mode} is not supported for --type {params['type']}")
+

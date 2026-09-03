@@ -28,8 +28,6 @@ def post_process(predictions, params):
   predictions[..., :1, :] = 0
   return predictions
 
-
-
 def sample_preprocessing(traj, params, sampling_mode, dct):
   if sampling_mode.split('_')[0] == 'fix':
     fix_list = [
@@ -250,8 +248,7 @@ def get_dct_matrix(N, is_torch = True):
     dct_m = torch.from_numpy(dct_m) 
     idct_m = torch.from_numpy(idct_m)
   return dct_m, idct_m 
-      
-
+    
 
 
 

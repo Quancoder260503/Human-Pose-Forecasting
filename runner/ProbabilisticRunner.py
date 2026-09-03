@@ -10,21 +10,20 @@ from abc import abstractmethod
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import tqdm
-from model import ODESolver
-from model.ProbabilityPath import * 
-from model.VectorFieldScheduler import *
 import torch.nn.functional as F
 from runner.WarmupScheduler import *
 from data.Dataset3DUtils import * 
 from model.EMA import *
 from model.DiffusionTransformer import *
-from model.GCNDiffusion import * 
+from model.GraphConvNet import *
 from model.GaussianDiffusion import *
+from model.GCNDiffusion import * 
 from runner.RunnerUtils import *
 import pandas as pd 
 import csv 
 import copy 
 from Logger import *
+import vis 
 
 def skewed_timestep_sample(num_samples : int) -> torch.Tensor: 
   P_mean = -1.2 
@@ -187,7 +186,7 @@ class ProbabilisticRunner(object):
     elif time_sampling == 'skewed_time_sampling':
       timesteps = skewed_timestep_sample(num_samples = batch_size)
     elif time_sampling == 'uniform_time_sampling':
-      if process == 'diff':
+      if process == 'diffusion':
         timesteps = torch.randint(low = 1, high = T, size = (batch_size, ))
       elif process == 'flow':       
         timesteps = torch.rand(batch_size)    
@@ -264,9 +263,9 @@ class ProbabilisticRunner(object):
         if sampling_mode == 'switch':
           data = dataset.sample_all_action()
         elif sampling_mode == 'pred':
-          data = dataset.sample_iter_action(action)
+          data, _ = dataset.sample_iter_action(action)
         elif sampling_mode == 'gif' or 'fix' in sampling_mode:
-          data = dataset.sample()
+          data, _ = dataset.sample()
         elif sampling_mode == 'zero_shot':
           data = dataset[np.random.randint(0, dataset.shape[0])].copy()
           data = np.expand_dims(data, axis = 0)
@@ -346,15 +345,11 @@ class ProbabilisticRunner(object):
       # Train 
       self.prepare_train_step()
       self.train_one_epoch()
-      self._logger.info('>>> Epoch: {} | Time: {:.2f} | Train Loss: {} | Learning Rate : {:.5f}'.format(\
-        self.curr_epoch, time.time() - self.start_time, self.train_losses.avg, self._lr_scheduler.get_last_lr()[0]))
       self.compute_train_stats()
 
       # Evaluate 
       self.prepare_eval_step()
       self.eval_one_epoch()
-      self._logger.info('>>> Epoch: {} | Time: {:.2f} | Val Loss: {}'.format(\
-        self.curr_epoch, time.time() - self.start_time, self.val_losses.avg))
       self.compute_eval_stats()
       
       self.update_learning_rate(e, mode = 'epochwise')
@@ -391,14 +386,24 @@ class ProbabilisticRunner(object):
       self._lr_db_curve.append([self._params['learning_rate'], epoch_step])
       self._params['learning_rate'] = self._lr_scheduler.get_last_lr()[0]
 
+  
   def init_model(self):
     if self._params['model_architecture'] == 'transformer': 
+      #self._model = motion_diffusion_transformer(self._params)
       self._model = diffusion_transformer(self._params)
+
     elif self._params['model_architecture'] == 'gcn_transformer': 
+      # predictor = motion_diffusion_transformer(self._params)
+      # corrector = graph_conv_net_v1(self._params)
+      # self._model = MotionRefinementNet(
+      #   predictor = predictor, 
+      #   corrector = corrector, 
+      # )
       self._model = gcn_transformer_diffusion(self._params)
+      pass
     else : 
       raise NotImplementedError(f"Model architecture {self._params['model_architecture']} not found")
-
+    
   def select_optimizer(self): 
     if self._params['optimizer'] == 'AdamW': 
       return torch.optim.AdamW(
@@ -454,7 +459,7 @@ class ProbabilisticRunner(object):
 
     return diversity, ade, fde, mmade, mmfde
   
-  def compute_stats(self, sampling_model, multimodal_dict): 
+  def compute_stats(self, sampling_model, multimodal_dict, exp_desc): 
     ground_truth_group = multimodal_dict['gt_group']
     data_group = multimodal_dict['data_group']
     trajectory_gt_arr = multimodal_dict['trajectory_gt_array']
@@ -520,6 +525,8 @@ class ProbabilisticRunner(object):
     """
     if self._params['dataset'] != 'h36m' and sampling_mode != 'pred':
       raise NotImplementedError(f"sorry, {sampling_mode} is currently only available in h36m setting.")
+
+    os.makedirs(os.path.join(self._params['gif_dir'], self._params['exp_desc']), exist_ok = True)
     if sampling_mode == 'switch':
       for i in range(0, self._params['vis_switch_num']):
         generated_pose = self.pose_generator(
@@ -554,7 +561,7 @@ class ProbabilisticRunner(object):
           algos = [self._params['algo']], 
           num_observed_frames = self._params['num_observed_frames'], 
           num_cols = self._params['vis_col'] + 2, 
-          output = os.path.join(self._params['gif_dir'], f'pred_{suffix}.gif'), 
+          output = os.path.join(self._params['gif_dir'], self._params['exp_desc'], f'pred_{suffix}.gif'), 
           sampling_mode = sampling_mode
         )
 
@@ -575,7 +582,7 @@ class ProbabilisticRunner(object):
           algos = [self._params['algo']], 
           num_observed_frames = self._params['num_observed_frames'], 
           num_cols = self._params['vis_col'] + 2, 
-          output = os.path.join(self._params['gif_dir'], fix_name[i] + '.gif'), 
+          output = os.path.join(self._params['gif_dir'], self._params['exp_desc'], fix_name[i] + '.gif'), 
           mode = sampling_mode, 
           fix_index = i
         )
@@ -599,3 +606,56 @@ class ProbabilisticRunner(object):
         )
     else:
         raise NotImplementedError
+
+  def visualize_dct_space(self): 
+    trajectory_np = self._dataset['test'].sample_iter_action('Walking')
+    trajectory_np = trajectory_np[..., 1:, :].reshape([
+        trajectory_np.shape[0], 
+        self._params['num_observed_frames'] + self._params['num_predict_frames'], 
+        -1, 
+      ]) 
+    trajectory = torch.tensor(trajectory_np, device = self._params['device'], dtype = torch.float32) 
+    trajectory_dct = torch.matmul(self.dct[:self.num_dct_channels], trajectory) 
+    
+    batch_idx = 0
+    pose = trajectory_np[0]                       
+    pose = pose.reshape(pose.shape[0], pose.shape[1] // 3, -1)                         
+
+    dim_names = ['x', 'y', 'z']
+    for d, name in enumerate(dim_names):
+      fig, ax = plt.subplots(figsize=(10, 6))
+      for j in range(min(pose.shape[1], 16)):
+        ax.plot(range(pose.shape[0]), pose[:, j, d], label=f'joint{j}_{name}')
+      ax.axvline(self._params['num_observed_frames'] - 0.5, color='gray', linestyle='--', label='obs/pred split')
+      ax.set_xlabel('frame')
+      ax.set_ylabel('position')
+      ax.legend(fontsize=7, ncol=2)
+      plt.tight_layout()
+      plt.savefig(f'trajectory_time_x_{d}.png', dpi = 150)
+      plt.close(fig)
+
+    vis.animate_pose_sequence(pose, out_path = 'pose.gif')
+
+    trajectory_dct_recon = torch.matmul(self.idct[:, :self.num_dct_channels], trajectory_dct) #[batch, T, C]
+
+    pose_dct = trajectory_dct_recon[batch_idx].detach().cpu().numpy()
+    pose_dct = pose_dct.reshape(pose_dct.shape[0], pose_dct.shape[1] // 3, -1)  # [T, J, 3]
+
+    dim_names = ['x', 'y', 'z']
+    colors = plt.cm.tab20(np.linspace(0, 1, min(pose.shape[1], 16)))
+    vis.animate_pose_sequence(pose_dct, out_path = 'dct_pose.gif')
+    for d, name in enumerate(dim_names):
+      fig, ax = plt.subplots(figsize=(10, 6))
+      for j in range(min(pose.shape[1], 16)):
+          ax.plot(range(pose.shape[0]), pose[:, j, d], color=colors[j],
+                  linewidth=1.2, alpha=0.8, label=f'joint{j}_{name} raw' if j == 0 else None)
+          ax.plot(range(pose_dct.shape[0]), pose_dct[:, j, d], color=colors[j],
+                  linewidth=1.6, linestyle='--', label=f'joint{j}_{name} DCT' if j == 0 else None)
+      ax.axvline(self._params['num_observed_frames'] - 0.5, color='gray', linestyle=':', label='obs/pred split')
+      ax.set_xlabel('frame')
+      ax.set_ylabel('position')
+      ax.set_title(f'Raw vs DCT-reconstructed (K={self.num_dct_channels}), dim={name}')
+      ax.legend(fontsize=7, ncol=2)
+      plt.tight_layout()
+      plt.savefig(f'trajectory_time_dct_{d}.png', dpi=150)
+      plt.close(fig)

@@ -411,6 +411,7 @@ class DiffusionTransformerLayer(nn.Module):
     se_ratio, 
     use_max_pooling, 
     use_adaptive, 
+    use_concat, 
   ):
     super(DiffusionTransformerLayer, self).__init__()
     self.model_dim = model_dim 
@@ -422,6 +423,7 @@ class DiffusionTransformerLayer(nn.Module):
     self.use_excitation = use_excitation
     self.num_channels = num_channels 
     self.use_adaptive = use_adaptive
+    self.use_concat = use_concat
 
     self.attention_layer = (AdaptiveMultiHeadAttention if self.use_adaptive else MultiHeadAttention) (
       model_dim = model_dim, 
@@ -453,6 +455,9 @@ class DiffusionTransformerLayer(nn.Module):
         use_max_pooling = use_max_pooling, 
       )
 
+    if self.use_concat: 
+      self.concat = nn.Linear(self.model_dim * 2, self.model_dim)
+
   def forward(self, input, embedding, memory = None): 
     """
     :param input     : a tensor of shape (B, T, model_dim) 
@@ -460,6 +465,9 @@ class DiffusionTransformerLayer(nn.Module):
     :return : 
       a tensor of shape (B, T, model_dim)
     """       
+    if self.use_concat: 
+      input = self.concat(input)
+
     if self.use_excitation: 
       input = self.excitation_layer(input)
     out = self.attention_layer(input, embedding)
@@ -521,6 +529,10 @@ class DiffusionTransformer(nn.Module):
     se_ratio = 4, 
     use_max_pooling = False,
     use_adaptive = True,  
+    num_classes = None, 
+    use_action = False, 
+    use_mid_block = False, 
+    use_concat = False, 
   ):
     super(DiffusionTransformer, self).__init__()
     self.input_features = input_features
@@ -541,6 +553,10 @@ class DiffusionTransformer(nn.Module):
     self.use_adaptive = use_adaptive
     self.se_ratio = se_ratio 
     self.use_max_pooling = use_max_pooling 
+    self.num_classes = num_classes
+    self.use_action = use_action
+    self.use_mid_block = use_mid_block
+    self.use_concat = use_concat
 
     self.pose_encoder = nn.Linear(input_features, model_dim)
 
@@ -568,7 +584,7 @@ class DiffusionTransformer(nn.Module):
 
     self.posterior_decoder_block = nn.ModuleList()
 
-    for _ in range(self.num_layers):
+    for index in range(self.num_layers):
       self.posterior_decoder_block.append(
         DiffusionTransformerLayer(
           model_dim = self.model_dim, 
@@ -582,8 +598,26 @@ class DiffusionTransformer(nn.Module):
           use_max_pooling = self.use_max_pooling, 
           se_ratio = self.se_ratio,
           num_channels = self.prediction_len,  
-          use_adaptive = self.use_adaptive
+          use_adaptive = self.use_adaptive, 
+          use_concat = (self.use_concat and (index >= self.num_layers // 2))
         )
+      )
+
+    if self.use_mid_block: 
+      self.mid_block = DiffusionTransformerLayer(
+        model_dim = self.model_dim, 
+        ffn_dim = self.ffn_dim, 
+        embedding_dim = self.time_embedding_dim,
+        num_head = self.num_heads, 
+        dropout = self.dropout_p, 
+        activation = self.activation, 
+        use_cross_attention = self.use_cross_attention, 
+        use_excitation = self.use_excitation, 
+        use_max_pooling = self.use_max_pooling, 
+        se_ratio = self.se_ratio,
+        num_channels = self.prediction_len,  
+        use_adaptive = self.use_adaptive, 
+        use_concat = False, 
       )
     
     self._model_version = model_version
@@ -593,8 +627,13 @@ class DiffusionTransformer(nn.Module):
       output_dim = input_features, 
       embedding_dim = self.time_embedding_dim, 
     )
+
+    if self.use_action: 
+      self.action_embed = torch.nn.Embedding(self.num_classes + 1, self.model_dim)
+      nn.init.normal_(self.action_embed.weight, mean = 0.0, std = 0.02)
     
-  def forward(self, input, timesteps, memory = None):
+    
+  def forward(self, input, timesteps, memory = None, actions = None):
     """
     :param input : a tensor of shape (B, T_{prediction}, input_features) 
     :param timesteps : a tensor of shape (B, ) 
@@ -616,19 +655,29 @@ class DiffusionTransformer(nn.Module):
       enc_memory = memory.contiguous().view(batch_size, -1)
       total_embedding  = total_embedding + self.conditional_embedding(enc_memory)
 
-    network_in = self.pose_encoder(input) # (B, T_{prediction}, model_dim)
-    network_in = network_in + self.sequence_embedding.unsqueeze(0)[:, :num_channels, :]
+    if self.use_action and actions is not None:
+      action_emb = self.action_embed(actions) * (actions != 0).float().unsqueeze(-1)
+      total_embedding = total_embedding + action_emb
+
+    x = self.pose_encoder(input) # (B, T_{prediction}, model_dim)
+    x = x + self.sequence_embedding.unsqueeze(0)[:, :num_channels, :]
     
     if self.flatten_arc == False: 
       enc_list = [] 
       for index, module in enumerate(self.posterior_decoder_block): 
         if index < self.num_layers // 2: 
-          enc_list.append(network_in) 
-          network_in = module(network_in, total_embedding, memory)
-        else :  
-          network_in = module(network_in, total_embedding, memory)
-          network_in += enc_list[-1]  
-          enc_list.pop() 
+          enc_list.append(x) 
+          x = module(x, total_embedding, memory)
+      if self.use_mid_block: 
+       x = self.mid_block(x, total_embedding, memory)
+
+      for _, module, in enumerate(self.posterior_decoder_block[self.num_layers // 2 : ]): 
+        if self.use_concat == False: 
+          x = module(x, total_embedding, memory)
+          x += enc_list[-1]  
+        else : 
+          x = module(torch.cat([x, enc_list[-1]], dim = -1), total_embedding, memory)
+        enc_list.pop() 
     else : 
       for index, module in enumerate(self.posterior_decoder_block): 
         network_in = module(network_in, total_embedding, memory)
@@ -656,4 +705,374 @@ def diffusion_transformer(params):
     use_excitation = params['use_excitation'], 
     use_max_pooling = params['use_max_pooling'], 
     use_adaptive = params['use_adaptive'], 
+    num_classes = params['num_classes'], 
+    use_action = params['use_action'],
+    use_mid_block = params['use_mid_block'], 
+    use_concat = params['use_concat'],  
   )
+
+
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# import math 
+# import numpy as np 
+# from model.ModelUtils import *
+
+
+# class MotionDiffusionTransformerLayer(nn.Module):
+#   def __init__(
+#     self, 
+#     model_dim, 
+#     ffn_dim, 
+#     embedding_dim, 
+#     num_head, 
+#     dropout, 
+#     activation, 
+#     use_cross_attention, 
+#     use_excitation,
+#     num_channels, 
+#     se_ratio, 
+#     use_max_pooling, 
+#     use_pose_enc_dec, 
+#     use_adaptive, 
+#     use_concat, 
+#     do_zero_module, 
+#   ):
+#     super(MotionDiffusionTransformerLayer, self).__init__()
+#     self.model_dim = model_dim 
+#     self.ffn_dim = ffn_dim 
+#     self.embedding_dim = embedding_dim
+#     self.num_head = num_head 
+#     self.dropout = dropout
+#     self.use_cross_attention = use_cross_attention
+#     self.use_excitation = use_excitation
+#     self.num_channels = num_channels 
+#     self.use_adaptive = use_adaptive
+#     self.use_concat = use_concat
+#     self.do_zero_module = do_zero_module
+#     self.use_pose_enc_dec = use_pose_enc_dec
+
+#     use_stylization = (self.use_pose_enc_dec) or (self.use_adaptive is False)
+
+#     self.attention_layer = (MultiHeadAttention if use_stylization else AdaptiveMultiHeadAttention) (
+#       model_dim = model_dim, 
+#       num_head  = num_head, 
+#       embedding_dim = embedding_dim, 
+#       dropout = dropout,
+#       do_zero_module = do_zero_module,  
+#     )
+    
+#     self.ffn_layer = (FeedForwardNetworkv1 if self.use_pose_enc_dec else (FeedForwardNetwork\
+#       if use_stylization else AdaptiveFeedForwardNetwork))(
+#       model_dim = model_dim,
+#       ffn_dim = ffn_dim, 
+#       embedding_dim = embedding_dim, 
+#       dropout = dropout, 
+#       activation = activation,  
+#       do_zero_module = do_zero_module, 
+#     ) 
+    
+#     if self.use_cross_attention : 
+#       self.cross_attention = (MultiHeadCrossAttention if use_stylization else AdaptiveMultiHeadCrossAttention) (
+#         model_dim = model_dim, 
+#         embedding_dim = embedding_dim, 
+#         num_head = num_head, 
+#         dropout = dropout, 
+#         do_zero_module = do_zero_module, 
+#       ) 
+#     if self.use_excitation : 
+#       self.excitation_layer = SqueezeAndExcitation(
+#         channels = num_channels, 
+#         ratio = se_ratio, 
+#         act_fn = activation, 
+#         use_max_pooling = use_max_pooling, 
+#         do_zero_module = do_zero_module, 
+#       )
+
+#     if self.use_concat: 
+#       self.concat = nn.Linear(self.model_dim * 2, self.model_dim)
+
+#   def forward(self, input, embedding, memory = None): 
+#     """
+#     :param input     : a tensor of shape (B, T, model_dim) 
+#     :param embedding : a tensor of shape (B, embedding_dim) 
+#     :return : 
+#       a tensor of shape (B, T, model_dim)
+#     """       
+#     if self.use_concat: 
+#       input = self.concat(input)
+
+#     if self.use_excitation: 
+#       input = self.excitation_layer(input)
+#     out = self.attention_layer(input, embedding)
+#     if self.use_cross_attention and memory is not None:
+#       out = self.cross_attention(out, embedding, memory)
+#     out = self.ffn_layer(out, embedding)
+#     return out 
+
+# class MotionDiffusionTransformer(nn.Module):
+#   def __init__(
+#     self, 
+#     input_features, 
+#     prediction_len, 
+#     model_dim, 
+#     ffn_dim, 
+#     num_layers,
+#     num_heads, 
+#     prior_len, 
+#     dropout = 0.2, 
+#     activation = 'GeLU', 
+#     use_cross_attention = False, 
+#     embedding_max_period = 10000,
+#     learnable_embedding = True, 
+#     pos_encoding_params = (10000, 1), 
+#     flatten_arc = False, 
+#     use_excitation = False, 
+#     se_ratio = 4, 
+#     use_max_pooling = False,
+#     use_adaptive = True,  
+#     num_classes = None, 
+#     use_action = False, 
+#     use_mid_block = False, 
+#     use_concat = False, 
+#     do_zero_module = True, 
+#     attention_resolution = None,
+#     use_pose_enc_dec = False,
+#     dataset = 'h36m', 
+#   ):
+#     super(MotionDiffusionTransformer, self).__init__()
+#     self.input_features = input_features
+#     self.prediction_len = prediction_len 
+#     self.model_dim = model_dim 
+#     self.ffn_dim = ffn_dim 
+#     self.num_layers = num_layers 
+#     self.use_cross_attention = use_cross_attention 
+#     self.num_heads = num_heads 
+#     self.dropout_p = dropout 
+#     self.activation = activation 
+#     self.time_embedding_dim = model_dim
+#     self.embedding_max_period = embedding_max_period
+#     self.learnable_embedding = learnable_embedding 
+#     self._pos_encoding_params = pos_encoding_params
+#     self.flatten_arc = flatten_arc 
+#     self.use_excitation = use_excitation
+#     self.use_adaptive = use_adaptive
+#     self.se_ratio = se_ratio 
+#     self.use_max_pooling = use_max_pooling 
+#     self.num_classes = num_classes
+#     self.use_action = use_action
+#     self.use_mid_block = use_mid_block
+#     self.use_concat = use_concat
+#     self.do_zero_module = do_zero_module
+#     self.use_cross_attention = use_cross_attention
+#     self.prior_len = prior_len
+#     self.use_pose_enc_dec = use_pose_enc_dec
+#     self.dataset = dataset 
+
+#     if use_cross_attention : 
+#       assert attention_resolution is not None, "Attention resolution cannot be none when use cross attention"
+
+#     if self.learnable_embedding : 
+#       self.sequence_embedding = nn.Parameter(torch.randn(prediction_len, model_dim))
+#     else : 
+#       positional_encoding = PositionalEncoding1D(
+#         model_dim = self.model_dim,
+#         temperature = self._pos_encoding_params[0],
+#         alpha = self._pos_encoding_params[1]
+#       )
+#       sequence_embedding = positional_encoding(self.prediction_len)
+#       self.sequence_embedding = nn.Parameter(sequence_embedding, requires_grad = False)
+
+#     if self.use_cross_attention is False: 
+#       self.conditional_embedding = nn.Linear(
+#         self.input_features * self.prior_len, 
+#         self.time_embedding_dim
+#       )
+
+#     self.time_embedding = nn.Sequential(
+#       nn.Linear(self.model_dim, self.time_embedding_dim), 
+#       nn.SiLU(), 
+#       nn.Linear(self.time_embedding_dim, self.time_embedding_dim), 
+#     )
+
+#     self.attn_blocks = torch.nn.ModuleList() 
+
+#     for index in range(self.num_layers):
+#       self.attn_blocks.append(
+#         MotionDiffusionTransformerLayer(
+#           model_dim = self.model_dim, 
+#           ffn_dim = self.ffn_dim, 
+#           embedding_dim = self.time_embedding_dim,
+#           num_head = self.num_heads, 
+#           dropout = self.dropout_p, 
+#           activation = self.activation, 
+#           use_cross_attention = True if (self.use_cross_attention and index in attention_resolution) else False, 
+#           use_excitation = self.use_excitation, 
+#           use_max_pooling = self.use_max_pooling, 
+#           se_ratio = self.se_ratio,
+#           num_channels = self.prediction_len,  
+#           use_adaptive = self.use_adaptive, 
+#           use_concat = (self.use_concat and index >= self.num_layers // 2),
+#           do_zero_module = do_zero_module, 
+#           use_pose_enc_dec = self.use_pose_enc_dec, 
+#         )
+#       )
+
+#     if self.use_mid_block: 
+#       self.mid_block = MotionDiffusionTransformerLayer(
+#         model_dim = self.model_dim, 
+#         ffn_dim = self.ffn_dim, 
+#         embedding_dim = self.time_embedding_dim,
+#         num_head = self.num_heads, 
+#         dropout = self.dropout_p, 
+#         activation = self.activation, 
+#         use_cross_attention = False, 
+#         use_excitation = self.use_excitation, 
+#         use_max_pooling = self.use_max_pooling, 
+#         se_ratio = self.se_ratio,
+#         num_channels = self.prediction_len,  
+#         use_adaptive = self.use_adaptive, 
+#         do_zero_module = do_zero_module, 
+#         use_concat = False, 
+#         use_pose_enc_dec = self.use_pose_enc_dec, 
+#       )
+
+#     if self.use_pose_enc_dec:
+#       self.pose_encoder = PoseEncoder(dataset_name = dataset, input_dim = input_features)
+#       self.pose_decoder = PoseDecoder(dataset_name = dataset, input_dim = input_features, latent_dim = model_dim)
+#     else :
+#       self.pose_encoder = nn.Linear(input_features, model_dim)
+#       self.pose_decoder = (AdaptiveFinalTransformerLayer if self.use_adaptive else FinalTransformerLayer)(
+#         model_dim = model_dim, 
+#         output_dim = input_features, 
+#         embedding_dim = self.time_embedding_dim,
+#         do_zero_module = do_zero_module,  
+#       )
+
+#     if self.use_action: 
+#       self.action_embed = torch.nn.Embedding(self.num_classes + 1, self.model_dim)
+#       nn.init.normal_(self.action_embed.weight, mean = 0.0, std = 0.02)
+    
+    
+#   def forward(self, input, timesteps, memory = None, actions = None):
+#     """
+#     :param input : a tensor of shape (B, T_{prediction}, input_features) 
+#     :param timesteps : a tensor of shape (B, ) 
+#     :param memory : if not None, can be the observed seqs information 
+#     """
+#     if self.use_action == False: 
+#       assert actions is None 
+
+#     batch_size, num_channels, _ = input.shape
+  
+
+#     time_embedding = self.time_embedding(
+#       timestep_embedding(
+#         timesteps = timesteps, 
+#         dim = self.model_dim, 
+#         max_period = self.embedding_max_period, 
+#       )
+#     )
+
+#     total_embedding = time_embedding
+
+#     if memory is not None:  
+#       if self.use_cross_attention is False: 
+#        enc_memory = memory.contiguous().view(batch_size, -1)
+#        total_embedding = total_embedding + self.conditional_embedding(enc_memory)
+#       else : 
+#         memory = self.pose_encoder(memory)
+
+#     if self.use_action and actions is not None:
+#       action_emb = self.action_embed(actions) * (actions != 0).float().unsqueeze(-1)
+#       total_embedding = total_embedding + action_emb
+
+#     x = self.pose_encoder(input) # (B, T_{prediction}, model_dim)
+#     x = x + self.sequence_embedding.unsqueeze(0)[:, :num_channels, :]
+
+#     if self.flatten_arc: 
+#       # flat transformer 
+#       for index, module in enumerate(self.attn_blocks): 
+#         x = module(x, total_embedding, memory)
+#     else :
+#       if self.use_concat:  
+#         enc_list = [] 
+#         for module in self.attn_blocks[:self.num_layers // 2]: 
+#           x = module(x, total_embedding, memory)
+#           enc_list.append(x)
+   
+#         if self.use_mid_block: 
+#           x = self.mid_block(x, total_embedding, memory)
+
+#         for module in self.attn_blocks[self.num_layers // 2:]:
+#           x = module(torch.cat([x, enc_list[-1]], dim = -1), total_embedding, memory)
+#           enc_list.pop() 
+      
+
+#       else: 
+#         enc_list = [] 
+#         for module in self.attn_blocks[:self.num_layers // 2]: 
+#           enc_list.append(x)
+#           x = module(x, total_embedding, memory)
+        
+#         if self.use_mid_block: 
+#           x = self.mid_block(x, total_embedding, memory)
+        
+#         for module in self.attn_blocks[self.num_layers // 2:]: 
+#           x = module(x, total_embedding, memory) 
+#           x += enc_list[-1]
+#           enc_list.pop()
+  
+
+#     if isinstance(self.pose_decoder, PoseDecoder):
+#       output = self.pose_decoder(x)
+#     else : 
+#       output = self.pose_decoder(x, total_embedding)
+
+#     return output, total_embedding
+
+  
+# def motion_diffusion_transformer(params):
+#   return MotionDiffusionTransformer(
+#     input_features = params['pose_dim'], 
+#     prediction_len = params['n_pred'], 
+#     prior_len = params['n_prior'], 
+#     model_dim = params['model_dim'], 
+#     ffn_dim = params['ffn_dim'], 
+#     num_layers = params['num_layers'],
+#     num_heads = params['num_heads'], 
+#     dropout = params['dropout'], 
+#     activation = params['activation'], 
+#     use_cross_attention = params['use_cross_attention'], 
+#     embedding_max_period = params['embedding_max_period'], 
+#     learnable_embedding = params['learnable_embedding'], 
+#     pos_encoding_params = (params['pos_enc_beta'], params['pos_enc_alpha']), 
+#     flatten_arc = params['flatten_arc'],
+#     se_ratio = params['se_ratio'], 
+#     use_excitation = params['use_excitation'], 
+#     use_max_pooling = params['use_max_pooling'], 
+#     use_adaptive = params['use_adaptive'], 
+#     num_classes = params['num_classes'], 
+#     use_action = params['use_action'],
+#     use_mid_block = params['use_mid_block'], 
+#     use_concat = params['use_concat'],  
+#     do_zero_module = params['do_zero_module'], 
+#     use_pose_enc_dec = params['use_pose_enc_dec'], 
+#     attention_resolution = params['attention_resolution'], 
+#   )
+
+
+# class MotionRefinementNet(nn.Module): 
+#   def __init__(self, predictor : nn.Module, corrector : nn.Module):
+#     super(MotionRefinementNet, self).__init__()
+#     self.predictor = predictor  
+#     self.corrector = corrector 
+
+#   def forward(self, x, t, memory = None, actions = None):
+#     x, embed = self.predictor(x, t, memory, actions) 
+#     x = x.permute(0, 2, 1) 
+#     out = self.corrector(x, embed)
+#     out = out.permute(0, 2, 1) 
+#     return out 
+

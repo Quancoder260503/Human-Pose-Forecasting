@@ -4,6 +4,7 @@ import numpy as np
 from abc import abstractmethod, ABC
 import scipy
 import torch 
+import math
 
 def absolute_to_relative(x, parents, invert = False, x_0 = None): 
   if not invert : 
@@ -139,7 +140,7 @@ class Skeleton(object):
 
 
 class Dataset:
-  def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all'):
+  def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_action = False):
     self.mode = mode 
     self.num_observed_frames = num_observed_frames 
     self.num_predict_frames = num_predict_frames 
@@ -152,6 +153,13 @@ class Dataset:
     self.trajectory_dim = (self.major_joints.shape[0] - 1) * dim_per_joints
     self.normalized = False  
     self.sample_index = None 
+    self.use_action = use_action
+    self.action_lst = [] 
+    for subject in self.subjects: 
+      for action in self.data[subject].keys(): 
+        self.action_lst.append(action.split(' ')[0])
+    self.action_lst = np.unique(self.action_lst)
+    self.action_to_idx = {action: idx + 1 for idx, action in enumerate(self.action_lst)} 
 
   @abstractmethod
   def prepare_data(self):
@@ -184,7 +192,7 @@ class Dataset:
     frame_start = np.random.randint(sequences.shape[0] - self.total_frames)
     frame_end = frame_start + self.total_frames 
     trajectory = sequences[frame_start : frame_end]
-    return trajectory[None, ...]
+    return trajectory[None, ...], self.action_to_idx[action.split(' ')[0]]
   
   def sample_all_action(self):
     dict_s = self.data[self.test_subject]
@@ -221,8 +229,7 @@ class Dataset:
     traj = seq[frame_start: frame_end]
     sample.append(traj[None, ...])
     sample = np.concatenate(sample, axis = 0)
-    return sample
-  
+    return sample, action
 
 
   def prepare_iter_action(self):
@@ -239,9 +246,12 @@ class Dataset:
   
   def sampling_generator(self, num_samples = 1000, batch_size = 8, augment = True):
     for i in range(num_samples // batch_size): 
-      samples = [] 
+      samples, actions = [], [] 
       for i in range(batch_size): 
-        samples.append(self.sample())
+        sample, action = self.sample()
+        samples.append(sample)
+        actions.append(action) 
+
       samples = np.concatenate(samples, axis = 0)
       if augment is True:
         # data augmentation
@@ -255,22 +265,18 @@ class Dataset:
           samples[..., 0] = -samples[..., 0]        
         if np.random.uniform() > 0.5:  # y-z mirroring
           samples[..., 1] = -samples[..., 1]
-        yield samples
-
-  def iter_generator(self, step = 25):
-    for data_sequence in self.data.values():
-      for sequence in data_sequence.values():
-        sequence_len = sequence.shape[0] 
-        for i in range(0, sequence_len - self.total_frames, step):
-          trajectory = sequence[None, i : (i + self.total_frames)]
-          yield trajectory
+        if self.use_action : 
+          yield samples, np.array(actions) 
+        else : 
+          yield samples, None
 
 
 """
 H36M dataset class 
 """
 class DatasetH36M(Dataset):
-  def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_velocity = False, **kwargs):
+  def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_action = False, \
+      use_velocity = False, **kwargs):
    if 'multimodal_path' in kwargs.keys():
      self.multimodal_path = kwargs['multimodal_path']
    else : 
@@ -282,7 +288,7 @@ class DatasetH36M(Dataset):
      self.data_candidate_path = None 
    
    self.use_velocity = use_velocity 
-   super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions)
+   super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions, use_action = use_action)
    if self.use_velocity:
     self.trajectory_dim += self.dim_per_joints
    
@@ -523,8 +529,8 @@ class DatasetH36M_Multi(Dataset):
 HumanEva Dataset 
 """
 class DatasetHumanEva(Dataset): 
-  def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions='all'):
-    super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions)
+  def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_action = False):
+    super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions, use_action = use_action)
   
   def prepare_data(self):
     self.subjects_split = {
@@ -699,21 +705,42 @@ class DatasetHumanEvaMulti(Dataset):
       samples = np.concatenate(samples, axis = 0) 
       samples_multi = np.concatenate(samples_multi, axis = 0) 
       yield samples, samples_multi 
-
-  def iter_generator(self, step = 25):
-    for data_sequences in self.data.values():
-      for sequence in data_sequences.values():
-        seq_len = sequence.shape[0]
-        for i in range(0, seq_len - self.total_frames, step): 
-          trajectory = sequence[None, i : i + self.total_frames]
-          yield trajectory, None
-
-
     
 
-"""
-Multimodal NTURGB+D
-"""
+
+def generate_h36_loss_weights(total_length, scale = 10):
+  assert scale > 0 and scale != 1
+  weights = np.arange(16) + 1
+  weights = np.repeat(weights, 3)
+
+  chain = [[0], 
+    [118.9, 45.17, 44.7],           # right leg
+    [134.79, 45.17, 44.7],          
+    [114.7, 25.55, 11.71, 11.5],    
+    [15.05, 28.2, 24.99],           
+    [15.05, 28.2, 24.99]
+  ]         
+
+  new_chain = []
+  for x in chain:
+    s = sum(x)
+    if s == 0:
+      new_chain.append([0])
+      continue
+    new_x = []
+    for i in range(len(x)):
+      new_x.append((i + 1) / (len(x)) * math.log(sum(x[:i]) + scale))
+    new_chain.append(new_x)
+
+  new_chain = [item for sublist in new_chain for item in sublist]
+  s_weight = []
+  for i in range(len(weights)):
+    s_weight.append(new_chain[weights[i]])
+  s_weight = np.asarray(s_weight)
+  t_weight = np.ones(total_length)
+  ret = s_weight[None,:] * t_weight[:,None]
+  ret = ret / np.sum(ret) * 48 * total_length
+  return torch.from_numpy(ret)
 
 
 # if __name__ == '__main__': 

@@ -53,26 +53,30 @@ log-SNR.
 
 ### Samples
 
-Human3.6M (first two rows) and AMASS (last row) test sequences rendered with `--mode demo_vis --sampling_mode pred`. In each panel, the first column (*context*)
+Human3.6M and AMASS test sequences rendered with `--mode demo_vis --sampling_mode pred`. In each panel, the first column (*context*)
 shows the observed motion, the second (*gt*) the recorded future, and the remaining columns four predicted futures for
 the same observation; each row is a different observation. Observed frames are drawn in gray, black and red, predicted
 frames in purple, black and green.
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="assets/samples/h36m_directions.gif" width="100%" alt="Directions"><br><sub>Directions</sub></td>
-<td align="center" width="33%"><img src="assets/samples/h36m_discussion.gif" width="100%" alt="Discussion"><br><sub>Discussion</sub></td>
-<td align="center" width="33%"><img src="assets/samples/h36m_eating.gif" width="100%" alt="Eating"><br><sub>Eating</sub></td>
+<td align="center" width="50%"><img src="assets/samples/h36m_directions.gif" width="100%" alt="Human3.6M: Directions"><br><sub>Human3.6M: Directions</sub></td>
+<td align="center" width="50%"><img src="assets/samples/h36m_discussion.gif" width="100%" alt="Human3.6M: Discussion"><br><sub>Human3.6M: Discussion</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="assets/samples/h36m_greeting.gif" width="100%" alt="Greeting"><br><sub>Greeting</sub></td>
-<td align="center" width="33%"><img src="assets/samples/h36m_phoning.gif" width="100%" alt="Phoning"><br><sub>Phoning</sub></td>
-<td align="center" width="33%"><img src="assets/samples/h36m_photo.gif" width="100%" alt="Photo"><br><sub>Photo</sub></td>
+<td align="center" width="50%"><img src="assets/samples/h36m_eating.gif" width="100%" alt="Human3.6M: Eating"><br><sub>Human3.6M: Eating</sub></td>
+<td align="center" width="50%"><img src="assets/samples/h36m_greeting.gif" width="100%" alt="Human3.6M: Greeting"><br><sub>Human3.6M: Greeting</sub></td>
 </tr>
 <tr>
-<td align="center" width="33%"><img src="assets/samples/amass_dancedb.gif" width="100%" alt="AMASS: DanceDB"><br><sub>AMASS: DanceDB</sub></td>
-<td align="center" width="33%"><img src="assets/samples/amass_dfaust.gif" width="100%" alt="AMASS: DFaust"><br><sub>AMASS: DFaust</sub></td>
-<td align="center" width="33%"><img src="assets/samples/amass_grab.gif" width="100%" alt="AMASS: GRAB"><br><sub>AMASS: GRAB</sub></td>
+<td align="center" width="50%"><img src="assets/samples/h36m_phoning.gif" width="100%" alt="Human3.6M: Phoning"><br><sub>Human3.6M: Phoning</sub></td>
+<td align="center" width="50%"><img src="assets/samples/h36m_photo.gif" width="100%" alt="Human3.6M: Photo"><br><sub>Human3.6M: Photo</sub></td>
+</tr>
+<tr>
+<td align="center" width="50%"><img src="assets/samples/amass_dancedb.gif" width="100%" alt="AMASS: DanceDB"><br><sub>AMASS: DanceDB</sub></td>
+<td align="center" width="50%"><img src="assets/samples/amass_dfaust.gif" width="100%" alt="AMASS: DFaust"><br><sub>AMASS: DFaust</sub></td>
+</tr>
+<tr>
+<td align="center" width="50%"><img src="assets/samples/amass_grab.gif" width="100%" alt="AMASS: GRAB"><br><sub>AMASS: GRAB</sub></td>
 </tr>
 </table>
 

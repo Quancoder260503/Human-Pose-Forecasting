@@ -273,21 +273,6 @@ motion = idct[:, :C] @ sample_dct       # [B, N + F, D], back to poses
 - **Small budgets.** At 5 or fewer solver evaluations, prefer `dpmsolver++` with order 2 and `singlestep`; the
   noise-prediction second-order solver can diverge there.
 
----
-
-## Citation
-
-If this code is useful for your work, please cite the thesis:
-
-```bibtex
-@mastersthesis{le2026reliable,
-  author = {Le, Minh Quan},
-  title  = {Towards Reliable Stochastic Human Motion Prediction by Improving Probabilistic Diffusion Models},
-  type   = {Bachelor of Computing (Honours) thesis},
-  school = {The Australian National University},
-  year   = {2026}
-}
-```
 
 ## Acknowledgements
 

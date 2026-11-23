@@ -105,15 +105,14 @@ Evaluation is not seeded, so re-running it, especially on different hardware or 
 the metrics slightly.
 
 ---
-
 ## Poster
- 
 <p align="center">
   <a href="assets/poster.pdf"><img src="assets/poster.png" width="100%" alt="Poster: Towards Reliable Stochastic Human Motion Prediction by Improving Probabilistic Diffusion Models"></a>
   <br>
   <sub>Click the poster for the full-resolution PDF.</sub>
 </p>
 ---
+
 ## Getting started
 
 ### Install

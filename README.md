@@ -149,17 +149,17 @@ included in the repository.
 
 ### Configurations
 
-The configurations of the six models are in [`configs/`](configs), exactly as saved by `Main.py`. All use a cosine
+The configurations of the six models are in [`config/`](config), exactly as saved by `Main.py`. All use a cosine
 noise schedule with 1000 diffusion steps, model width 512 and 8 attention heads.
 
 | Config | Dataset | Block | Observed / predicted frames | DCT coefficients | Transformer layers | GCN stages × width |
 |---|---|---|---|---|---|---|
-| [`h36m_adaln_zero.json`](configs/h36m_adaln_zero.json) | Human3.6M | adaLN-Zero | 25 / 100 | 20 | 8 | 3 × 256 |
-| [`h36m_stylization.json`](configs/h36m_stylization.json) | Human3.6M | stylization | 25 / 100 | 20 | 8 | 3 × 256 |
-| [`humaneva_adaln_zero.json`](configs/humaneva_adaln_zero.json) | HumanEva-I | adaLN-Zero | 15 / 60 | 10 | 4 | 3 × 128 |
-| [`humaneva_stylization.json`](configs/humaneva_stylization.json) | HumanEva-I | stylization | 15 / 60 | 10 | 4 | 3 × 128 |
-| [`amass_adaln_zero.json`](configs/amass_adaln_zero.json) | AMASS | adaLN-Zero | 30 / 120 | 20 | 12 | 3 × 256 |
-| [`amass_stylization.json`](configs/amass_stylization.json) | AMASS | stylization | 30 / 120 | 20 | 12 | 3 × 256 |
+| [`h36m_adaln_zero.json`](config/h36m_adaln_zero.json) | Human3.6M | adaLN-Zero | 25 / 100 | 20 | 8 | 3 × 256 |
+| [`h36m_stylization.json`](config/h36m_stylization.json) | Human3.6M | stylization | 25 / 100 | 20 | 8 | 3 × 256 |
+| [`humaneva_adaln_zero.json`](config/humaneva_adaln_zero.json) | HumanEva-I | adaLN-Zero | 15 / 60 | 10 | 4 | 3 × 128 |
+| [`humaneva_stylization.json`](config/humaneva_stylization.json) | HumanEva-I | stylization | 15 / 60 | 10 | 4 | 3 × 128 |
+| [`amass_adaln_zero.json`](config/amass_adaln_zero.json) | AMASS | adaLN-Zero | 30 / 120 | 20 | 12 | 3 × 256 |
+| [`amass_stylization.json`](config/amass_stylization.json) | AMASS | stylization | 30 / 120 | 20 | 12 | 3 × 256 |
 
 To evaluate a checkpoint trained with one of them, place the files where the config expects them and pass the run
 name (the config's `model_prefix` without `exp/`):

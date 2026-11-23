@@ -5,6 +5,7 @@ __pycache__/
 *.tar
 *.mp4
 *.png
+*.gif
 .env
 .DS_Store
 dataset
@@ -16,3 +17,10 @@ TransformerCosineDiffusion
 TransformerCosineFMatching 
 TransformerCosineFMatchingv1
 exp
+sde
+img
+intermediate_vis
+img_superimposed 
+gifs
+exp_logs 
+dct_imgsvenv/

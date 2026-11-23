@@ -6,6 +6,10 @@ import torch.nn as nn
 from torch.distributions import Normal 
 import tqdm 
 
+"""
+Base class for Gaussian Diffusion, I've also include DDIM sampling here, which is a deterministic sampling method for diffusion models.
+"""
+
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
   if schedule_name == "linear":
    scale = 1000 / num_diffusion_timesteps
@@ -46,22 +50,16 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta = 0.999):
 def extract_into_tensor(arr, timesteps, broadcast_shape):
   """
   Extract values from a 1-D numpy array for a batch of indices.
-
-  :param arr             : the 1-D numpy array
-  :param timesteps       : a tensor of indices into array to extract
-  :param broadcast_shape : a large shape of K dimensions with the batch dimension
-                             equal to the length of timesteps
-  :return                : a tensor of shape [batch_size, 1, ...] where the shape has K dims
+  :param arr : the 1-D numpy array
+  :param timesteps : a tensor of indices into array to extract
+  :param broadcast_shape : a large shape of K dimensions with the batch dimension equal to the length of timesteps
+  :return : a tensor of shape [batch_size, 1, ...] where the shape has K dims
   """
   result = torch.from_numpy(arr).to(device = timesteps.device)[timesteps].float()
   while len(result.shape) < len(broadcast_shape):
     result = result[..., None]
   return result.expand(broadcast_shape)
 
-
-# Convention:
-# beta_{t}     = 1 - alpha_{t} = 1 - (alpha_bar_{t} ^ 2) / (alpha_bar_{t - 1} ^ 2)
-# x_{t}        = N(x_{t} | sqrt(1 - beta_{t}) * x_{t-1}, beta_{t} * I)
 
 
 ## DDIM
@@ -121,9 +119,9 @@ class GaussianDiffusionDDIM(object):
     """
     Get the distribution q(x_t | x_0) = N(x_t | x_0 * sqrt(alpha_bar_t), (1 - alpha_bar_t) * I).
 
-    :param x_start   : [N x C x ...] tensor of completely denoised inputs
+    :param x_start : [N x C x ...] tensor of completely denoised inputs
     :param timesteps : 1-D tensor of diffusion timestep indices
-    :return          : (mean, variance) each of x_start.shape
+    :return : (mean, variance) each of x_start.shape
     """
     mean = extract_into_tensor(self.sqrt_alphas_cumprod, timesteps, x_start.shape) * x_start
     var = extract_into_tensor(1.0 - self.alphas_cumprod, timesteps, x_start.shape)
@@ -132,12 +130,12 @@ class GaussianDiffusionDDIM(object):
   def q_sample(self, x_start, timesteps, gaussian_noise):
     """
     Sample from q(x_t | x_0) using the reparameterization trick:
-        x_t = x_0 * sqrt(alpha_bar_t) + sqrt(1 - alpha_bar_t) * eps
+      x_t = x_0 * sqrt(alpha_bar_t) + sqrt(1 - alpha_bar_t) * eps
 
-    :param x_start        : completely denoised input
-    :param timesteps      : 1-D tensor of diffusion timestep indices
+    :param x_start : completely denoised input
+    :param timesteps : 1-D tensor of diffusion timestep indices
     :param gaussian_noise : optional pre-sampled noise of the same shape as x_start
-    :return               : noisy x_t
+    :return : noisy x_t
     """
     assert gaussian_noise.shape == x_start.shape
 
@@ -151,10 +149,10 @@ class GaussianDiffusionDDIM(object):
   def q_posterior_mean_variance(self, x_start, x_t, timesteps):
     """
     Compute the mean and variance of the diffusion posterior q(x_{t-1} | x_t, x_0).
-    :param x_start   : completely denoised input x_0
-    :param x_t       : noisy input at timestep t
+    :param x_start : completely denoised input x_0
+    :param x_t : noisy input at timestep t
     :param timesteps : 1-D tensor of diffusion timestep indices
-    :return          : (posterior_mean, posterior_variance)
+    :return : (posterior_mean, posterior_variance)
     """
     assert x_start.shape == x_t.shape
 
@@ -171,10 +169,10 @@ class GaussianDiffusionDDIM(object):
     Reconstruct x_0 from x_t and the estimated noise eps:
       x_0 = x_t / sqrt(alpha_bar_t) - eps * sqrt(1 / alpha_bar_t - 1)
 
-    :param x_t            : noisy input at timestep t
-    :param timesteps      : 1-D tensor of diffusion timestep indices
+    :param x_t : noisy input at timestep t
+    :param timesteps : 1-D tensor of diffusion timestep indices
     :param gaussian_noise : estimated (or sampled) Gaussian noise
-    :return               : reconstructed x_0
+    :return : reconstructed x_0
     """
     assert x_t.shape == gaussian_noise.shape
     return (
@@ -182,20 +180,20 @@ class GaussianDiffusionDDIM(object):
       extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, timesteps, x_t.shape) * gaussian_noise
     )
 
-  def p_mean_variance(self, model, cond, actions, input_x, timesteps):
+  def p_mean_variance(self, model, cond, input_x, timesteps):
     """
     Apply the model to get the estimated denoising distribution parameters
     p(x_{\pi({t-1})} | x_{\pi_t}), as well as a prediction of x_0.
 
-    :param model             : denoising model — takes (x_t, t, cond)
+    :param model : denoising model — takes (x_t, t, cond)
     :param cond : conditioning signal
-    :param input_x           : noisy input tensor at timestep t
-    :param timesteps         : 1-D tensor of timestep indices, shape (B,)
-    :return                  : dict with keys 'mean', 'variance', 'log_variance', 'pred_x0'
+    :param input_x : noisy input tensor at timestep t
+    :param timesteps : 1-D tensor of timestep indices, shape (B,)
+    :return : dict with keys 'mean', 'variance', 'log_variance', 'pred_x0'
     """
     B, C = input_x.shape[:2]
     assert timesteps.shape == (B,)
-    model_out = model(input_x, timesteps, cond, actions) # set default to predict to white noise
+    model_out = model(input_x, timesteps, cond) # set default to predict to white noise
     if self.cfg_scale > 1.0 : 
       uncond_model_out = model(input_x, timesteps)
       model_out = uncond_model_out + self.cfg_scale * (model_out - uncond_model_out)
@@ -208,7 +206,7 @@ class GaussianDiffusionDDIM(object):
     return {"pred_x0" : pred_x0, "pred_noise" : model_out}
   
 
-  def ddim_sample(self, model, input_x, curr_t, next_t, cond, actions, eta = 1.):
+  def ddim_sample(self, model, input_x, curr_t, next_t, cond, eta = 1.):
     """
     One DDIM denoising step.
     The posterior is:
@@ -225,7 +223,6 @@ class GaussianDiffusionDDIM(object):
     out = self.p_mean_variance(
       model = model,
       cond = cond,
-      actions = actions, 
       input_x = input_x,
       timesteps = curr_t,
     )
@@ -282,9 +279,8 @@ class GaussianDiffusionDDIM(object):
   def ddim_sample_loop_progressive(
     self, 
     model, 
-    trajectory_dct, 
+    padded_trajectory_dct, 
     trajectory_dct_mod, 
-    actions, 
     noise = None, 
     device = None, 
     dct_num_channels = None, 
@@ -308,13 +304,13 @@ class GaussianDiffusionDDIM(object):
       device = next(model.parameters()).device
 
 
-    inp = noise if noise is not None else torch.randn_like(trajectory_dct, device = device)
+    inp = noise if noise is not None else torch.randn_like(padded_trajectory_dct, device = device)
     successive_indices = list(zip(self.sampling_indices[1:], self.sampling_indices[:-1])) 
   
 
     for curr_t, next_t in reversed(successive_indices):
-      curr_t = torch.tensor([curr_t] * trajectory_dct.shape[0], device = device)
-      next_t = torch.tensor([next_t] * trajectory_dct.shape[0], device = device)
+      curr_t = torch.tensor([curr_t] * padded_trajectory_dct.shape[0], device = device)
+      next_t = torch.tensor([next_t] * padded_trajectory_dct.shape[0], device = device)
       with torch.no_grad():
         out = self.ddim_sample(
           model = model,
@@ -322,7 +318,6 @@ class GaussianDiffusionDDIM(object):
           curr_t = curr_t, 
           next_t = next_t,  
           cond = trajectory_dct_mod,
-          actions = actions, 
         )
         dct_sample = out['sample']
         if self.enable_complete : 
@@ -342,14 +337,14 @@ class GaussianDiffusionDDIM(object):
   def ddim_sample_loop(
     self, 
     model, 
-    trajectory_dct, 
+    padded_trajectory_dct, 
     trajectory_dct_mod, 
-    actions, 
     device = None,
     masks = None,
     dct_num_channels = None, 
     dct = None, 
-    idct = None, 
+    idct = None,
+    return_intermediate = None,  
   ):
     """
     Run full DDIM reverse diffusion and return the final sample and all intermediates.
@@ -357,20 +352,24 @@ class GaussianDiffusionDDIM(object):
     :return : (final_dct_sample, list_of_intermediate_dct_samples)
     """
     final = None
-
+    samples = [] 
     for sample in self.ddim_sample_loop_progressive(
       model = model, 
-      trajectory_dct = trajectory_dct, 
+      padded_trajectory_dct = padded_trajectory_dct, 
       trajectory_dct_mod = trajectory_dct_mod, 
       device = device, 
-      actions = actions, 
       dct = dct, 
       idct = idct, 
       dct_num_channels = dct_num_channels, 
       masks = masks, 
     ):
       final = sample
-    return final
+      samples.append(final)
+
+    if return_intermediate:
+      return final, samples
+    else:
+      return final
 
 
 

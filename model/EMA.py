@@ -1,5 +1,10 @@
 import torch.nn as nn 
 
+"""
+EMA (Exponential Moving Average) is a technique used to smooth out the parameters of a model during training.
+The idea is to maintain a moving average of the model's parameters, which can help improving the sample quality. 
+"""
+
 class EMAHelper(object):
   def __init__(self, mu = 0.999): 
    self.mu = mu

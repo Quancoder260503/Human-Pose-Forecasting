@@ -1,6 +1,0 @@
-Traceback (most recent call last):
-  File "/mnt/c/Users/minhq/Desktop/Human-Pose-Forecasting/Main.py", line 12, in <module>
-    from data.MultiDataset import DatasetH36M, DatasetH36M_Multi
-  File "/mnt/c/Users/minhq/Desktop/Human-Pose-Forecasting/data/MultiDataset.py", line 5, in <module>
-    import scipy
-ModuleNotFoundError: No module named 'scipy'

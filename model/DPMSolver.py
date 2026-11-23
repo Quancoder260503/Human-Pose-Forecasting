@@ -1,5 +1,7 @@
 """
-Adapted from https://github.com/LuChengTHU/dpm-solver/blob/main/dpm_solver_pytorch.py
+Adapted and Modified from https://github.com/LuChengTHU/dpm-solver/blob/main/dpm_solver_pytorch.py. Solving the Probability Flow ODE in fact 
+does bring a remarkable performance to the performance. I want to express my gratitude to the authors of the original code for their work 
+as this inspired me to study deeper into ODE and optimization methods relating to Differential Equation in Deep Learning.
 """
 
 from cv2 import idct
@@ -23,7 +25,6 @@ class NoiseScheduleVP(object):
     self.schedule = schedule
 
     if schedule == 'discrete':
-      # FIX: only convert to tensor if provided, and check None BEFORE conversion.
       if betas is not None:
         betas = torch.tensor(betas, dtype = dtype, device = device)
         log_alphas = 0.5 * torch.log(1 - betas).cumsum(dim = 0)
@@ -113,6 +114,7 @@ class DPMSolver:
     thresholding_max_val = 1.,
     dynamic_thresholding_ratio = 0.995,
   ):
+    print("Initialized DPM Solver")
     self.model = model
     self.guidance_scale = guidance_scale
     self.noise_schedule = noise_schedule
@@ -145,39 +147,38 @@ class DPMSolver:
   def get_model_input_time(self, t_continuous):
     return (t_continuous - 1. / self.noise_schedule.total_N) * 1000.
 
-  def noise_prediction_fn(self, x, t, cond, action):
+  def noise_prediction_fn(self, x, t, cond):
     """
     Return the noise prediction model.
     """
     t_input = self.get_model_input_time(t)
     t_input = t_input.repeat(x.shape[0])
-    if self.guidance_scale > 1. :
-      x_in = torch.cat([x, x], dim = 0)
-      t_in = torch.cat([t_input, t_input], dim = 0)
-      uncond_noise, noise = self.model(x_in, t_in, cond, action).chunk(2)
+    if self.guidance_scale != 1. :
+      noise = self.model(x, t_input, cond) 
+      uncond_noise = self.model(x, t_input)
       return uncond_noise + self.guidance_scale * (noise - uncond_noise)
     else :
-      return self.model(x, t_input, cond, action)
+      return self.model(x, t_input, cond)
 
-  def data_prediction_fn(self, x, t, cond, action):
+  def data_prediction_fn(self, x, t, cond):
     """
     Return the data prediction model (with corrector).
     """
-    noise = self.noise_prediction_fn(x, t, cond, action)
+    noise = self.noise_prediction_fn(x, t, cond)
     alpha_t, sigma_t = self.noise_schedule.marginal_alpha(t), self.noise_schedule.marginal_std(t)
     x0 = (x - sigma_t * noise) / alpha_t
     if self.correcting_x0_fn is not None:
       x0 = self.correcting_x0_fn(x0)
     return x0
 
-  def model_fn(self, x, t, cond, action):
+  def model_fn(self, x, t, cond):
     """
     Convert the model to the noise prediction model or the data prediction model.
     """
     if self.algorithm_type == "dpmsolver++":
-      return self.data_prediction_fn(x, t, cond, action)
+      return self.data_prediction_fn(x, t, cond)
     else:
-      return self.noise_prediction_fn(x, t, cond, action)
+      return self.noise_prediction_fn(x, t, cond)
 
   def get_time_steps(self, skip_type, t_T, t_0, N, device):
     if skip_type == 'logSNR':
@@ -222,14 +223,13 @@ class DPMSolver:
       timesteps_outer = self.get_time_steps(skip_type, t_T, t_0, steps, device)[torch.cumsum(torch.tensor([0,] + orders), 0).to(device)]
     return timesteps_outer, orders
 
-  def denoise_to_zero_fn(self, x, s, cond, action):
+  def denoise_to_zero_fn(self, x, s, cond):
     """
     Denoise at the final step, which is equivalent to solve the ODE from lambda_s to infty by first-order discretization.
     """
-    return self.data_prediction_fn(x, s, cond, action)
-
+    return self.data_prediction_fn(x, s, cond)
   
-
+  # Combining the masked sampling techniques. 
   def inpainting_complete(self, input_x, t, trajectory_dct_mod, masks):
     """
     Blend the known (observed) DCT frames back into the denoised sample.
@@ -257,7 +257,7 @@ class DPMSolver:
     return dct_x_t
 
 
-  def dpm_solver_first_update(self, x, s, cond, action, t, model_s = None, return_intermediate = False):
+  def dpm_solver_first_update(self, x, s, cond, t, model_s = None, return_intermediate = False):
     """
     DPM-Solver-1 (equivalent to DDIM) from time `s` to time `t`.
     Args:
@@ -281,7 +281,7 @@ class DPMSolver:
     if self.algorithm_type == "dpmsolver++":
       phi_1 = torch.expm1(-h)
       if model_s is None:
-        model_s = self.model_fn(x, s, cond, action)
+        model_s = self.model_fn(x, s, cond)
       x_t = (
         sigma_t / sigma_s * x
         - alpha_t * phi_1 * model_s
@@ -289,7 +289,7 @@ class DPMSolver:
     else:
       phi_1 = torch.expm1(h)
       if model_s is None:
-        model_s = self.model_fn(x, s, cond, action)
+        model_s = self.model_fn(x, s, cond)
       x_t = (
         torch.exp(log_alpha_t - log_alpha_s) * x
         - (sigma_t * phi_1) * model_s
@@ -301,7 +301,7 @@ class DPMSolver:
     else:
       return x_t
 
-  def singlestep_dpm_solver_second_update(self, x, s, cond, action, t, r1 = 0.5, model_s = None, return_intermediate = False, solver_type = 'dpmsolver'):
+  def singlestep_dpm_solver_second_update(self, x, s, cond, t, r1 = 0.5, model_s = None, return_intermediate = False, solver_type = 'dpmsolver'):
     """
     Singlestep solver DPM-Solver-2 from time `s` to time `t`.
 
@@ -336,12 +336,12 @@ class DPMSolver:
       phi_1 = torch.expm1(-h)
 
       if model_s is None:
-        model_s = self.model_fn(x, s, cond, action)
+        model_s = self.model_fn(x, s, cond)
       x_s1 = (
         (sigma_s1 / sigma_s) * x
         - (alpha_s1 * phi_11) * model_s
       )
-      model_s1 = self.model_fn(x_s1, s1, cond, action)
+      model_s1 = self.model_fn(x_s1, s1, cond)
       if solver_type == 'dpmsolver':
         x_t = (
           (sigma_t / sigma_s) * x
@@ -359,12 +359,12 @@ class DPMSolver:
       phi_1 = torch.expm1(h)
 
       if model_s is None:
-        model_s = self.model_fn(x, s, cond, action)
+        model_s = self.model_fn(x, s, cond)
       x_s1 = (
         torch.exp(log_alpha_s1 - log_alpha_s) * x
         - (sigma_s1 * phi_11) * model_s
       )
-      model_s1 = self.model_fn(x_s1, s1, cond, action)
+      model_s1 = self.model_fn(x_s1, s1, cond)
       if solver_type == 'dpmsolver':
         x_t = (
           torch.exp(log_alpha_t - log_alpha_s) * x
@@ -383,7 +383,7 @@ class DPMSolver:
     else:
       return x_t
 
-  def singlestep_dpm_solver_third_update(self, x, s, cond, action, t, r1 = 1. / 3., r2 = 2. / 3., model_s = None, model_s1 = None, return_intermediate = False, solver_type = 'dpmsolver'):
+  def singlestep_dpm_solver_third_update(self, x, s, cond, t, r1 = 1. / 3., r2 = 2. / 3., model_s = None, model_s1 = None, return_intermediate = False, solver_type = 'dpmsolver'):
     """
     Singlestep solver DPM-Solver-3 from time `s` to time `t`.
 
@@ -429,19 +429,19 @@ class DPMSolver:
       phi_3 = phi_2 / h - 0.5
 
       if model_s is None:
-        model_s = self.model_fn(x, s, cond, action)
+        model_s = self.model_fn(x, s, cond)
       if model_s1 is None:
         x_s1 = (
           (sigma_s1 / sigma_s) * x
           - (alpha_s1 * phi_11) * model_s
         )
-        model_s1 = self.model_fn(x_s1, s1, cond, action)
+        model_s1 = self.model_fn(x_s1, s1, cond)
       x_s2 = (
         (sigma_s2 / sigma_s) * x
         - (alpha_s2 * phi_12) * model_s
         + r2 / r1 * (alpha_s2 * phi_22) * (model_s1 - model_s)
       )
-      model_s2 = self.model_fn(x_s2, s2, cond, action)
+      model_s2 = self.model_fn(x_s2, s2, cond)
       if solver_type == 'dpmsolver':
         x_t = (
           (sigma_t / sigma_s) * x
@@ -468,19 +468,19 @@ class DPMSolver:
       phi_3 = phi_2 / h - 0.5
 
       if model_s is None:
-        model_s = self.model_fn(x, s, cond, action)
+        model_s = self.model_fn(x, s, cond)
       if model_s1 is None:
         x_s1 = (
           (torch.exp(log_alpha_s1 - log_alpha_s)) * x
           - (sigma_s1 * phi_11) * model_s
         )
-        model_s1 = self.model_fn(x_s1, s1, cond, action)
+        model_s1 = self.model_fn(x_s1, s1, cond)
       x_s2 = (
         (torch.exp(log_alpha_s2 - log_alpha_s)) * x
         - (sigma_s2 * phi_12) * model_s
         - r2 / r1 * (sigma_s2 * phi_22) * (model_s1 - model_s)
       )
-      model_s2 = self.model_fn(x_s2, s2, cond, action)
+      model_s2 = self.model_fn(x_s2, s2, cond)
       if solver_type == 'dpmsolver':
         x_t = (
           (torch.exp(log_alpha_t - log_alpha_s)) * x
@@ -616,7 +616,7 @@ class DPMSolver:
       )
     return x_t
 
-  def singlestep_dpm_solver_update(self, x, s, cond, action, t, order, return_intermediate = False, solver_type = 'dpmsolver', r1 = None, r2 = None):
+  def singlestep_dpm_solver_update(self, x, s, cond, t, order, return_intermediate = False, solver_type = 'dpmsolver', r1 = None, r2 = None):
     """
     Singlestep DPM-Solver with the order `order` from time `s` to time `t`.
 
@@ -634,18 +634,18 @@ class DPMSolver:
         x_t: A pytorch tensor. The approximated solution at time `t`.
     """
     if order == 1:
-      return self.dpm_solver_first_update(x, s, cond, action, t,\
+      return self.dpm_solver_first_update(x, s, cond, t,\
         return_intermediate = return_intermediate)
     elif order == 2:
-      return self.singlestep_dpm_solver_second_update(x, s, cond, action, t, \
+      return self.singlestep_dpm_solver_second_update(x, s, cond, t, \
         return_intermediate = return_intermediate, solver_type = solver_type, r1 = r1)
     elif order == 3:
-      return self.singlestep_dpm_solver_third_update(x, s, cond, action, t, return_intermediate = return_intermediate,\
+      return self.singlestep_dpm_solver_third_update(x, s, cond, t, return_intermediate = return_intermediate,\
         solver_type = solver_type, r1 = r1, r2 = r2)
     else:
       raise ValueError("Solver order must be 1 or 2 or 3, got {}".format(order))
 
-  def multistep_dpm_solver_update(self, x, cond, action, model_prev_list, t_prev_list, t, order, solver_type = 'dpmsolver'):
+  def multistep_dpm_solver_update(self, x, cond, model_prev_list, t_prev_list, t, order, solver_type = 'dpmsolver'):
     """
     Multistep DPM-Solver with the order `order` from time `t_prev_list[-1]` to time `t`.
 
@@ -661,7 +661,7 @@ class DPMSolver:
         x_t: A pytorch tensor. The approximated solution at time `t`.
     """
     if order == 1:
-      return self.dpm_solver_first_update(x, t_prev_list[-1], cond, action, t, model_s = model_prev_list[-1])
+      return self.dpm_solver_first_update(x, t_prev_list[-1], cond, t, model_s = model_prev_list[-1])
     elif order == 2:
       return self.multistep_dpm_solver_second_update(x, model_prev_list, t_prev_list, t, solver_type = solver_type)
     elif order == 3:
@@ -669,7 +669,7 @@ class DPMSolver:
     else:
       raise ValueError("Solver order must be 1 or 2 or 3, got {}".format(order))
 
-  def dpm_solver_adaptive(self, x, cond, action, order, t_T, t_0, h_init = 0.05, atol = 0.0078, rtol = 0.05, theta = 0.9, t_err = 1e-5, solver_type = 'dpmsolver'):
+  def dpm_solver_adaptive(self, x, cond, order, t_T, t_0, h_init = 0.05, atol = 0.0078, rtol = 0.05, theta = 0.9, t_err = 1e-5, solver_type = 'dpmsolver'):
     """
     The adaptive step size solver based on singlestep DPM-Solver.
 
@@ -700,14 +700,14 @@ class DPMSolver:
     nfe = 0
     if order == 2:
       r1 = 0.5
-      lower_update = lambda x, s, t: self.dpm_solver_first_update(x, s, cond, action, t, return_intermediate = True)
-      higher_update = lambda x, s, t, **kwargs: self.singlestep_dpm_solver_second_update(x, s, cond, action, t, r1 = r1, \
+      lower_update = lambda x, s, t: self.dpm_solver_first_update(x, s, cond, t, return_intermediate = True)
+      higher_update = lambda x, s, t, **kwargs: self.singlestep_dpm_solver_second_update(x, s, cond, t, r1 = r1, \
         solver_type = solver_type, **kwargs)
     elif order == 3:
       r1, r2 = 1. / 3., 2. / 3.
-      lower_update = lambda x, s, t: self.singlestep_dpm_solver_second_update(x, s, cond, action, t, \
+      lower_update = lambda x, s, t: self.singlestep_dpm_solver_second_update(x, s, cond, t, \
         r1 = r1, return_intermediate = True, solver_type = solver_type)
-      higher_update = lambda x, s, t, **kwargs: self.singlestep_dpm_solver_third_update(x, s, cond, action, t, \
+      higher_update = lambda x, s, t, **kwargs: self.singlestep_dpm_solver_third_update(x, s, cond, t, \
         r1 = r1, r2 = r2, solver_type = solver_type, **kwargs)
     else:
       raise ValueError("For adaptive step size solver, order must be 2 or 3, got {}".format(order))
@@ -726,26 +726,6 @@ class DPMSolver:
       h = torch.min(theta * h * torch.float_power(E, -1. / order).float(), lambda_0 - lambda_s)
       nfe += order
     return x
-
-  # def add_noise(self, x, t, noise = None):
-  #   """
-  #   Compute the noised input xt = alpha_t * x + sigma_t * noise.
-
-  #   Args:
-  #     x: A `torch.Tensor` with shape `(batch_size, *shape)`.
-  #     t: A `torch.Tensor` with shape `(t_size,)`.
-  #   Returns:
-  #       xt with shape `(t_size, batch_size, *shape)`.
-  #   """
-  #   alpha_t, sigma_t = self.noise_schedule.marginal_alpha(t), self.noise_schedule.marginal_std(t)
-  #   if noise is None:
-  #     noise = torch.randn((t.shape[0], *x.shape), device = x.device)
-  #   x = x.reshape((-1, *x.shape))
-  #   xt = expand_dims(alpha_t, x.dim()) * x + expand_dims(sigma_t, x.dim()) * noise
-  #   if t.shape[0] == 1:
-  #     return xt.squeeze(0)
-  #   else:
-  #     return xt
 
   def inverse(
     self,
@@ -773,7 +753,6 @@ class DPMSolver:
     assert t_0 > 0 and t_T > 0, "Time range needs to be greater than 0. For discrete-time DPMs, it needs to be in [1 / N, 1], where N is the length of betas array"
     return self.sample(
       cond = cond,
-      action = action,
       steps = steps,
       order = order,
       skip_type = skip_type,
@@ -789,7 +768,6 @@ class DPMSolver:
   def sample(
     self,
     cond,
-    action,
     masks, 
     steps = 20,
     order = 2,
@@ -816,7 +794,7 @@ class DPMSolver:
     step = 0  # defined up front so denoise_to_zero can safely reference it below
     with torch.no_grad():
       if method == 'adaptive':
-        x = self.dpm_solver_adaptive(x, cond = cond, action = action, order = order, t_T = t_T, t_0 = t_0, atol = atol, rtol = rtol, solver_type = solver_type)
+        x = self.dpm_solver_adaptive(x, cond = cond, order = order, t_T = t_T, t_0 = t_0, atol = atol, rtol = rtol, solver_type = solver_type)
 
       elif method == 'multistep':
         assert steps >= order
@@ -826,7 +804,7 @@ class DPMSolver:
         step = 0
         t = timesteps[step]
         t_prev_list = [t]
-        model_prev_list = [self.model_fn(x, t, cond, action)]
+        model_prev_list = [self.model_fn(x, t, cond)]
         if self.correcting_xt_fn is not None:
           x = self.correcting_xt_fn(x, t, step)
 
@@ -839,7 +817,7 @@ class DPMSolver:
         
         for step in range(1, order):
           t = timesteps[step]
-          x = self.multistep_dpm_solver_update(x, cond, action, model_prev_list, t_prev_list, t, step, solver_type = solver_type)
+          x = self.multistep_dpm_solver_update(x, cond, model_prev_list, t_prev_list, t, step, solver_type = solver_type)
 
           if self.correcting_xt_fn is not None:
             x = self.correcting_xt_fn(x, t, step)
@@ -850,7 +828,7 @@ class DPMSolver:
           if return_intermediate:
             intermediates.append(x)
           t_prev_list.append(t)
-          model_prev_list.append(self.model_fn(x, t, cond, action))
+          model_prev_list.append(self.model_fn(x, t, cond))
 
         # Compute the remaining values by `order`-th order multistep DPM-Solver.
         for step in range(order, steps + 1):
@@ -860,7 +838,7 @@ class DPMSolver:
             step_order = min(order, steps + 1 - step)
           else:
             step_order = order
-          x = self.multistep_dpm_solver_update(x, cond, action, model_prev_list, t_prev_list, t, step_order, solver_type = solver_type)
+          x = self.multistep_dpm_solver_update(x, cond, model_prev_list, t_prev_list, t, step_order, solver_type = solver_type)
           if self.correcting_xt_fn is not None:
             x = self.correcting_xt_fn(x, t, step)
 
@@ -875,7 +853,7 @@ class DPMSolver:
             model_prev_list[i] = model_prev_list[i + 1]
           t_prev_list[-1] = t
           if step < steps:
-            model_prev_list[-1] = self.model_fn(x, t, cond, action)
+            model_prev_list[-1] = self.model_fn(x, t, cond)
 
       elif method in ['singlestep_fixed', 'singlestep']:
         if method == 'singlestep':
@@ -893,7 +871,7 @@ class DPMSolver:
           h = lambda_inner[-1] - lambda_inner[0]
           r1 = None if cur_order <= 1 else (lambda_inner[1] - lambda_inner[0]) / h
           r2 = None if cur_order <= 2 else (lambda_inner[2] - lambda_inner[0]) / h
-          x = self.singlestep_dpm_solver_update(x, s, cond, action, t, cur_order, solver_type = solver_type, r1 = r1, r2 = r2)
+          x = self.singlestep_dpm_solver_update(x, s, cond, t, cur_order, solver_type = solver_type, r1 = r1, r2 = r2)
 
           if self.correcting_xt_fn is not None:
             x = self.correcting_xt_fn(x, t, step)
@@ -905,9 +883,12 @@ class DPMSolver:
             intermediates.append(x)
       else:
         raise ValueError("Got wrong method {}".format(method))
+
+
+      
       if denoise_to_zero:
         t = torch.ones((1,)).to(device) * t_0
-        x = self.denoise_to_zero_fn(x, t, cond, action)
+        x = self.denoise_to_zero_fn(x, t, cond)
         if self.correcting_xt_fn is not None:
           x = self.correcting_xt_fn(x, t, step + 1)
         if self.enable_complete:

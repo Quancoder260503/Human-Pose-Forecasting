@@ -10,6 +10,9 @@ from mpl_toolkits.mplot3d import Axes3D
 import pickle 
 import time 
 from datetime import datetime
+from scipy import linalg
+import numpy as np
+from einops import rearrange
 
 def padding_trajectory(trajectory, padding, idx_pad, zero_index):
   if padding == 'zero':
@@ -192,47 +195,91 @@ def sample_preprocessing(traj, params, sampling_mode, dct):
     raise NotImplementedError(f"unknown purpose for sampling: {sampling_mode}")
   
    
-def get_multimodal_dataset(logger, dataset_multi_test, params):
+def get_multimodal_dataset(logger, dataset_multi_test, params, required_action = None):
+  """
+  Multi-modal evaluation set. The pseudo ground-truth futures of every window are searched over the WHOLE test set,
+  as in the full evaluation; required_action then only selects which windows are evaluated.
+  """
   logger.info('=> preparing evaluation dataset ...')
-  data_groups = []
-  num_samples = 0
-  data_generator_multi_test = dataset_multi_test.iter_generator(step = params['num_observed_frames'])
-  
-  for data, _ in data_generator_multi_test: 
-    num_samples += 1 
-    data_groups.append(data)
-  
-  data_groups = np.concatenate(data_groups, axis = 0) 
+  num_obs = params['num_observed_frames']
+
+  if params['dataset'] == 'amass':
+    data_groups = dataset_multi_test.data
+    req_action = [] 
+    for index, data in data_groups:
+      req_action.append(dataset_multi_test.get_action_category(index))
+    req_action = np.array(req_action)
+  else:
+    actions_category = sorted({a for s in dataset_multi_test.subjects for a in dataset_multi_test.data[s].keys()})
+    data_groups, req_action = [], []
+    for action in actions_category:                               
+      for data, _ in dataset_multi_test.iter_generator(step = num_obs, required_action = action):
+        data_groups.append(data)
+        req_action.extend([action] * data.shape[0])
+    data_groups, req_action = np.concatenate(data_groups, axis = 0), np.array(req_action)
+
   all_data = data_groups[..., 1:, :].reshape(data_groups.shape[0], data_groups.shape[1], -1)
-  gt_groups = all_data[:, params['num_observed_frames'] :, :]
+  pairwise_distance = squareform(pdist(all_data[:, num_obs - 1, :]))      
+  trajectory_gt_arr = [all_data[np.nonzero(row < params['multimodal_threshold'])][:, num_obs:, :]
+                       for row in pairwise_distance]
 
-  all_start_pose = all_data[:, params['num_observed_frames'] - 1, :]
-  pairwise_distance = squareform(pdist(all_start_pose))
-
-  trajectory_gt_arr = [] 
-  num_mult = [] 
-
-  for i in range(pairwise_distance.shape[0]):
-    index = np.nonzero(pairwise_distance[i] < params['multimodal_threshold'])
-    trajectory_gt_arr.append(all_data[index][:, params['num_observed_frames'] :, :])
-    num_mult.append(len(index[0]))
-
-  num_mult = np.array(num_mult)
+  keep = np.arange(len(all_data)) if required_action is None else np.nonzero(req_action == required_action)[0]
+  num_mult = np.array([len(trajectory_gt_arr[i]) for i in keep])
   logger.info('=' * 80)
-  logger.info(f'#1 future: {len(np.where(num_mult == 1)[0])}/{pairwise_distance.shape[0]}')
-  logger.info(f'#<10 future: {len(np.where(num_mult < 10)[0])}/{pairwise_distance.shape[0]}')
-  logger.info('done...')
+  logger.info(f'#1 future: {np.sum(num_mult == 1)}/{len(keep)}')
+  logger.info(f'#<10 future: {np.sum(num_mult < 10)}/{len(keep)}')
   logger.info('=' * 80)
 
-
-  return { 
-    'trajectory_gt_array' : trajectory_gt_arr, 
-    'data_group' : data_groups, 
-    'gt_group' : gt_groups, 
-    'num_samples' : num_samples, 
+  return {
+    'trajectory_gt_array' : [trajectory_gt_arr[i] for i in keep],
+    'data_group' : data_groups[keep],
+    'gt_group' : all_data[keep][:, num_obs:, :],
+    'num_samples' : len(keep),
   }
 
+# def get_multimodal_dataset(logger, dataset_multi_test, params):
+#   logger.info('=> preparing evaluation dataset ...')
+#   data_groups = []
+#   num_samples = 0
 
+#   if params['dataset'] == 'amass':
+#     data_groups = dataset_multi_test.data
+#     num_samples = data_groups.shape[0]
+#   else : 
+#     data_generator_multi_test = dataset_multi_test.iter_generator(step = params['num_observed_frames'])
+#     for data, _ in data_generator_multi_test: 
+#       num_samples += 1 
+#       data_groups.append(data)
+#     data_groups = np.concatenate(data_groups, axis = 0) 
+
+#   all_data = data_groups[..., 1:, :].reshape(data_groups.shape[0], data_groups.shape[1], -1)
+#   gt_groups = all_data[:, params['num_observed_frames'] :, :]
+
+#   all_start_pose = all_data[:, params['num_observed_frames'] - 1, :]
+#   pairwise_distance = squareform(pdist(all_start_pose))
+
+#   trajectory_gt_arr = [] 
+#   num_mult = [] 
+
+#   for i in range(pairwise_distance.shape[0]):
+#     index = np.nonzero(pairwise_distance[i] < params['multimodal_threshold'])
+#     trajectory_gt_arr.append(all_data[index][:, params['num_observed_frames'] :, :])
+#     num_mult.append(len(index[0]))
+
+#   num_mult = np.array(num_mult)
+#   logger.info('=' * 80)
+#   logger.info(f'#1 future: {len(np.where(num_mult == 1)[0])}/{pairwise_distance.shape[0]}')
+#   logger.info(f'#<10 future: {len(np.where(num_mult < 10)[0])}/{pairwise_distance.shape[0]}')
+#   logger.info('done...')
+#   logger.info('=' * 80)
+
+
+#   return { 
+#     'trajectory_gt_array' : trajectory_gt_arr, 
+#     'data_group' : data_groups, 
+#     'gt_group' : gt_groups, 
+#     'num_samples' : num_samples, 
+#   }
 
 
 def get_dct_matrix(N, is_torch = True): 
@@ -518,28 +565,198 @@ def generate_pad(padding, num_observed_frames, num_predict_frames):
   
   return idx_pad, zero_index
 
-class RunningStats:
-  """Tracks a running mean/std via exponential moving average, for cross-batch-consistent normalization."""
-  def __init__(self, momentum = 0.99, eps=1e-6):
-    self.momentum = momentum
-    self.eps = eps
-    self.mean = None
-    self.var = None
 
-  @torch.no_grad()
-  def update(self, x):
-    batch_mean = x.mean()
-    batch_var = x.var(unbiased = False)
-    if self.mean is None:
-      self.mean = batch_mean
-      self.var = batch_var
-    else:
-      self.mean = self.momentum * self.mean + (1 - self.momentum) * batch_mean
-      self.var = self.momentum * self.var + (1 - self.momentum) * batch_var
 
-  @property
-  def std(self):
-    return (self.var + self.eps).sqrt()
+def matrix_sqrt(matrix):
+  """
+  The principal matrix square root.
 
-  def normalize(self, x):
-    return (x - self.mean) / (self.std + self.eps)
+  ``linalg.sqrtm`` is called without the ``disp`` argument, which SciPy
+  deprecated in 1.17 and removes in 1.18. Omitting it returns the matrix alone
+  under every version; the tuple form is handled defensively regardless.
+
+  :param matrix : an array of shape (n, n)
+  :return :
+    an array of shape (n, n), the principal square root of the input
+  """
+  result = linalg.sqrtm(matrix)
+  return result[0] if isinstance(result, tuple) else result
+
+
+def calculate_activation_statistics(activations):
+  """
+  :param activations : an array of shape (N, feature_dim)
+  :return :
+    mu    : an array of shape (feature_dim, )
+    sigma : an array of shape (feature_dim, feature_dim)
+  """
+  mu = np.mean(activations, axis = 0)
+  sigma = np.cov(activations, rowvar = False)
+  return mu, sigma
+
+
+def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps = 1e-6):
+  """
+  The Frechet distance between two multivariate Gaussians
+  X_1 ~ N(mu_1, C_1) and X_2 ~ N(mu_2, C_2) is
+
+    d^2 = ||mu_1 - mu_2||^2 + Tr(C_1 + C_2 - 2 * sqrt(C_1 * C_2)).
+
+  Stable implementation following Dougal J. Sutherland.
+
+  :param mu1    : an array of shape (feature_dim, ), mean over generated activations
+  :param sigma1 : an array of shape (feature_dim, feature_dim), covariance over generated activations
+  :param mu2    : an array of shape (feature_dim, ), mean over reference activations
+  :param sigma2 : an array of shape (feature_dim, feature_dim), covariance over reference activations
+  :param eps    : the offset added to the diagonal when the matrix product is singular
+  :return :
+    a scalar, the Frechet distance
+  """
+  mu1 = np.atleast_1d(mu1)
+  mu2 = np.atleast_1d(mu2)
+  sigma1 = np.atleast_2d(sigma1)
+  sigma2 = np.atleast_2d(sigma2)
+
+  assert mu1.shape == mu2.shape, \
+    'generated and reference mean vectors have different lengths'
+  assert sigma1.shape == sigma2.shape, \
+    'generated and reference covariances have different dimensions'
+
+  diff = mu1 - mu2
+
+  covmean = matrix_sqrt(sigma1.dot(sigma2))
+
+  if not np.isfinite(covmean).all():
+    print(
+      'fid calculation produces singular product; '
+      'adding %s to diagonal of cov estimates' % eps
+    )
+    offset = np.eye(sigma1.shape[0]) * eps
+    covmean = matrix_sqrt((sigma1 + offset).dot(sigma2 + offset))
+
+  if np.iscomplexobj(covmean):
+    if not np.allclose(np.diagonal(covmean).imag, 0, atol = 1e-3):
+      raise ValueError('imaginary component {}'.format(np.max(np.abs(covmean.imag))))
+    covmean = covmean.real
+
+  return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * np.trace(covmean)
+
+
+def calculate_fid(activations_1, activations_2):
+  """
+  :param activations_1 : an array of shape (N_1, feature_dim), generated activations
+  :param activations_2 : an array of shape (N_2, feature_dim), reference activations
+  :return :
+    a scalar, the Frechet distance between the two activation sets
+  """
+  mu1, sigma1 = calculate_activation_statistics(activations_1)
+  mu2, sigma2 = calculate_activation_statistics(activations_2)
+  return calculate_frechet_distance(mu1, sigma1, mu2, sigma2)
+
+def compute_fid_statistics(
+  pred,
+  gt,
+  classifier_for_fid,
+  all_pred_activations,
+  all_gt_activations,
+  all_pred_classes,
+  all_gt_classes,
+):
+  """
+  Accumulates classifier activations and predicted action labels for one batch,
+  appending them in place to the supplied lists.
+  :param pred : a tensor of shape (B, num_samples, T, pose_dim)
+  :param gt : a tensor of shape (B, T, pose_dim)
+  :param classifier_for_fid : the action classifier supplying FID features
+  :param all_pred_activations : a list accumulating arrays of shape (B * num_samples, feature_dim)
+  :param all_gt_activations : a list accumulating arrays of shape (B, feature_dim)
+  :param all_pred_classes : a list accumulating arrays of shape (B, num_samples)
+  :param all_gt_classes : a list accumulating arrays of shape (B, )
+  :return :
+    None, the lists are modified in place
+  """
+  batch_size, num_samples = pred.shape[0], pred.shape[1]
+
+  pred = rearrange(pred, 'b s t d -> (b s) d t')
+  gt = rearrange(gt, 'b t d -> b d t')
+
+  with torch.no_grad():
+    pred_activations = classifier_for_fid.get_fid_features(motion_sequence = pred)
+    gt_activations = classifier_for_fid.get_fid_features(motion_sequence = gt)
+
+    pred_logits = classifier_for_fid.linear2(pred_activations)
+    gt_logits = classifier_for_fid.linear2(gt_activations)
+
+  pred_activations = pred_activations.cpu().numpy()
+  gt_activations = gt_activations.cpu().numpy()
+
+  pred_classes = pred_logits.argmax(dim = 1).cpu().numpy().reshape([batch_size, num_samples])
+  gt_classes = gt_logits.argmax(dim = 1).cpu().numpy()
+
+  all_pred_activations.append(pred_activations)
+  all_gt_activations.append(gt_activations)
+  all_pred_classes.append(pred_classes)
+  all_gt_classes.append(gt_classes)
+  return
+
+
+def cumulative_motion_distribution(motion_per_frame, motion_reference):
+  """
+  :param motion_per_frame : an array of shape (T - 1, ), the mean motion magnitude at each frame
+  :param motion_reference : a scalar, the dataset mean motion for the corresponding action class
+  :return :
+    a scalar, the frame-weighted cumulative deviation from the reference
+  """
+  num_frames = len(motion_per_frame) + 1
+  weights = np.arange(num_frames - 1, 0, -1)
+  return np.sum(weights * np.abs(motion_per_frame - motion_reference))
+
+
+def compute_cmd_statistics(pred, actions, histogram_data, all_obs_classes):
+  """
+  Accumulates per-frame motion magnitudes and action labels for one batch,
+  appending them in place to the supplied lists.
+
+  :param pred             : a tensor of shape (B, num_samples, T, pose_dim)
+  :param actions          : a tensor or array of shape (B, ), the observed action labels
+  :param histogram_data   : a list accumulating arrays of shape (B, T - 1)
+  :param all_obs_classes  : a list accumulating arrays of shape (B, )
+  :return :
+    None, the lists are modified in place
+  """
+  pred_joints = rearrange(pred, '... (n c) -> ... n c', c = 3)
+
+  displacement = pred_joints[:, :, 1:] - pred_joints[:, :, :-1]
+  motion = torch.linalg.norm(displacement, dim = -1)
+  motion = motion.mean(dim = 1).mean(dim = -1)
+  histogram_data.append(motion.detach().cpu().numpy())
+  if torch.is_tensor(actions):
+    actions = actions.detach().cpu().numpy()
+  all_obs_classes.append(actions)
+  return
+
+def calculate_cmd(dataset, histogram_data, all_obs_classes):
+  """
+  :param dataset          : the dataset, supplying idx_to_class and mean_motion_per_class
+  :param histogram_data   : the accumulated per-frame motion magnitudes
+  :param all_obs_classes  : the accumulated action labels
+  :return :
+    a scalar, the class-frequency-weighted CMD
+  """
+  obs_classes = np.concatenate(all_obs_classes, axis = 0)
+  motion_data = np.concatenate(histogram_data, axis = 0)
+
+  total = 0.0
+  references = zip(dataset.idx_to_class, dataset.mean_motion_per_class)
+
+  for index, (_, class_reference) in enumerate(references):
+    mask = (obs_classes == index)
+    if mask.sum() == 0:
+      continue
+    class_motion = motion_data[mask].mean(axis = 0)
+    class_weight = mask.sum() / obs_classes.shape[0]
+    total += cumulative_motion_distribution(class_motion, class_reference) * class_weight
+  return total
+
+
+

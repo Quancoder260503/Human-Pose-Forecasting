@@ -363,7 +363,6 @@ def unnormalize_data(
   if use_one_hot:
     origData[:, dimensions_to_use] = normalizedData[:, :-len(actions)]
   else:
-    # print('++++++++++++++++++++',origData.shape, normalizedData.shape, len(dimensions_to_use))
     origData[:, dimensions_to_use] = normalizedData
 
   # potentially ineficient, but only done once per experiment

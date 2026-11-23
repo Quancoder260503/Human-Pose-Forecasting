@@ -139,6 +139,9 @@ class Skeleton(object):
     return np.array(edges, dtype = np.int32)
 
 
+"""
+Base class for datasets.
+"""
 class Dataset:
   def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_action = False):
     self.mode = mode 
@@ -159,12 +162,12 @@ class Dataset:
       for action in self.data[subject].keys(): 
         self.action_lst.append(action.split(' ')[0])
     self.action_lst = np.unique(self.action_lst)
-    self.action_to_idx = {action: idx + 1 for idx, action in enumerate(self.action_lst)} 
 
   @abstractmethod
   def prepare_data(self):
     pass 
-  
+
+  # standard normalization, compute the mean and standard deviation of the training set and normalize the data accordingly
   def normalize_data(self, mean = None, std = None):
     if mean is None: 
       all_seqs = [] 
@@ -183,7 +186,8 @@ class Dataset:
         data_sequences[action][:, 1:] = (data_sequences[action][:, 1:] - self.mean) / self.std 
     
     self.normalized = True 
-  
+
+  # sampling a sequence of motions 
   def sample(self): 
     subject = np.random.choice(self.subjects)
     dict_s = self.data[subject]
@@ -192,8 +196,9 @@ class Dataset:
     frame_start = np.random.randint(sequences.shape[0] - self.total_frames)
     frame_end = frame_start + self.total_frames 
     trajectory = sequences[frame_start : frame_end]
-    return trajectory[None, ...], self.action_to_idx[action.split(' ')[0]]
-  
+    return trajectory[None, ...], self.class_to_idx[action.split(' ')[0]]
+
+  # sampling all action use for visualization 
   def sample_all_action(self):
     dict_s = self.data[self.test_subject]
     action_list = []
@@ -217,7 +222,7 @@ class Dataset:
 
     samples = np.concatenate(samples, axis = 0) 
     return samples 
-  
+
   def sample_iter_action(self, action_category):
     # subject = np.random.choice(self.subjects)
     dict_s = self.data[self.test_subject]
@@ -265,34 +270,51 @@ class Dataset:
           samples[..., 0] = -samples[..., 0]        
         if np.random.uniform() > 0.5:  # y-z mirroring
           samples[..., 1] = -samples[..., 1]
-        if self.use_action : 
-          yield samples, np.array(actions) 
-        else : 
-          yield samples, None
-
+      
+      yield samples, np.array(actions) 
+  
 
 """
-H36M dataset class 
+Processing H36M dataset, tentatively including the action as I tried to use action signal 
+as a sign for model prediction, eventually turns out that the action signal is not that 
+very informative features
 """
 class DatasetH36M(Dataset):
   def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_action = False, \
       use_velocity = False, **kwargs):
-   if 'multimodal_path' in kwargs.keys():
-     self.multimodal_path = kwargs['multimodal_path']
-   else : 
-     self.multimodal_path = None 
+    if 'multimodal_path' in kwargs.keys():
+      self.multimodal_path = kwargs['multimodal_path']
+    else : 
+      self.multimodal_path = None 
 
-   if 'data_candidate_path' in kwargs.keys():
-     self.data_candidate_path = kwargs['data_candidate_path']
-   else : 
-     self.data_candidate_path = None 
+    if 'data_candidate_path' in kwargs.keys():
+      self.data_candidate_path = kwargs['data_candidate_path']
+    else : 
+      self.data_candidate_path = None 
    
-   self.use_velocity = use_velocity 
-   super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions, use_action = use_action)
-   if self.use_velocity:
-    self.trajectory_dim += self.dim_per_joints
+    self.use_velocity = use_velocity 
+    super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions, use_action = use_action)
+    if self.use_velocity:
+      self.trajectory_dim += self.dim_per_joints
    
-   self.test_subject = 'S9'
+    self.test_subject = 'S9'
+
+
+    self.mean_motion_per_class = [
+      0.004528946212615328, 0.005068199383505345,0.003978791804673771, 
+      0.005921345536787865, 0.003595039379111546, 0.004192961478268034, 
+      0.005664689143238568, 0.0024945400286369122, 0.003543066357658834, 
+      0.0035990843311130487, 0.004356865838457266, 0.004219841185066826, 
+      0.007528046315984569, 0.007054820734533077, 0.006751761745020258
+    ]
+    self.idx_to_class = [
+      'Directions', 'Discussion', 'Eating', 
+      'Greeting', 'Phoning', 'Posing', 
+      'Purchases', 'Sitting', 'SittingDown', 
+      'Smoking', 'Photo', 'Waiting', 
+      'Walking', 'WalkDog', 'WalkTogether'
+    ]
+    self.class_to_idx = {v: k for k, v in enumerate(self.idx_to_class)}
 
   def prepare_data(self):
     self.data_file = os.path.join('dataset', 'multimodal_set', 'data_3d_h36m.npz')
@@ -320,7 +342,6 @@ class DatasetH36M(Dataset):
     data_filtered = dict(filter(lambda x : x[0] in self.subjects, data_dicts.items()))
 
     if self.actions != 'all':
-      #print(data_filtered['S1'].items(), self.actions)
       for key in list(data_filtered.keys()): 
         data_filtered[key] = dict(filter(lambda x : all([a in str.lower(x[0])\
           for a in self.actions]), data_filtered[key].items()))
@@ -342,6 +363,10 @@ class DatasetH36M(Dataset):
     self.data = data_filtered
 
 
+"""
+Multi-modal version for H36M dataset, used for evaluating model performance in multi-possibilities motion scenarios
+and diversity metrics. 
+"""
 class DatasetH36M_Multi(Dataset):
   def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_velocity = False, **kwargs):
    if 'multimodal_path' in kwargs.keys():
@@ -476,15 +501,15 @@ class DatasetH36M_Multi(Dataset):
       yield samples, samples_multi
   
 
-  def iter_generator(self, step = 25, n_modality = 10):
+  def iter_generator(self, step = 25, n_modality = 10, required_action = None):
     for subject in self.data.keys():
       data_sequence = self.data[subject]
       curr_candidate = self.data_candidate[subject]
-
       for action in data_sequence.keys():
+        if required_action is not None and action != required_action:
+          continue 
         sequence = data_sequence[action] 
         sequence_len = sequence.shape[0]
-
         for i in range(0, sequence_len - self.total_frames, step): 
           trajectory = sequence[None, i : (i + self.total_frames)]
           if n_modality > 0: 
@@ -521,13 +546,12 @@ class DatasetH36M_Multi(Dataset):
             trajectory_multi = None 
           
           yield trajectory, trajectory_multi
-            
-
 
 
 """
-HumanEva Dataset 
-"""
+Dataset Class for HumanEva dataset, which is a relatively small dataset in comparison to the other twos (i.e. H36M and AMASS), with most 
+sequences of motions stays relatively short and very similar to each other. 
+"""          
 class DatasetHumanEva(Dataset): 
   def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', use_action = False):
     super().__init__(mode, num_observed_frames, num_predict_frames, dim_per_joints, actions, use_action = use_action)
@@ -574,9 +598,14 @@ class DatasetHumanEva(Dataset):
         data_sequences[action] = sequence
     
     self.data = data_filtered
+    actions = [] 
+    for data_sequences in data_filtered.values():
+      for action in data_sequences.keys():
+        actions.append(action.split(' ')[0])
+    self.idx_to_class = np.unique(actions)
+    self.class_to_idx = {v: k for k, v in enumerate(self.idx_to_class)}
     
-
-class DatasetHumanEvaMulti(Dataset):
+class DatasetHumanEva_Multi(Dataset):
   def __init__(self, mode, num_observed_frames, num_predict_frames, dim_per_joints, actions = 'all', **kwargs):
     if 'multimodal_path' in kwargs.keys():
       self.multimodal_path = kwargs['multimodal_path']
@@ -632,15 +661,15 @@ class DatasetHumanEvaMulti(Dataset):
         data_filtered.pop(key)
 
     self.data_candi = {}
-      
+
     for subject in data_filtered.keys():
       data_sequences = data_filtered[subject]
       for action in data_sequences.keys():
         sequence = data_sequences[action][:, self.major_joints, :] 
         sequence[:, 1:]  = sequence[:, 1:] - sequence[:, :1]
         data_sequences[action] = sequence
-
-        if subject not in data_candidate.keys():
+      
+        if subject not in self.data_candi.keys():
           x_0 = np.copy(sequence[None, :1, ...])
           x_0[:, :, 0] = 0
           self.data_candi[subject] = absolute_to_relative(
@@ -705,42 +734,141 @@ class DatasetHumanEvaMulti(Dataset):
       samples = np.concatenate(samples, axis = 0) 
       samples_multi = np.concatenate(samples_multi, axis = 0) 
       yield samples, samples_multi 
+
+  def iter_generator(self, step = 25, required_action = None):
+    for data_s in self.data.values():
+      for action, seq in data_s.items():
+        if required_action is not None and action != required_action:
+          continue
+        seq_len = seq.shape[0]
+        for i in range(0, seq_len - self.total_frames, step):
+          traj = seq[None, i: i + self.total_frames]
+          yield traj, None
+
+
+"""
+Multi-modal version for AMASS dataset, basically a unification of different small datasets into a same annotation format, which is a large
+dataset with diverse motions and actions, and is used to assess model performance in unseen motions and actions, apparently this work only 
+produce acceptable results on AMASS dataset (i.e. the accuracy is on-par with SOTA), however other metrics such as diversity and multimodality
+are sub-optimal, which may be improved if I may continue this topic in the future. 
+"""
+
+class DatasetAMASS:
+  def __init__(self, mode, num_observed_frames = 30, num_predict_frames = 120, actions = None, use_vel = False,\
+    use_action = False, dim_per_joints = 3):
+
+    self.use_vel = use_vel
+    self.mode = mode
+    if mode == 'train':
+      self.data_file = os.path.join('dataset', 'multimodal_set', 'data_3d_amass.npz')
+    elif mode == 'test':
+      self.data_file = os.path.join('dataset', 'multimodal_set', 'data_3d_amass_test.npz')
+    self.num_observed_frames = num_observed_frames
+    self.num_predict_frames = num_predict_frames
+    self.total_frames = num_predict_frames + num_observed_frames
+    self.use_vel = use_vel
+    self.idx_to_class = ['DFaust', 'DanceDB', 'GRAB', 'HUMAN4D', 'SOMA', 'SSM', 'Transitions']
+    self.class_to_idx = {v: k for k, v in enumerate(self.idx_to_class)}
+
+    self.mean_motion_per_class = [
+      0.00427221349493322, 
+      0.008289838197001043, 
+      0.0016145416139357026, 
+      0.004560201420525195, 
+      0.007548907591298325, 
+      0.0052984837093390524, 
+      0.007567679516515443
+    ]
+    self.prepare_data()
+
+  def prepare_data(self):
+    self.skeleton = Skeleton(
+      parents = [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14, 16, 17, 18, 19],
+      joints_left = [1, 4, 7, 10, 13, 16, 18, 20],
+      joints_right = [2, 5, 8, 11, 14, 17, 19, 21]
+    )
+    self.kept_joints = np.arange(22)
+    self.process_data()
+
+  def process_data(self):
+    data_o = np.load(self.data_file, allow_pickle = True)
+    data_f = data_o['arr_0']  # (#samples, 150, 22, 3)
+    self.data = data_f
+
+  def sample(self):
+    n_samples = self.data.shape[0]
+    idx = np.random.randint(0, n_samples)
+    traj = self.data[idx]
+    return traj[None, ...], self.class_to_idx[self.get_action_category(idx)]
+
+  def sampling_generator(self, num_samples = 1000, batch_size = 8, augment = True):
+    for i in range(num_samples // batch_size):
+      samples = []
+      actions = []
+      for i in range(batch_size):
+        sample_i, action_i = self.sample()
+        samples.append(sample_i)
+        actions.append(action_i)
+      samples = np.concatenate(samples, axis = 0)
+      actions = np.array(actions)
+      if self.mode == 'train':
+        if np.random.uniform() > 0.5:  # x-y rotating
+          theta = np.random.uniform(0, 2 * np.pi)
+          rotate_matrix = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+          rotate_xy = np.matmul(samples.transpose([0, 2, 1, 3])[..., 0:2], rotate_matrix)
+          samples[..., 0:2] = rotate_xy.transpose([0, 2, 1, 3])
+          del theta, rotate_matrix, rotate_xy
+        if np.random.uniform() > 0.5:  # x-z mirroring
+          samples[..., 0] = - samples[..., 0]
+        if np.random.uniform() > 0.5:  # y-z mirroring
+          samples[..., 1] = - samples[..., 1]
+      yield samples, actions
+
+  def get_action_category(self, idx):
+    if idx < 233:
+      return 'Transitions'
+    elif idx < 245:
+      return 'SSM'
+    elif idx < 342:
+      return 'DFaust'
+    elif idx < 6321:
+      return 'DanceDB'
+    elif idx < 10437:
+      return 'GRAB'
+    elif idx < 12317:
+      return 'HUMAN4D'
+    else:
+      return 'SOMA'
     
+  def iter_generator(self, step = None):
+    num_samples = self.data.shape[0]
+    for i in range(num_samples):
+      seq = self.data[i]
+      yield seq[None, ...], self.class_to_idx[self.get_action_category(i)]
 
-
-def generate_h36_loss_weights(total_length, scale = 10):
-  assert scale > 0 and scale != 1
-  weights = np.arange(16) + 1
-  weights = np.repeat(weights, 3)
-
-  chain = [[0], 
-    [118.9, 45.17, 44.7],           # right leg
-    [134.79, 45.17, 44.7],          
-    [114.7, 25.55, 11.71, 11.5],    
-    [15.05, 28.2, 24.99],           
-    [15.05, 28.2, 24.99]
-  ]         
-
-  new_chain = []
-  for x in chain:
-    s = sum(x)
-    if s == 0:
-      new_chain.append([0])
-      continue
-    new_x = []
-    for i in range(len(x)):
-      new_x.append((i + 1) / (len(x)) * math.log(sum(x[:i]) + scale))
-    new_chain.append(new_x)
-
-  new_chain = [item for sublist in new_chain for item in sublist]
-  s_weight = []
-  for i in range(len(weights)):
-    s_weight.append(new_chain[weights[i]])
-  s_weight = np.asarray(s_weight)
-  t_weight = np.ones(total_length)
-  ret = s_weight[None,:] * t_weight[:,None]
-  ret = ret / np.sum(ret) * 48 * total_length
-  return torch.from_numpy(ret)
+  def sample_iter_action(self, ds_category, dataset_type = 'amass'):
+    sample = [] 
+    if ds_category == 'Transitions':
+      i0, i = [0, 233]
+    elif ds_category == 'SSM':
+      i0, i = [233, 245]
+    elif ds_category == 'DFaust':
+      i0, i = [245, 342]
+    elif ds_category == 'DanceDB':
+      i0, i = [342, 6321]
+    elif ds_category == 'GRAB':
+      i0, i = [6321, 10437]
+    elif ds_category == 'HUMAN4D':
+      i0, i = [10437, 12317]
+    elif ds_category == 'SOMA':
+      i0, i = [12317, 12727]
+    else:
+      raise ModuleNotFoundError('Dataset Not Found')
+    idx = np.random.randint(i0, i)
+    traj = self.data[idx]
+    sample.append(traj[None, ...])
+    sample = np.concatenate(sample, axis = 0)
+    return sample, ds_category
 
 
 # if __name__ == '__main__': 
@@ -857,19 +985,3 @@ def generate_h36_loss_weights(total_length, scale = 10):
 #       _prediction_frames{args.num_predict_frames:d}_predict_threshold{predict_threshold:.3f}_index_subject{args.subject}.npz',
 #     data_multimodal = data_multimodal, 
 #   )
-
-
-
-
-
-
-
-
-
-
-  
-  
-
-
-
-  

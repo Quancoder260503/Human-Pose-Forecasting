@@ -5,6 +5,11 @@ import math
 import numpy as np 
 from model.ModelUtils import *
 
+"""
+Graph Convolutional Network (GCN) for human pose forecasting. This code is modified based on 
+https://github.com/wei-mao-2019/LearnTrajDep/blob/master/utils/model.py
+"""
+
 def zero_module(module):
   """
   Zero out the parameters of a module and return it.

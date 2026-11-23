@@ -10,7 +10,7 @@ Given a short history of 3D poses, predict a *set* of plausible future motions i
   page of the VITA lab, EPFL (Saadatnejad et al., 2024); not produced by this work.</sub>
 </p>
 
-This repository contains the code of an Honours thesis at the Australian National University. It combines a
+This repository contains the code for my Honours thesis at the Australian National University. It combines a
 Diffusion Transformer denoiser for human motion with fast ODE solvers (DPM-Solver and DPM-Solver++) and
 masked completion of the observed frames, so that a full set of diverse, accurate predictions is drawn in as few as
 **6 network evaluations per sample**. The thesis is available on request.

@@ -461,5 +461,4 @@ The methods compared against or built upon, as cited in the thesis.
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE). Code adapted from other projects remains under its original licence; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apache License 2.0, see [LICENSE](LICENSE). Code adapted from other projects remains under its original licence;

@@ -298,8 +298,6 @@ The illustration at the top of this page is taken from the
 [Human Pose Forecasting](https://www.epfl.ch/labs/vita/research/prediction/human-pose-forecasting/) page of the
 VITA lab at EPFL and remains their property.
 
-Licence notices of these projects are collected in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
 ## References
 
 The methods compared against or built upon, as cited in the thesis.

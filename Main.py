@@ -154,7 +154,7 @@ if __name__ == '__main__':
   parser.add_argument('--save_gif_interval', type = int, default = 10)
   parser.add_argument('--save_metrics_interval', type = int, default = 500)
 
-  # --- Diffusion process ---
+  # Diffusion process 
   parser.add_argument('--diffusion_num_timesteps', type = int, default = 1000)
   parser.add_argument('--ddim_num_timesteps', type = int, default = 10)
   parser.add_argument('--timesteps_sampling', type = str, default = 'uniform_time_sampling')
@@ -163,7 +163,7 @@ if __name__ == '__main__':
   parser.add_argument('--drop_cond_method', type = str, default = 'sample')
   parser.add_argument('--model_var_type', type = str, default = 'fixed_large')
 
-  # --- Backbone model ---
+  # Backbone model 
   parser.add_argument('--use_action', type = str2bool, default = False) 
   parser.add_argument('--num_dct_channels', type = int, default = 20)
   parser.add_argument('--num_joints', type = int, default = 16)
@@ -225,7 +225,7 @@ if __name__ == '__main__':
   parser.add_argument('--deterministic', type = str2bool, default = False)
   parser.add_argument('--enable_complete', type = str2bool, default = False)
 
-  # --- DPM Solver ---- 
+  # DPM Solver  
   parser.add_argument('--use_dpm_solver', type = str2bool, default = False)
   parser.add_argument('--dpm_algorithm_type', type = str, default = 'dpmsolver++', 
     choices = ['dpmsolver', 'dpmsolver++'])

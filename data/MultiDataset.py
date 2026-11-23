@@ -870,6 +870,9 @@ class DatasetAMASS:
     sample = np.concatenate(sample, axis = 0)
     return sample, ds_category
 
+  def prepare_iter_action(self):
+    return list(self.idx_to_class)
+
 
 # if __name__ == '__main__': 
 #   # generate the candidate 

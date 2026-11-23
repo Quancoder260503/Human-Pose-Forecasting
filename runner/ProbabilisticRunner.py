@@ -718,7 +718,7 @@ class ProbabilisticRunner(object):
           output = os.path.join(self._params['gif_dir'], self._params['exp_desc'], f'pred_{suffix}.gif'),
           sampling_mode = sampling_mode
         )
-        self.visualize_joint_traj(next(generated_pose))
+        self.visualize_joint_trajectories(next(generated_pose))
 
     elif sampling_mode == 'control':
       # draw part-body controllable results

@@ -53,7 +53,7 @@ log-SNR.
 
 ### Samples
 
-Human3.6M test sequences rendered with `--mode demo_vis --sampling_mode pred`. In each panel, the first column (*context*)
+Human3.6M (first two rows) and AMASS (last row) test sequences rendered with `--mode demo_vis --sampling_mode pred`. In each panel, the first column (*context*)
 shows the observed motion, the second (*gt*) the recorded future, and the remaining columns four predicted futures for
 the same observation; each row is a different observation. Observed frames are drawn in gray, black and red, predicted
 frames in purple, black and green.
@@ -69,26 +69,13 @@ frames in purple, black and green.
 <td align="center" width="33%"><img src="assets/samples/h36m_phoning.gif" width="100%" alt="Phoning"><br><sub>Phoning</sub></td>
 <td align="center" width="33%"><img src="assets/samples/h36m_photo.gif" width="100%" alt="Photo"><br><sub>Photo</sub></td>
 </tr>
+<tr>
+<td align="center" width="33%"><img src="assets/samples/amass_dancedb.gif" width="100%" alt="AMASS: DanceDB"><br><sub>AMASS: DanceDB</sub></td>
+<td align="center" width="33%"><img src="assets/samples/amass_dfaust.gif" width="100%" alt="AMASS: DFaust"><br><sub>AMASS: DFaust</sub></td>
+<td align="center" width="33%"><img src="assets/samples/amass_grab.gif" width="100%" alt="AMASS: GRAB"><br><sub>AMASS: GRAB</sub></td>
+</tr>
 </table>
 
-<details>
-<summary>Training previews</summary>
-
-Previews rendered by `compute_eval_stats` during a longer training run (epochs 2810 to 2870), with the EMA weights,
-on observations drawn from the <b>training</b> split. They show how the samples evolve during training and are not
-test-set results.
-
-<p align="center">
-  <img src="assets/training/train_preview_epoch_2810.gif" width="32%" alt="Epoch 2810">
-  <img src="assets/training/train_preview_epoch_2820.gif" width="32%" alt="Epoch 2820">
-  <img src="assets/training/train_preview_epoch_2830.gif" width="32%" alt="Epoch 2830">
-  <img src="assets/training/train_preview_epoch_2840.gif" width="32%" alt="Epoch 2840">
-  <img src="assets/training/train_preview_epoch_2850.gif" width="32%" alt="Epoch 2850">
-  <img src="assets/training/train_preview_epoch_2860.gif" width="32%" alt="Epoch 2860">
-  <img src="assets/training/train_preview_epoch_2870.gif" width="32%" alt="Epoch 2870">
-</p>
-
-</details>
 
 Human3.6M, standard protocol (25 observed frames, 100 predicted frames, 50 samples per observation).
 NFE counts network evaluations per sample; for this work NFE† counts solver evaluations, and one final denoising
@@ -156,19 +143,27 @@ dataset/multimodal_set/
 FID on Human3.6M also needs the action classifier `h36m_classifier.pth` in the repository root. It is not
 included in the repository.
 
-### Train
+### Configurations
 
-`--model_prefix` is a run name: outputs go to `exp/<run_name>/`. The command below uses the configuration of
-the adaLN-Zero model on Human3.6M; use `--use_adaptive False` for the stylization block.
+The configurations of the six models are in [`configs/`](configs), exactly as saved by `Main.py`. All use a cosine
+noise schedule with 1000 diffusion steps, model width 512 and 8 attention heads.
 
-```bash
-python3 Main.py --type diffusion --algo diffusion --mode train --dataset h36m --model_prefix <run_name> \
-  --use_adaptive True --num_layers 8 --model_dim 512 --ffn_dim 1024 --num_heads 8 --dropout 0.3 \
-  --num_gcn_stages 3 --gcn_dim 256 --num_samples 8 --max_epochs 2000 \
-  --learning_rate 3e-4 --learning_rate_fn step --lr_step_size 100 --step_gamma 0.9
+| Config | Dataset | Block | Observed / predicted frames | DCT coefficients | Transformer layers | GCN stages × width |
+|---|---|---|---|---|---|---|
+| [`h36m_adaln_zero.json`](configs/h36m_adaln_zero.json) | Human3.6M | adaLN-Zero | 25 / 100 | 20 | 8 | 3 × 256 |
+| [`h36m_stylization.json`](configs/h36m_stylization.json) | Human3.6M | stylization | 25 / 100 | 20 | 8 | 3 × 256 |
+| [`humaneva_adaln_zero.json`](configs/humaneva_adaln_zero.json) | HumanEva-I | adaLN-Zero | 15 / 60 | 10 | 4 | 3 × 128 |
+| [`humaneva_stylization.json`](configs/humaneva_stylization.json) | HumanEva-I | stylization | 15 / 60 | 10 | 4 | 3 × 128 |
+| [`amass_adaln_zero.json`](configs/amass_adaln_zero.json) | AMASS | adaLN-Zero | 30 / 120 | 20 | 12 | 3 × 256 |
+| [`amass_stylization.json`](configs/amass_stylization.json) | AMASS | stylization | 30 / 120 | 20 | 12 | 3 × 256 |
+
+To evaluate a checkpoint trained with one of them, place the files where the config expects them and pass the run
+name (the config's `model_prefix` without `exp/`):
+
 ```
-
-The full configuration of a run is saved to `exp/<run_name>/config_dir/config.json`.
+exp/<run_name>/config_dir/config.json        # the config file, renamed
+exp/<run_name>/models/model_ckpt.pth.tar     # the checkpoint
+```
 
 ### Evaluate with DPM-Solver
 
@@ -273,6 +268,21 @@ motion = idct[:, :C] @ sample_dct       # [B, N + F, D], back to poses
 - **Small budgets.** At 5 or fewer solver evaluations, prefer `dpmsolver++` with order 2 and `singlestep`; the
   noise-prediction second-order solver can diverge there.
 
+---
+
+## Citation
+
+If this code is useful for your work, please cite the thesis:
+
+```bibtex
+@mastersthesis{le2026reliable,
+  author = {Le, Minh Quan},
+  title  = {Towards Reliable Stochastic Human Motion Prediction by Improving Probabilistic Diffusion Models},
+  type   = {Bachelor of Computing (Honours) thesis},
+  school = {The Australian National University},
+  year   = {2026}
+}
+```
 
 ## Acknowledgements
 

@@ -291,7 +291,7 @@ The code builds on the following open-source projects; many thanks to their auth
   `dpm_solver_pytorch.py`, extended with masked completion of the observed frames.
 - [LearnTrajDep](https://github.com/wei-mao-2019/LearnTrajDep) (MIT): the graph convolution layers in
   `model/GraphConvNet.py`.
-- [RNNexp](https://github.com/asheshjain399/RNNexp): the Human3.6M angle and forward kinematics utilities in
+- [RNNexp](https://github.com/una-dinosauria/human-motion-prediction): the Human3.6M angle and forward kinematics utilities in
   `data/Dataset3DUtils.py`.
 
 The illustration at the top of this page is taken from the

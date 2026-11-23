@@ -3,7 +3,7 @@
 Given a short history of 3D poses, predict a *set* of plausible future motions in a handful of network evaluations.
 
 <p align="center">
-  <img src="assets/pose_forecasting_vita_epfl.gif" width="85%" alt="Forecast 3D poses of a pedestrian crossing a street">
+  <img src="assets/pose_forecasting_vita_efpl.gif" width="85%" alt="Forecast 3D poses of a pedestrian crossing a street">
   <br>
   <sub>Human pose forecasting in the wild. Illustration from the
   <a href="https://www.epfl.ch/labs/vita/research/prediction/human-pose-forecasting/">Human Pose Forecasting</a>

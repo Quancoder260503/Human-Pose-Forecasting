@@ -1,0 +1,10 @@
+torch
+tensorboard          
+numpy
+scipy               
+einops
+pandas              
+tqdm
+opencv-python     
+matplotlib        
+Pillow              

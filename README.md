@@ -3,7 +3,7 @@
 Given a short history of 3D poses, predict a *set* of plausible future motions in a handful of network evaluations.
 
 <p align="center">
-  <img src="assets/pose_forecasting_vita_efpl.gif" width="85%" alt="Forecast 3D poses of a pedestrian crossing a street">
+  <img src="assets/pose_forecasting_vita_epfl.gif" width="85%" alt="Forecast 3D poses of a pedestrian crossing a street">
   <br>
   <sub>Human pose forecasting in the wild. Illustration from the
   <a href="https://www.epfl.ch/labs/vita/research/prediction/human-pose-forecasting/">Human Pose Forecasting</a>
@@ -46,16 +46,49 @@ RePaint, Lugmayr et al., 2022), so every sample stays consistent with the histor
 log-SNR.
 
 <p align="center">
-  <img src="assets/cost_accuracy.pdf" width="70%" alt="Accuracy against number of network evaluations">
+  <img src="assets/cost_accuracy.png" width="70%" alt="Accuracy against number of network evaluations">
 </p>
 
 ## Results
 
+### Samples
+
+Human3.6M test sequences rendered with `--mode demo_vis --sampling_mode pred`. In each panel, the first column (*context*)
+shows the observed motion, the second (*gt*) the recorded future, and the remaining columns four predicted futures for
+the same observation; each row is a different observation. Observed frames are drawn in gray, black and red, predicted
+frames in purple, black and green.
+
+<table>
+<tr>
+<td align="center" width="33%"><img src="assets/samples/h36m_directions.gif" width="100%" alt="Directions"><br><sub>Directions</sub></td>
+<td align="center" width="33%"><img src="assets/samples/h36m_discussion.gif" width="100%" alt="Discussion"><br><sub>Discussion</sub></td>
+<td align="center" width="33%"><img src="assets/samples/h36m_eating.gif" width="100%" alt="Eating"><br><sub>Eating</sub></td>
+</tr>
+<tr>
+<td align="center" width="33%"><img src="assets/samples/h36m_greeting.gif" width="100%" alt="Greeting"><br><sub>Greeting</sub></td>
+<td align="center" width="33%"><img src="assets/samples/h36m_phoning.gif" width="100%" alt="Phoning"><br><sub>Phoning</sub></td>
+<td align="center" width="33%"><img src="assets/samples/h36m_photo.gif" width="100%" alt="Photo"><br><sub>Photo</sub></td>
+</tr>
+</table>
+
+<details>
+<summary>Training previews</summary>
+
+Previews rendered by `compute_eval_stats` during a longer training run (epochs 2810 to 2870), with the EMA weights,
+on observations drawn from the <b>training</b> split. They show how the samples evolve during training and are not
+test-set results.
+
 <p align="center">
-  <img src="assets/teaser.gif" width="85%" alt="Observed motion (gray) followed by several sampled futures">
-  <br>
-  <sub>Samples from this work: observed motion followed by several predicted futures.</sub>
+  <img src="assets/training/train_preview_epoch_2810.gif" width="32%" alt="Epoch 2810">
+  <img src="assets/training/train_preview_epoch_2820.gif" width="32%" alt="Epoch 2820">
+  <img src="assets/training/train_preview_epoch_2830.gif" width="32%" alt="Epoch 2830">
+  <img src="assets/training/train_preview_epoch_2840.gif" width="32%" alt="Epoch 2840">
+  <img src="assets/training/train_preview_epoch_2850.gif" width="32%" alt="Epoch 2850">
+  <img src="assets/training/train_preview_epoch_2860.gif" width="32%" alt="Epoch 2860">
+  <img src="assets/training/train_preview_epoch_2870.gif" width="32%" alt="Epoch 2870">
 </p>
+
+</details>
 
 Human3.6M, standard protocol (25 observed frames, 100 predicted frames, 50 samples per observation).
 NFE counts network evaluations per sample; for this work NFE† counts solver evaluations, and one final denoising

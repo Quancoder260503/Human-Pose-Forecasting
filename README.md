@@ -59,25 +59,15 @@ the same observation; each row is a different observation. Observed frames are d
 frames in purple, black and green.
 
 <table>
-<tr>
-<td align="center" width="50%"><img src="assets/samples/h36m_directions.gif" width="100%" alt="Human3.6M: Directions"><br><sub>Human3.6M: Directions</sub></td>
-<td align="center" width="50%"><img src="assets/samples/h36m_discussion.gif" width="100%" alt="Human3.6M: Discussion"><br><sub>Human3.6M: Discussion</sub></td>
-</tr>
-<tr>
-<td align="center" width="50%"><img src="assets/samples/h36m_eating.gif" width="100%" alt="Human3.6M: Eating"><br><sub>Human3.6M: Eating</sub></td>
-<td align="center" width="50%"><img src="assets/samples/h36m_greeting.gif" width="100%" alt="Human3.6M: Greeting"><br><sub>Human3.6M: Greeting</sub></td>
-</tr>
-<tr>
-<td align="center" width="50%"><img src="assets/samples/h36m_phoning.gif" width="100%" alt="Human3.6M: Phoning"><br><sub>Human3.6M: Phoning</sub></td>
-<td align="center" width="50%"><img src="assets/samples/h36m_photo.gif" width="100%" alt="Human3.6M: Photo"><br><sub>Human3.6M: Photo</sub></td>
-</tr>
-<tr>
-<td align="center" width="50%"><img src="assets/samples/amass_dancedb.gif" width="100%" alt="AMASS: DanceDB"><br><sub>AMASS: DanceDB</sub></td>
-<td align="center" width="50%"><img src="assets/samples/amass_dfaust.gif" width="100%" alt="AMASS: DFaust"><br><sub>AMASS: DFaust</sub></td>
-</tr>
-<tr>
-<td align="center" width="50%"><img src="assets/samples/amass_grab.gif" width="100%" alt="AMASS: GRAB"><br><sub>AMASS: GRAB</sub></td>
-</tr>
+<tr><td align="center"><img src="assets/samples/h36m_directions.gif" width="80%" alt="Human3.6M: Directions"><br><sub>Human3.6M: Directions</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/h36m_discussion.gif" width="80%" alt="Human3.6M: Discussion"><br><sub>Human3.6M: Discussion</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/h36m_eating.gif" width="80%" alt="Human3.6M: Eating"><br><sub>Human3.6M: Eating</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/h36m_greeting.gif" width="80%" alt="Human3.6M: Greeting"><br><sub>Human3.6M: Greeting</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/h36m_phoning.gif" width="80%" alt="Human3.6M: Phoning"><br><sub>Human3.6M: Phoning</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/h36m_photo.gif" width="80%" alt="Human3.6M: Photo"><br><sub>Human3.6M: Photo</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/amass_dancedb.gif" width="80%" alt="AMASS: DanceDB"><br><sub>AMASS: DanceDB</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/amass_dfaust.gif" width="80%" alt="AMASS: DFaust"><br><sub>AMASS: DFaust</sub></td></tr>
+<tr><td align="center"><img src="assets/samples/amass_grab.gif" width="80%" alt="AMASS: GRAB"><br><sub>AMASS: GRAB</sub></td></tr>
 </table>
 
 

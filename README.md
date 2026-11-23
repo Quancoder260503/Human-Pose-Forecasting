@@ -232,27 +232,184 @@ motion = idct[:, :C] @ sample_dct       # [B, N + F, D], back to poses
 
 ---
 
-## References
+## Citation
 
-- Lu et al. *DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps.*
-  NeurIPS 2022. Code: [LuChengTHU/dpm-solver](https://github.com/LuChengTHU/dpm-solver), from which
-  `model/DPMSolver.py` is adapted.
-- Lu et al. *DPM-Solver++: Fast Solver for Guided Sampling of Diffusion Probabilistic Models.*
-  Machine Intelligence Research 22, 730–751, 2025. [arXiv:2211.01095](https://arxiv.org/abs/2211.01095)
-- Chen et al. *HumanMAC: Masked Motion Completion for Human Motion Prediction.* ICCV 2023.
-- Barquero, Escalera, Palmero. *BeLFusion: Latent Diffusion for Behavior-Driven Human Motion Prediction.*
-  ICCV 2023.
-- Sun, Chowdhary. *CoMusion: Towards Consistent Stochastic Human Motion Prediction via Motion Diffusion.*
-  ECCV 2024.
-- Peebles, Xie. *Scalable Diffusion Models with Transformers.* ICCV 2023.
-- Zhang et al. *MotionDiffuse: Text-Driven Human Motion Generation with Diffusion Model.* IEEE TPAMI 2024.
-- Lugmayr et al. *RePaint: Inpainting using Denoising Diffusion Probabilistic Models.* CVPR 2022.
+If this code is useful for your work, please cite the thesis:
+
+```bibtex
+@mastersthesis{le2026reliable,
+  author = {Le, Minh Quan},
+  title  = {Towards Reliable Stochastic Human Motion Prediction by Improving Probabilistic Diffusion Models},
+  type   = {Bachelor of Computing (Honours) thesis},
+  school = {The Australian National University},
+  year   = {2026}
+}
+```
 
 ## Acknowledgements
 
-This work was supervised by Prof. Stephen Gould at the Australian National University. The solver implementation
-is adapted from the official DPM-Solver code, and the evaluation protocol follows HumanMAC and BeLFusion.
+This work was supervised by Prof. Stephen Gould at the Australian National University.
+
+The code builds on the following open-source projects; many thanks to their authors.
+
+- [HumanMAC](https://github.com/LinghaoChan/HumanMAC) (MIT): data loading, multi-modal evaluation, DCT utilities and
+  animation rendering in `data/` and `runner/`, which HumanMAC in turn partly borrows from
+  [DLow](https://github.com/Khrylx/DLow) and [GSPS](https://github.com/wei-mao-2019/gsps).
+- [DPM-Solver](https://github.com/LuChengTHU/dpm-solver) (MIT): `model/DPMSolver.py` is adapted from
+  `dpm_solver_pytorch.py`, extended with masked completion of the observed frames.
+- [LearnTrajDep](https://github.com/wei-mao-2019/LearnTrajDep) (MIT): the graph convolution layers in
+  `model/GraphConvNet.py`.
+- [RNNexp](https://github.com/asheshjain399/RNNexp): the Human3.6M angle and forward kinematics utilities in
+  `data/Dataset3DUtils.py`.
+
+Licence notices of these projects are collected in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## References
+
+The methods compared against or built upon, as cited in the thesis.
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@inproceedings{lu2022dpmsolver,
+  author    = {Cheng Lu and Yuhao Zhou and Fan Bao and Jianfei Chen and Chongxuan Li and Jun Zhu},
+  title     = {{DPM-Solver}: A Fast {ODE} Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {35},
+  year      = {2022},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2022/hash/260a14acce2a89dad36adc8eefe7c59e-Abstract-Conference.html}
+}
+
+@article{lu2022dpmsolverplusplus,
+  author  = {Cheng Lu and Yuhao Zhou and Fan Bao and Jianfei Chen and Chongxuan Li and Jun Zhu},
+  title   = {{DPM-Solver++}: Fast Solver for Guided Sampling of Diffusion Probabilistic Models},
+  journal = {Machine Intelligence Research},
+  volume  = {22},
+  number  = {4},
+  pages   = {730--751},
+  year    = {2025},
+  doi     = {10.1007/s11633-025-1562-4},
+  url     = {https://link.springer.com/article/10.1007/s11633-025-1562-4}
+}
+
+@inproceedings{ho2022classifierfree,
+  author    = {Jonathan Ho and Tim Salimans},
+  title     = {Classifier-Free Diffusion Guidance},
+  booktitle = {NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applications},
+  year      = {2021},
+  url       = {https://openreview.net/forum?id=qw8AKxfYbI}
+}
+
+@inproceedings{Lugmayr2022,
+  author    = {Lugmayr, Andreas and Danelljan, Martin and Romero, Andres and Yu, Fisher and Timofte, Radu and Van Gool, Luc},
+  title     = {{RePaint}: Inpainting Using Denoising Diffusion Probabilistic Models},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {11461--11471},
+  year      = {2022}
+}
+
+@inproceedings{peebles2023scalable,
+  author    = {William Peebles and Saining Xie},
+  title     = {Scalable Diffusion Models with Transformers},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {4195--4205},
+  year      = {2023},
+  doi       = {10.1109/ICCV51070.2023.00387},
+  url       = {https://openaccess.thecvf.com/content/ICCV2023/html/Peebles_Scalable_Diffusion_Models_with_Transformers_ICCV_2023_paper.html}
+}
+
+@article{zhang2022motiondiffuse,
+  author  = {Mingyuan Zhang and Zhongang Cai and Liang Pan and Fangzhou Hong and Xinying Guo and Lei Yang and Ziwei Liu},
+  title   = {{MotionDiffuse}: Text-Driven Human Motion Generation With Diffusion Model},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume  = {46},
+  number  = {6},
+  pages   = {4115--4128},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2208.15001}
+}
+
+@inproceedings{Mao2019,
+  author    = {Mao, Wei and Liu, Miaomiao and Salzmann, Mathieu and Li, Hongdong},
+  title     = {Learning Trajectory Dependencies for Human Motion Prediction},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {9489--9497},
+  year      = {2019},
+  doi       = {10.1109/ICCV.2019.00958},
+  url       = {https://openaccess.thecvf.com/content_ICCV_2019/html/Mao_Learning_Trajectory_Dependencies_for_Human_Motion_Prediction_ICCV_2019_paper.html}
+}
+
+@inproceedings{Chen2023,
+  author    = {Chen, Ling-Hao and Zhang, Jiawei and Li, Yewen and Pang, Yiren and Xia, Xiaobo and Liu, Tongliang},
+  title     = {{HumanMAC}: Masked Motion Completion for Human Motion Prediction},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {9544--9555},
+  year      = {2023},
+  doi       = {10.1109/ICCV51070.2023.00878},
+  url       = {https://openaccess.thecvf.com/content/ICCV2023/html/Chen_HumanMAC_Masked_Motion_Completion_for_Human_Motion_Prediction_ICCV_2023_paper.html}
+}
+
+@inproceedings{Barquero2023,
+  author    = {Barquero, German and Escalera, Sergio and Palmero, Cristina},
+  title     = {{BeLFusion}: Latent Diffusion for Behavior-Driven Human Motion Prediction},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {2317--2327},
+  year      = {2023},
+  doi       = {10.1109/ICCV51070.2023.00220},
+  url       = {https://openaccess.thecvf.com/content/ICCV2023/html/Barquero_BeLFusion_Latent_Diffusion_for_Behavior-Driven_Human_Motion_Prediction_ICCV_2023_paper.html}
+}
+
+@inproceedings{Sun2024,
+  author    = {Sun, Jiarui and Chowdhary, Girish},
+  title     = {{CoMusion}: Towards Consistent Stochastic Human Motion Prediction via Motion Diffusion},
+  booktitle = {Computer Vision -- ECCV 2024},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {15121},
+  pages     = {18--36},
+  publisher = {Springer},
+  year      = {2024},
+  doi       = {10.1007/978-3-031-73036-8_2},
+  url       = {https://www.ecva.net/papers/eccv_2024/papers_ECCV/html/7969_ECCV_2024_paper.php}
+}
+
+@inproceedings{Yuan2020,
+  author    = {Yuan, Ye and Kitani, Kris},
+  title     = {{DLow}: Diversifying Latent Flows for Diverse Human Motion Prediction},
+  booktitle = {Computer Vision -- ECCV 2020},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {12354},
+  pages     = {346--364},
+  publisher = {Springer},
+  year      = {2020},
+  doi       = {10.1007/978-3-030-58545-7_20},
+  url       = {https://www.ecva.net/papers/eccv_2020/papers_ECCV/html/794_ECCV_2020_paper.php}
+}
+
+@inproceedings{Mao2021,
+  author    = {Mao, Wei and Liu, Miaomiao and Salzmann, Mathieu},
+  title     = {Generating Smooth Pose Sequences for Diverse Human Motion Prediction},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
+  pages     = {13309--13318},
+  year      = {2021},
+  doi       = {10.1109/ICCV48922.2021.01306},
+  url       = {https://openaccess.thecvf.com/content/ICCV2021/html/Mao_Generating_Smooth_Pose_Sequences_for_Diverse_Human_Motion_Prediction_ICCV_2021_paper.html}
+}
+
+@inproceedings{Jain2016,
+  author    = {Jain, Ashesh and Zamir, Amir R. and Savarese, Silvio and Saxena, Ashutosh},
+  title     = {Structural-{RNN}: Deep Learning on Spatio-Temporal Graphs},
+  booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {5308--5317},
+  year      = {2016},
+  doi       = {10.1109/CVPR.2016.573},
+  url       = {https://openaccess.thecvf.com/content_cvpr_2016/html/Jain_Structural-RNN_Deep_Learning_CVPR_2016_paper.html}
+}
+```
+
+</details>
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE).
+Apache License 2.0, see [LICENSE](LICENSE). Code adapted from other projects remains under its original licence; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

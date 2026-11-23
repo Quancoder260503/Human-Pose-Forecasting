@@ -275,7 +275,7 @@ motion = idct[:, :C] @ sample_dct       # [B, N + F, D], back to poses
 If this code is useful for your work, please cite the thesis:
 
 ```bibtex
-@mastersthesis{le2026reliable,
+@honoursthesis{le2026reliable,
   author = {Le, Minh Quan},
   title  = {Towards Reliable Stochastic Human Motion Prediction by Improving Probabilistic Diffusion Models},
   type   = {Bachelor of Computing (Honours) thesis},

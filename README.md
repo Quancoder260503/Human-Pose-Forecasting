@@ -46,7 +46,7 @@ RePaint, Lugmayr et al., 2022), so every sample stays consistent with the histor
 log-SNR.
 
 <p align="center">
-  <img src="assets/cost_accuracy.png" width="70%" alt="Accuracy against number of network evaluations">
+  <img src="assets/cost_accuracy.pdf" width="70%" alt="Accuracy against number of network evaluations">
 </p>
 
 ## Results

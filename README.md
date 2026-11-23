@@ -3,7 +3,11 @@
 Given a short history of 3D poses, predict a *set* of plausible future motions in a handful of network evaluations.
 
 <p align="center">
-  <img src="assets/teaser.gif" width="85%" alt="Observed motion (gray) followed by several sampled futures">
+  <img src="assets/pose_forecasting_vita_epfl.gif" width="85%" alt="Forecast 3D poses of a pedestrian crossing a street">
+  <br>
+  <sub>Human pose forecasting in the wild. Illustration from the
+  <a href="https://www.epfl.ch/labs/vita/research/prediction/human-pose-forecasting/">Human Pose Forecasting</a>
+  page of the VITA lab, EPFL (Saadatnejad et al., 2024); not produced by this work.</sub>
 </p>
 
 This repository contains the code of an Honours thesis at the Australian National University. It combines a
@@ -46,6 +50,12 @@ log-SNR.
 </p>
 
 ## Results
+
+<p align="center">
+  <img src="assets/teaser.gif" width="85%" alt="Observed motion (gray) followed by several sampled futures">
+  <br>
+  <sub>Samples from this work: observed motion followed by several predicted futures.</sub>
+</p>
 
 Human3.6M, standard protocol (25 observed frames, 100 predicted frames, 50 samples per observation).
 NFE counts network evaluations per sample; for this work NFE† counts solver evaluations, and one final denoising
@@ -262,6 +272,10 @@ The code builds on the following open-source projects; many thanks to their auth
 - [RNNexp](https://github.com/asheshjain399/RNNexp): the Human3.6M angle and forward kinematics utilities in
   `data/Dataset3DUtils.py`.
 
+The illustration at the top of this page is taken from the
+[Human Pose Forecasting](https://www.epfl.ch/labs/vita/research/prediction/human-pose-forecasting/) page of the
+VITA lab at EPFL and remains their property.
+
 Licence notices of these projects are collected in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## References
@@ -404,6 +418,14 @@ The methods compared against or built upon, as cited in the thesis.
   year      = {2016},
   doi       = {10.1109/CVPR.2016.573},
   url       = {https://openaccess.thecvf.com/content_cvpr_2016/html/Jain_Structural-RNN_Deep_Learning_CVPR_2016_paper.html}
+}
+
+@article{saadatnejad2024unposed,
+  title={Toward reliable human pose forecasting with uncertainty},
+  author={Saadatnejad, Saeed and Mirmohammadi, Mehrshad and Daghyani, Matin and Saremi, Parham and Benisi, Yashar Zoroofchi and Alimohammadi, Amirhossein and Tehraninasab, Zahra and Mordan, Taylor and Alahi, Alexandre},
+  journal={IEEE Robotics and Automation Letters},
+  year={2024},
+  publisher={IEEE}
 }
 ```
 

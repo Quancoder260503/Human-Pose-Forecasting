@@ -11,7 +11,6 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import tqdm
 import torch.nn.functional as F
-from runner.WarmupScheduler import *
 from data.Dataset3DUtils import * 
 from model.EMA import *
 from model.DiffusionTransformer import *
